@@ -2741,14 +2741,13 @@ namespace AbletonManager
 
         bool EditRoots()
         {
-            using (RootsDialog d = new RootsDialog(_settings.Roots, _settings.IncludeBackups, _settings.DisabledRoots))
+            using (RootsDialog d = new RootsDialog(_settings.Roots, _settings.DisabledRoots))
             {
                 if (d.ShowDialog(this) != DialogResult.OK) return false;
                 _settings.Roots.Clear();
                 _settings.Roots.AddRange(d.Result);
                 _settings.DisabledRoots.Clear();
                 _settings.DisabledRoots.AddRange(d.DisabledRoots);
-                _settings.IncludeBackups = d.IncludeBackups;
                 _settings.Save();
                 StartScan(true);
                 Rewatch();          // набор корней другой — переставляем наблюдение

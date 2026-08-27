@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Drawing;
@@ -72,12 +72,9 @@ namespace Reel
             if (Glass.AppIcon != null) Icon = Glass.AppIcon;
 
             Build();
-
-            ReelConfig.Load();
             LoadEnvironmentAsync();
 
             if (!string.IsNullOrEmpty(startPath) && File.Exists(startPath)) Open(startPath);
-            else OpenRecent();
         }
 
         // ------------------------------------------------------------------ сборка
@@ -259,7 +256,7 @@ namespace Reel
 
             if (_alsPath.Length == 0)
             {
-                Chrome.DrawText(g, L.S("Open a set to see its history", "Откройте сет"),
+                Chrome.DrawText(g, L.S("Pick a project in the catalogue and press Forks", "Выберите проект в каталоге"),
                                 Theme.FBody, _rEmpty, Theme.TextDim,
                                 Chrome.Left | TextFormatFlags.VerticalCenter);
             }
@@ -352,17 +349,10 @@ namespace Reel
 
         // ------------------------------------------------------------------ проект
 
-        void OpenRecent()
-        {
-            foreach (string p in ReelConfig.Recent)
-                if (File.Exists(p)) { Open(p); return; }
-        }
-
         public void Open(string alsPath)
         {
             _alsPath = alsPath;
             _projectDir = Path.GetDirectoryName(alsPath);
-            ReelConfig.Remember(alsPath);
 
             _store = SnapshotStore.Open(_projectDir);
             FillHistory(0);

@@ -1,6 +1,0 @@
-<svg width="15" height="14" viewBox="0 0 15 14" fill="none" xmlns="http://www.w3.org/2000/svg">
-<path d="M7 2.8L14 2.8" stroke="#CACACB" stroke-width="2" stroke-linecap="round"/>
-<line x1="1" y1="7.8" x2="14" y2="7.8" stroke="#CACACB" stroke-width="2" stroke-linecap="round"/>
-<line x1="1" y1="12.8" x2="14" y2="12.8" stroke="#CACACB" stroke-width="2" stroke-linecap="round"/>
-<path d="M0.811523 0.447462C0.941478 0.377985 1.09902 0.385338 1.22168 0.466993L4.22168 2.46699C4.33296 2.54118 4.40039 2.66626 4.40039 2.8C4.40039 2.93374 4.33296 3.05882 4.22168 3.13301L1.22168 5.13301C1.09902 5.21466 0.941478 5.22202 0.811523 5.15254C0.68146 5.08293 0.599609 4.94752 0.599609 4.8V0.800001C0.599609 0.652483 0.68146 0.51707 0.811523 0.447462Z" fill="#CACACB" stroke="#CACACB" stroke-width="0.8" stroke-linecap="round" stroke-linejoin="round"/>
-</svg>

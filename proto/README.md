@@ -29,7 +29,7 @@
 
 ```
 bin\AliveReel.exe                     каталог Alive + Forks в инспекторе + Stat в шапке
-bin\AliveReel.exe --reel [сет.als]    только окно версий
+bin\AliveReel.exe --reel сет.als      только окно версий, без каталога
 ```
 
 ## Что умеет

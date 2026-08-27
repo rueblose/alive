@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Text;
@@ -299,7 +299,7 @@ namespace AbletonManager
             {
                 if (disabled.Contains(root)) continue;   // временно выключена — папка остаётся в списке
                 int before = files.Count;
-                FolderScan.Result r = Collect(root, files, seen, settings.IncludeBackups, progress, cancel);
+                FolderScan.Result r = Collect(root, files, seen, progress, cancel);
                 Diag.Line("scan: " + root + " -> " + (files.Count - before) + " sets in "
                         + r.Dirs + " folders"
                         + (r.Unreadable > 0 ? ", " + r.Unreadable + " folders unreadable" : "")
@@ -573,10 +573,9 @@ namespace AbletonManager
         /// и выглядело так, будто добавленную папку оно просто не смотрит.
         /// </summary>
         static FolderScan.Result Collect(string dir, List<string> files, HashSet<string> seen,
-                                         bool includeBackups, ScanProgress progress,
-                                         CancellationToken cancel)
+                                         ScanProgress progress, CancellationToken cancel)
         {
-            return FolderScan.Find(dir, ".als", includeBackups,
+            return FolderScan.Find(dir, ".als", false,
                 delegate (string f)
                 {
                     if (!seen.Add(f)) return;

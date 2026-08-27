@@ -383,7 +383,7 @@ namespace AbletonManager.Nebula
         /// </summary>
         bool EditRoots()
         {
-            using (RootsDialog d = new RootsDialog(_settings.Roots, false, _settings.DisabledRoots))
+            using (RootsDialog d = new RootsDialog(_settings.Roots, _settings.DisabledRoots))
             {
                 if (d.ShowDialog(this) != DialogResult.OK) return false;
                 _settings.Roots.Clear();

@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Drawing;
 using System.Globalization;
 using System.IO;
@@ -57,7 +57,6 @@ namespace Reel
             // открывать «этим» из проводника и так его снимает проверочный Shot.exe.
             bool reelOnly = false;
             string startPath = null;
-            ReelConfig.Load();
 
             for (int i = 0; i < args.Length; i++)
             {

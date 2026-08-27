@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.Drawing.Drawing2D;
@@ -23,9 +23,8 @@ namespace AbletonManager
 
         public List<string> Result { get { return _roots; } }
         public List<string> DisabledRoots { get { return new List<string>(_disabled); } }
-        public bool IncludeBackups { get { return false; } }
 
-        public RootsDialog(IEnumerable<string> current, bool includeBackups, IEnumerable<string> disabledRoots)
+        public RootsDialog(IEnumerable<string> current, IEnumerable<string> disabledRoots)
         {
             Caption = L.S("Where to look for projects", "Где искать проекты");
             ClientSize = new Size(820, 470);
@@ -122,11 +121,10 @@ namespace AbletonManager
         {
             string key = CountKey(root);
             if (!_counting.Add(key)) return;          // этот счёт уже идёт
-            bool backups = false;
 
             Thread t = new Thread(delegate ()
             {
-                int n = CountSets(root, backups);
+                int n = CountSets(root);
                 if (_closed) return;
                 try
                 {
@@ -189,10 +187,10 @@ namespace AbletonManager
         ///
         /// _closed — чтобы закрытый диалог не продолжал молотить диск в фоне.
         /// </summary>
-        int CountSets(string dir, bool includeBackups)
+        int CountSets(string dir)
         {
             if (!Directory.Exists(dir)) return -1;
-            FolderScan.Result r = FolderScan.Find(dir, ".als", includeBackups, null,
+            FolderScan.Result r = FolderScan.Find(dir, ".als", false, null,
                                                   delegate { return _closed; });
             return r.RootFailed ? -1 : r.Files;
         }

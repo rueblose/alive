@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Text;
@@ -12,7 +12,6 @@ namespace AbletonManager
         // Подмножество Roots, временно исключённое из сканирования — папка остаётся в
         // списке (и в UI), но Scan() её пропускает, пока сюда не вернут.
         public readonly List<string> DisabledRoots = new List<string>();
-        public bool IncludeBackups;
 
         /// <summary>
         /// Колонки списка сетов: видимость, порядок и ширины одной строкой вида
@@ -104,7 +103,6 @@ namespace AbletonManager
                     if (key == "root" && val.Length > 0 && !Has(s.Roots, val)) s.Roots.Add(val);
                     else if (key == "root_off" && val.Length > 0 && !Has(s.DisabledRoots, val))
                         s.DisabledRoots.Add(val);
-                    else if (key == "backups") s.IncludeBackups = val == "1";
                     else if (key == "setcolumns") s.SetColumns = val;
                     else if (key == "plugincolumns") s.PluginColumns = val;
                     else if (key == "pinnedfirst") s.PinnedFirst = val == "1";
@@ -141,7 +139,6 @@ namespace AbletonManager
                 sb.AppendLine("# Alive - folders to scan for projects");
                 foreach (string r in Roots) sb.Append("root=").AppendLine(r);
                 foreach (string r in DisabledRoots) sb.Append("root_off=").AppendLine(r);
-                sb.Append("backups=").AppendLine(IncludeBackups ? "1" : "0");
                 sb.Append("pinnedfirst=").AppendLine(PinnedFirst ? "1" : "0");
                 sb.Append("noglass=").AppendLine(DisableGlass ? "1" : "0");
                 sb.Append("groupbyfolder=").AppendLine(GroupByFolder ? "1" : "0");
