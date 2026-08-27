@@ -1,0 +1,18 @@
+# Binaries & Build Output
+bin/
+*.exe
+*.dll
+*.pdb
+
+# Temporary Scratch Files & Logs
+scratch/
+*.log
+*.tmp
+
+# IDE / Gemini / VS Code
+.gemini/
+.vs/
+.idea/
+.claude/
+*.user
+*.suo

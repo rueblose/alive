@@ -1,0 +1,475 @@
+using System;
+using System.Collections.Generic;
+using System.Drawing;
+using System.Windows.Forms;
+
+namespace AbletonManager
+{
+    /// <summary>
+    /// Все условия отбора в одном окне. Внизу всё время видно, сколько сетов проходит —
+    /// иначе набирать фильтры вслепую и каждый раз закрывать окно, чтобы узнать результат.
+    /// </summary>
+    public sealed class FiltersDialog : GlassDialog
+    {
+        readonly SetFilter _filter = new SetFilter();
+        readonly List<SetEntry> _sets;
+
+        readonly FieldBox _from = new FieldBox();
+        readonly FieldBox _to = new FieldBox();
+        readonly TagField _versions = new TagField();
+        readonly TagField _roots = new TagField();
+        readonly TagField _scales = new TagField();
+        readonly FieldBox _tracksMin = new FieldBox();
+        readonly FieldBox _tracksMax = new FieldBox();
+        readonly PillToggle _pluginsMissing = new PillToggle();
+        readonly PillToggle _pluginsAll = new PillToggle();
+
+        // Тег-поля показывают только то, что реально встречается в сетах, поэтому
+        // индекс пункта уже не равен значению — держим отдельную карту.
+        readonly List<int> _rootValues = new List<int>();    // -1 = «без тональности»
+        readonly List<int> _scaleValues = new List<int>();
+        readonly PillToggle _complete = new PillToggle();
+        readonly PillToggle _missing = new PillToggle();
+        readonly PillToggle _unreadable = new PillToggle();
+        readonly PillToggle _previewHasRenders = new PillToggle();
+        readonly PillToggle _previewNoRenders = new PillToggle();
+        readonly GlassButton _reset = new GlassButton();
+        readonly GlassButton _apply = new GlassButton();
+
+        readonly List<Rectangle> _labels = new List<Rectangle>();
+        readonly List<string> _labelTexts = new List<string>();
+        bool _laying;
+        int _matches;
+
+        /// <summary>Готовый набор условий — забирать после DialogResult.OK.</summary>
+        public SetFilter Result { get { return _filter; } }
+
+        public FiltersDialog(SetFilter current, List<SetEntry> sets, List<string> versions)
+        {
+            _sets = sets;
+            _filter.CopyFrom(current);
+            Caption = L.S("Filters", "Фильтры");
+            ClientSize = new Size(Sc(760), Sc(568));
+
+            _from.Box.Text = SetFilter.FormatDate(_filter.From);
+            _to.Box.Text = SetFilter.FormatDate(_filter.To);
+            _tracksMin.Box.Text = SetFilter.FormatCount(_filter.TracksMin);
+            _tracksMax.Box.Text = SetFilter.FormatCount(_filter.TracksMax);
+
+            foreach (FieldBox f in new FieldBox[] { _from, _to, _tracksMin, _tracksMax })
+            {
+                f.Box.TextChanged += delegate { Collect(); };
+                Controls.Add(f);
+            }
+            Cue(_from, L.S("from  2026-01", "с  2026-01"));
+            Cue(_to, L.S("to  2026-08-07", "по  2026-08-07"));
+            Cue(_tracksMin, L.S("min", "от"));
+            Cue(_tracksMax, L.S("max", "до"));
+
+            _versions.SetOptions(versions);
+            _versions.Placeholder = L.S("any version", "любая версия");
+            _versions.SetSelected(IndexesOf(versions, _filter.Versions));
+
+            BuildKeyOptions();
+            _roots.Placeholder = L.S("any root", "любая нота");
+            _roots.SetSelected(IndexesForValues(_rootValues, _filter.KeyRoots));
+
+            _scales.Placeholder = L.S("any scale", "любой лад");
+            _scales.SetSelected(IndexesForValues(_scaleValues, _filter.KeyScales));
+
+            foreach (TagField t in new TagField[] { _versions, _roots, _scales })
+            {
+                t.Changed += delegate { Collect(); LayoutRows(); };
+                Controls.Add(t);
+            }
+
+            // Две взаимоисключающие галки: «есть дыры» и «всё на месте».
+            _pluginsMissing.Text = L.S("some not installed", "есть неустановленные");
+            _pluginsMissing.Checked = _filter.PluginsMissingOnly;
+            _pluginsMissing.FitToText();
+            _pluginsMissing.CheckedChanged += delegate
+            {
+                if (_pluginsMissing.Checked) _pluginsAll.Checked = false;
+                Collect();
+            };
+            Controls.Add(_pluginsMissing);
+
+            _pluginsAll.Text = L.S("all installed", "все установлены");
+            _pluginsAll.Checked = _filter.PluginsAllInstalled;
+            _pluginsAll.FitToText();
+            _pluginsAll.CheckedChanged += delegate
+            {
+                if (_pluginsAll.Checked) _pluginsMissing.Checked = false;
+                Collect();
+            };
+            Controls.Add(_pluginsAll);
+
+            _complete.Text = L.S("complete", "всё на месте");
+            _missing.Text = L.S("missing files", "с потерями");
+            _unreadable.Text = L.S("unreadable", "не читается");
+            _complete.Checked = _filter.FilesComplete;
+            _missing.Checked = _filter.FilesMissing;
+            _unreadable.Checked = _filter.FilesUnreadable;
+            foreach (PillToggle p in new PillToggle[] { _complete, _missing, _unreadable })
+            {
+                p.FitToText();
+                p.CheckedChanged += delegate { Collect(); };
+                Controls.Add(p);
+            }
+
+            _previewHasRenders.Text = L.S("has renders", "есть рендеры");
+            _previewNoRenders.Text = L.S("no renders", "нет рендеров");
+            _previewHasRenders.Checked = _filter.PreviewHasRenders;
+            _previewNoRenders.Checked = _filter.PreviewNoRenders;
+            foreach (PillToggle p in new PillToggle[] { _previewHasRenders, _previewNoRenders })
+            {
+                p.FitToText();
+                p.CheckedChanged += delegate { Collect(); };
+                Controls.Add(p);
+            }
+
+            _reset.Text = L.S("Reset", "Сбросить");
+            _reset.Click += delegate { ResetAll(); };
+            _reset.FitToText(18);
+            Controls.Add(_reset);
+
+            _apply.Text = L.S("Apply", "Применить");
+            _apply.Primary = true;
+            _apply.Click += delegate { DialogResult = DialogResult.OK; Close(); };
+            _apply.FitToText(28);
+            Controls.Add(_apply);
+
+            Collect();
+        }
+
+        // Своя подсказка, а не системная EM_SETCUEBANNER — см. комментарий у FieldBox.Cue.
+        static void Cue(FieldBox f, string text) { f.Cue = text; f.Invalidate(); }
+
+        static List<int> IndexesOf(List<string> options, List<string> values)
+        {
+            List<int> res = new List<int>();
+            for (int i = 0; i < options.Count; i++)
+                if (values.Contains(options[i])) res.Add(i);
+            return res;
+        }
+
+        static List<int> IndexesForValues(List<int> optionValues, List<int> selected)
+        {
+            List<int> res = new List<int>();
+            for (int i = 0; i < optionValues.Count; i++)
+                if (selected.Contains(optionValues[i])) res.Add(i);
+            return res;
+        }
+
+        /// <summary>
+        /// В списки нот и ладов кладём только то, что реально встречается в сетах — иначе
+        /// приходится листать 35 ладов, из которых используются пять. Плюс отдельный
+        /// пункт «без тональности» для старых сетов, где её вообще нет.
+        /// </summary>
+        void BuildKeyOptions()
+        {
+            bool[] rootSeen = new bool[12];
+            bool[] scaleSeen = new bool[Scales.ScaleCount];
+            bool noKey = false;
+
+            if (_sets != null)
+                foreach (SetEntry s in _sets)
+                {
+                    if (s.ScaleRoot < 0) { noKey = true; continue; }
+                    if (s.ScaleRoot < 12) rootSeen[s.ScaleRoot] = true;
+                    if (s.ScaleIndex >= 0 && s.ScaleIndex < scaleSeen.Length) scaleSeen[s.ScaleIndex] = true;
+                }
+
+            bool anyKey = false;
+            for (int r = 0; r < 12; r++) if (rootSeen[r]) { anyKey = true; break; }
+
+            List<string> rootLabels = new List<string>();
+            _rootValues.Clear();
+            if (anyKey) { rootLabels.Add(L.S("(any key)", "(любая тональность)")); _rootValues.Add(-2); }
+            if (noKey) { rootLabels.Add(L.S("(no key)", "(без тональности)")); _rootValues.Add(-1); }
+            for (int r = 0; r < 12; r++)
+                if (rootSeen[r]) { rootLabels.Add(Scales.RootChoices[r]); _rootValues.Add(r); }
+            _roots.SetOptions(rootLabels);
+
+            List<string> scaleLabels = new List<string>();
+            _scaleValues.Clear();
+            for (int i = 0; i < scaleSeen.Length; i++)
+                if (scaleSeen[i]) { scaleLabels.Add(Scales.ScaleName(i)); _scaleValues.Add(i); }
+            _scales.SetOptions(scaleLabels);
+        }
+
+        // ------------------------------------------------------------------ данные
+
+        void Collect()
+        {
+            _filter.From = SetFilter.ParseDate(_from.Box.Text, false);
+            _filter.To = SetFilter.ParseDate(_to.Box.Text, true);
+
+            _filter.Versions.Clear();
+            foreach (int i in _versions.Selected) _filter.Versions.Add(_versions.Options[i]);
+
+            _filter.KeyRoots.Clear();
+            foreach (int i in _roots.Selected) _filter.KeyRoots.Add(_rootValues[i]);
+            _filter.KeyScales.Clear();
+            foreach (int i in _scales.Selected) _filter.KeyScales.Add(_scaleValues[i]);
+
+            _filter.TracksMin = SetFilter.ParseCount(_tracksMin.Box.Text);
+            _filter.TracksMax = SetFilter.ParseCount(_tracksMax.Box.Text);
+            _filter.PluginsMissingOnly = _pluginsMissing.Checked;
+            _filter.PluginsAllInstalled = _pluginsAll.Checked;
+
+            _filter.FilesComplete = _complete.Checked;
+            _filter.FilesMissing = _missing.Checked;
+            _filter.FilesUnreadable = _unreadable.Checked;
+
+            _filter.PreviewHasRenders = _previewHasRenders.Checked;
+            _filter.PreviewNoRenders = _previewNoRenders.Checked;
+
+            _matches = 0;
+            if (_sets != null)
+                foreach (SetEntry s in _sets) if (_filter.Matches(s)) _matches++;
+
+            UpdateFacets();
+            Invalidate();
+        }
+
+        void UpdateFacets()
+        {
+            if (_sets == null) return;
+
+            // 1. Versions
+            _versions.DisabledOptions.Clear();
+            HashSet<string> validVersions = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (SetEntry s in _sets)
+            {
+                if (_filter.Matches(s, ignoreVersions: true))
+                    if (!string.IsNullOrEmpty(s.ShortVersion)) validVersions.Add(s.ShortVersion);
+            }
+            for (int i = 0; i < _versions.Options.Count; i++)
+            {
+                if (!validVersions.Contains(_versions.Options[i]))
+                    _versions.DisabledOptions.Add(i);
+            }
+
+            // 2. Key Roots
+            _roots.DisabledOptions.Clear();
+            HashSet<int> validRoots = new HashSet<int>();
+            foreach (SetEntry s in _sets)
+            {
+                if (_filter.Matches(s, ignoreKeyRoots: true))
+                {
+                    validRoots.Add(s.ScaleRoot);
+                    if (s.ScaleRoot >= 0) validRoots.Add(-2); // любая тональность
+                }
+            }
+            for (int i = 0; i < _rootValues.Count; i++)
+            {
+                if (!validRoots.Contains(_rootValues[i]))
+                    _roots.DisabledOptions.Add(i);
+            }
+
+            // 3. Key Scales
+            _scales.DisabledOptions.Clear();
+            HashSet<int> validScales = new HashSet<int>();
+            foreach (SetEntry s in _sets)
+            {
+                if (_filter.Matches(s, ignoreKeyScales: true))
+                {
+                    if (s.ScaleIndex >= 0) validScales.Add(s.ScaleIndex);
+                }
+            }
+            for (int i = 0; i < _scaleValues.Count; i++)
+            {
+                if (!validScales.Contains(_scaleValues[i]))
+                    _scales.DisabledOptions.Add(i);
+            }
+
+            // 4. Plugins State Toggles
+            int countPluginsMissing = 0, countPluginsAll = 0;
+            foreach (SetEntry s in _sets)
+            {
+                if (_filter.Matches(s, ignorePluginsState: true))
+                {
+                    if (s.MissingPlugins > 0) countPluginsMissing++;
+                    if (s.MissingPlugins == 0) countPluginsAll++;
+                }
+            }
+            _pluginsMissing.Enabled = countPluginsMissing > 0 || _pluginsMissing.Checked;
+            _pluginsAll.Enabled = countPluginsAll > 0 || _pluginsAll.Checked;
+
+            // 5. File Integrity Toggles
+            int countComplete = 0, countFileMissing = 0, countUnreadable = 0;
+            foreach (SetEntry s in _sets)
+            {
+                if (_filter.Matches(s, ignoreFileState: true))
+                {
+                    bool unreadable = s.Error.Length > 0;
+                    bool missing = !unreadable && s.MissingFiles > 0;
+                    bool complete = !unreadable && !missing;
+                    if (complete) countComplete++;
+                    if (missing) countFileMissing++;
+                    if (unreadable) countUnreadable++;
+                }
+            }
+            _complete.Enabled = countComplete > 0 || _complete.Checked;
+            _missing.Enabled = countFileMissing > 0 || _missing.Checked;
+            _unreadable.Enabled = countUnreadable > 0 || _unreadable.Checked;
+
+            // 6. Render Preview Toggles
+            int countHasRenders = 0, countNoRenders = 0;
+            foreach (SetEntry s in _sets)
+            {
+                if (_filter.Matches(s, ignoreRenders: true))
+                {
+                    if (s.HasRenders) countHasRenders++;
+                    else countNoRenders++;
+                }
+            }
+            _previewHasRenders.Enabled = countHasRenders > 0 || _previewHasRenders.Checked;
+            _previewNoRenders.Enabled = countNoRenders > 0 || _previewNoRenders.Checked;
+        }
+
+        void ResetAll()
+        {
+            _from.Box.Text = ""; _to.Box.Text = "";
+            _tracksMin.Box.Text = ""; _tracksMax.Box.Text = "";
+            _pluginsMissing.Checked = false;
+            _pluginsAll.Checked = false;
+            _versions.SetSelected(new int[0]);
+            _roots.SetSelected(new int[0]);
+            _scales.SetSelected(new int[0]);
+            _complete.Checked = false; _missing.Checked = false; _unreadable.Checked = false;
+            _previewHasRenders.Checked = false; _previewNoRenders.Checked = false;
+            Collect();
+            LayoutRows();
+        }
+
+        // --------------------------------------------------------------- раскладка
+
+        protected override void OnResize(EventArgs e)
+        {
+            base.OnResize(e);
+            LayoutRows();
+        }
+
+        void LayoutRows()
+        {
+            if (_laying) return;
+            _laying = true;
+            try
+            {
+                _labels.Clear(); _labelTexts.Clear();
+
+                int pad = Sc(Theme.Pad);
+                int labelW = Sc(140);
+                int left = pad + labelW;
+                int right = ClientSize.Width - pad;
+                int fieldW = right - left;
+                int ch = Sc(Theme.ControlH);
+                int y = Sc(72);   // без пояснительной строки первому ряду хватает отступа от заголовка
+                int rowGap = Sc(14);
+
+                // дата
+                int half = (fieldW - Sc(10)) / 2;
+                Label(L.S("Modified", "Изменён"), pad, y, labelW);
+                _from.SetBounds(left, y, half, ch);
+                _to.SetBounds(left + half + Sc(10), y, half, ch);
+                y += ch + rowGap;
+
+                // версии
+                Label(L.S("Live version", "Версия Live"), pad, y, labelW);
+                y = TagRow(_versions, left, y, fieldW) + rowGap;
+
+                // тональность
+                Label(L.S("Key root", "Нота"), pad, y, labelW);
+                y = TagRow(_roots, left, y, fieldW) + rowGap;
+
+                Label(L.S("Scale", "Лад"), pad, y, labelW);
+                y = TagRow(_scales, left, y, fieldW) + rowGap;
+
+                // счётчики
+                int small = Sc(100);
+                Label(L.S("Tracks", "Треки"), pad, y, labelW);
+                _tracksMin.SetBounds(left, y, small, ch);
+                _tracksMax.SetBounds(left + small + Sc(10), y, small, ch);
+                y += ch + rowGap;
+
+                Label(L.S("Plugins", "Плагины"), pad, y, labelW);
+                _pluginsAll.Location = new Point(left, y);
+                _pluginsMissing.Location = new Point(_pluginsAll.Right + Sc(8), y);
+                y += ch + rowGap;
+
+                // состояние файлов
+                Label(L.S("Files", "Файлы"), pad, y, labelW);
+                int x = left;
+                foreach (PillToggle p in new PillToggle[] { _complete, _missing, _unreadable })
+                {
+                    p.Location = new Point(x, y);
+                    x += p.Width + Sc(8);
+                }
+                y += ch + rowGap;
+
+                // превью
+                Label(L.S("Preview", "Превью"), pad, y, labelW);
+                int px = left;
+                foreach (PillToggle p in new PillToggle[] { _previewHasRenders, _previewNoRenders })
+                {
+                    p.Location = new Point(px, y);
+                    px += p.Width + Sc(8);
+                }
+                y += ch + Sc(22);
+
+                int by = y + Sc(4);
+                _apply.Location = new Point(right - _apply.Width, by);
+                _reset.Location = new Point(_apply.Left - Sc(10) - _reset.Width, by);
+
+                int need = by + _apply.Height + pad;
+                if (ClientSize.Height != need) ClientSize = new Size(ClientSize.Width, need);
+                Invalidate();
+            }
+            finally { _laying = false; }
+        }
+
+        void Label(string text, int x, int y, int w)
+        {
+            _labelTexts.Add(text);
+            _labels.Add(new Rectangle(x, y, w - Sc(10), Sc(Theme.ControlH)));
+        }
+
+        int TagRow(TagField t, int x, int y, int w)
+        {
+            t.SetBounds(x, y, w, Sc(Theme.ControlH));
+            int h = t.Relayout();
+            t.Height = h;
+            return y + h;
+        }
+
+        // -------------------------------------------------------------- отрисовка
+
+        protected override void OnPaint(PaintEventArgs e)
+        {
+            base.OnPaint(e);
+            Graphics g = e.Graphics;
+
+            for (int i = 0; i < _labels.Count; i++)
+                Chrome.DrawText(g, _labelTexts[i], Theme.FBody, _labels[i], Theme.TextDim, Chrome.Left);
+
+            string count = _matches + L.S(" sets match", " сетов подходит");
+            Chrome.DrawText(g, count, Theme.FBody,
+                new Rectangle(Sc(Theme.Pad), _apply.Top, Math.Max(0, _reset.Left - Sc(40)), _apply.Height),
+                _matches == 0 ? Theme.Red : Theme.TextDim, Chrome.Left);
+        }
+
+        protected override void OnKeyDown(KeyEventArgs e)
+        {
+            if (e.KeyCode == Keys.Enter)
+            {
+                DialogResult = DialogResult.OK;
+                Close();
+                e.Handled = e.SuppressKeyPress = true;
+                return;
+            }
+            base.OnKeyDown(e);
+        }
+    }
+}
