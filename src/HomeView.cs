@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.Threading;
@@ -129,7 +129,7 @@ namespace AbletonManager
         int _dragOffset;
         int _hot = -1;
         bool _playHot, _pinHot, _allHot;
-        bool _showAllRecent;
+        bool _showAllRecent = true;
         SetEntry _selected;
 
         Rectangle BarRect()
@@ -622,8 +622,19 @@ namespace AbletonManager
             if (_contentHeight <= Height) return;
             _scrollTarget -= (int)(e.Delta / 120f * Sc(90));
             ClampScrollTarget();
-            _scrolling = true;
-            if (!_scrollTimer.Enabled) _scrollTimer.Start();
+            if (!Theme.SmoothScroll)
+            {
+                _scroll = (int)_scrollTarget;
+                _scrollCurrent = _scrollTarget;
+                ClampScroll();
+                _scrolling = false;
+                Invalidate();
+            }
+            else
+            {
+                _scrolling = true;
+                if (!_scrollTimer.Enabled) _scrollTimer.Start();
+            }
             base.OnMouseWheel(e);
         }
 
@@ -784,16 +795,25 @@ namespace AbletonManager
 
         protected override void OnMouseDoubleClick(MouseEventArgs e)
         {
-            // Если только что открепили/закрепили проект, второй клик двойного щелчка
-            // — это либо повторный клик открепления, либо прилетает в переехавшую плитку.
-            // Открывать проект или запускать Live в этом случае нельзя.
+            bool play, pin;
+            int hit = TileAt(e.Location, out play, out pin);
+            if (hit >= 0 && (play || pin))
+            {
+                OnMouseDown(e);
+                base.OnMouseDoubleClick(e);
+                return;
+            }
+            if (_allHot)
+            {
+                OnMouseDown(e);
+                base.OnMouseDoubleClick(e);
+                return;
+            }
+
             if (Math.Abs(Environment.TickCount - _lastPinTime) < SystemInformation.DoubleClickTime + 150)
                 return;
 
-            bool play, pin;
-            int hit = TileAt(e.Location, out play, out pin);
-            // По кнопкам внутри плитки двойной клик не должен ещё и открывать Live.
-            if (hit >= 0 && !play && !pin)
+            if (hit >= 0)
             {
                 if (_tiles[hit].IsNewProject)
                 {

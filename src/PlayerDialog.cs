@@ -820,6 +820,18 @@ namespace AbletonManager
         protected override void OnMouseMove(MouseEventArgs e) { if (_drag) Grab(e.X); base.OnMouseMove(e); }
         protected override void OnMouseUp(MouseEventArgs e) { _drag = false; base.OnMouseUp(e); }
 
+        protected override void OnMouseWheel(MouseEventArgs e)
+        {
+            if (e.Delta != 0)
+            {
+                int steps = e.Delta / 120;
+                if (steps == 0) steps = e.Delta > 0 ? 1 : -1;
+                float newVal = (float)Math.Round((_value + steps * 0.05f) / 0.05f) * 0.05f;
+                Value = Math.Max(0f, Math.Min(1f, newVal));
+            }
+            base.OnMouseWheel(e);
+        }
+
         protected override void OnPaint(PaintEventArgs e)
         {
             Graphics g = e.Graphics;

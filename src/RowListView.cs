@@ -70,10 +70,11 @@ namespace AbletonManager
         readonly List<RowData> _rows = new List<RowData>();
         readonly List<Column> _columns = new List<Column>();
 
-        int _scroll, _hot = -1, _selected = -1;
-        bool _draggingBar;
-        int _dragOffset;
+        int _scroll, _scrollX, _hot = -1, _selected = -1;
+        bool _draggingBar, _draggingHBar;
+        int _dragOffset, _dragHOffset;
         float _scrollTarget, _scrollCurrent;
+        float _scrollXTarget, _scrollXCurrent;
         readonly Timer _scrollTimer;
         float[] _rowHoverFactors;
         float[] _rowEntrance;
@@ -361,10 +362,13 @@ namespace AbletonManager
             _rows.Clear();
             _rows.AddRange(rows);
             _scroll = 0;
+            _scrollX = 0;
             _scrollTarget = _scrollCurrent = 0;
+            _scrollXTarget = _scrollXCurrent = 0;
             _selected = -1;
             _hot = -1;
             ClampScroll();
+            ClampScrollX();
 
             if (animate) { TriggerEntrance(); return; }
 
@@ -416,6 +420,31 @@ namespace AbletonManager
             }
         }
 
+        public int ScrollOffsetX
+        {
+            get { return _scrollX; }
+            set
+            {
+                _scrollX = value;
+                ClampScrollX();
+                _scrollXTarget = _scrollXCurrent = _scrollX;
+                Invalidate();
+            }
+        }
+
+        public int MaxHScroll
+        {
+            get
+            {
+                int[] widths = ComputeWidths();
+                if (widths.Length <= 1) return 0;
+                int scrollableW = 0;
+                for (int c = 1; c < widths.Length; c++) scrollableW += widths[c];
+                int visibleScrollableW = Width - (LeftX + widths[0]) - PadX;
+                return Math.Max(0, scrollableW - visibleScrollableW);
+            }
+        }
+
         int ContentHeight { get { return _rows.Count * RowHeight + Sc(8) + HeaderHeight; } }
 
         void ClampScroll()
@@ -425,14 +454,168 @@ namespace AbletonManager
             if (_scroll < 0) _scroll = 0;
         }
 
-        protected override void OnResize(EventArgs e) { ClampScroll(); base.OnResize(e); }
+        void ClampScrollX()
+        {
+            int max = MaxHScroll;
+            if (_scrollX > max) _scrollX = max;
+            if (_scrollX < 0) _scrollX = 0;
+        }
+
+        protected override void OnResize(EventArgs e)
+        {
+            ClampScroll();
+            ClampScrollX();
+            base.OnResize(e);
+        }
+
+        int GetSnapTarget(int direction)
+        {
+            int[] widths = ComputeWidths();
+            if (widths.Length <= 1) return 0;
+
+            int maxScroll = MaxHScroll;
+            if (maxScroll <= 0) return 0;
+
+            List<int> snapOffsets = new List<int>();
+            int acc = 0;
+            snapOffsets.Add(0);
+            for (int c = 1; c < widths.Length - 1; c++)
+            {
+                acc += widths[c];
+                if (acc >= maxScroll)
+                {
+                    snapOffsets.Add(maxScroll);
+                    break;
+                }
+                snapOffsets.Add(acc);
+            }
+            if (!snapOffsets.Contains(maxScroll))
+                snapOffsets.Add(maxScroll);
+
+            int current = (int)Math.Round(_scrollXTarget);
+
+            if (direction > 0) // Вправо к следующей колонке
+            {
+                for (int i = 0; i < snapOffsets.Count; i++)
+                {
+                    if (snapOffsets[i] > current + 2)
+                        return snapOffsets[i];
+                }
+                return maxScroll;
+            }
+            else // Влево к предыдущей колонке
+            {
+                for (int i = snapOffsets.Count - 1; i >= 0; i--)
+                {
+                    if (snapOffsets[i] < current - 2)
+                        return snapOffsets[i];
+                }
+                return 0;
+            }
+        }
+
+        int GetNearestSnapTarget(int target)
+        {
+            int[] widths = ComputeWidths();
+            if (widths.Length <= 1) return 0;
+            int maxScroll = MaxHScroll;
+            if (maxScroll <= 0) return 0;
+
+            List<int> snapOffsets = new List<int>();
+            int acc = 0;
+            snapOffsets.Add(0);
+            for (int c = 1; c < widths.Length - 1; c++)
+            {
+                acc += widths[c];
+                if (acc >= maxScroll)
+                {
+                    snapOffsets.Add(maxScroll);
+                    break;
+                }
+                snapOffsets.Add(acc);
+            }
+            if (!snapOffsets.Contains(maxScroll))
+                snapOffsets.Add(maxScroll);
+
+            int closest = snapOffsets[0];
+            int minDist = Math.Abs(target - closest);
+            for (int i = 1; i < snapOffsets.Count; i++)
+            {
+                int dist = Math.Abs(target - snapOffsets[i]);
+                if (dist < minDist)
+                {
+                    minDist = dist;
+                    closest = snapOffsets[i];
+                }
+            }
+            return closest;
+        }
 
         protected override void OnMouseWheel(MouseEventArgs e)
         {
-            _scrollTarget -= (int)(e.Delta / 120f * RowHeight * 3);
-            ClampScrollTarget();
-            if (!_scrollTimer.Enabled) _scrollTimer.Start();
+            bool isShift = (ModifierKeys & Keys.Shift) == Keys.Shift;
+            if (isShift)
+            {
+                int steps = e.Delta / 120;
+                if (steps == 0) steps = e.Delta > 0 ? 1 : -1;
+                int direction = steps < 0 ? 1 : -1;
+                int count = Math.Abs(steps);
+                for (int s = 0; s < count; s++)
+                {
+                    _scrollXTarget = GetSnapTarget(direction);
+                }
+                ClampScrollXTarget();
+                _scrollX = (int)_scrollXTarget;
+                _scrollXCurrent = _scrollXTarget;
+                ClampScrollX();
+                Invalidate();
+            }
+            else
+            {
+                _scrollTarget -= (int)(e.Delta / 120f * RowHeight * 3);
+                ClampScrollTarget();
+                if (!Theme.SmoothScroll)
+                {
+                    _scroll = (int)_scrollTarget;
+                    _scrollCurrent = _scrollTarget;
+                    ClampScroll();
+                    Invalidate();
+                }
+                else
+                {
+                    if (!_scrollTimer.Enabled) _scrollTimer.Start();
+                }
+            }
             base.OnMouseWheel(e);
+        }
+
+        const int WM_MOUSEHWHEEL = 0x020E;
+
+        protected override void WndProc(ref Message m)
+        {
+            if (m.Msg == WM_MOUSEHWHEEL)
+            {
+                short delta = (short)((m.WParam.ToInt64() >> 16) & 0xFFFF);
+                if (delta != 0)
+                {
+                    int steps = delta / 120;
+                    if (steps == 0) steps = delta > 0 ? 1 : -1;
+                    int direction = steps > 0 ? 1 : -1;
+                    int count = Math.Abs(steps);
+                    for (int s = 0; s < count; s++)
+                    {
+                        _scrollXTarget = GetSnapTarget(direction);
+                    }
+                    ClampScrollXTarget();
+                    _scrollX = (int)_scrollXTarget;
+                    _scrollXCurrent = _scrollXTarget;
+                    ClampScrollX();
+                    Invalidate();
+                }
+                m.Result = IntPtr.Zero;
+                return;
+            }
+            base.WndProc(ref m);
         }
 
         void ClampScrollTarget()
@@ -442,15 +625,29 @@ namespace AbletonManager
             if (_scrollTarget < 0) _scrollTarget = 0;
         }
 
+        void ClampScrollXTarget()
+        {
+            int max = MaxHScroll;
+            if (_scrollXTarget > max) _scrollXTarget = max;
+            if (_scrollXTarget < 0) _scrollXTarget = 0;
+        }
+
         void ScrollTick()
         {
             _scrollCurrent += (_scrollTarget - _scrollCurrent) * 0.35f;
-            if (Math.Abs(_scrollTarget - _scrollCurrent) < 0.5f)
+            _scrollX = (int)_scrollXTarget;
+            _scrollXCurrent = _scrollXTarget;
+
+            bool vDone = Math.Abs(_scrollTarget - _scrollCurrent) < 0.5f;
+
+            if (vDone)
             {
                 _scrollCurrent = _scrollTarget;
                 _scrollTimer.Stop();
             }
+
             int newScroll = (int)Math.Round(_scrollCurrent);
+
             if (newScroll != _scroll)
             {
                 _scroll = newScroll;
@@ -476,6 +673,24 @@ namespace AbletonManager
             int max = Math.Max(1, content - Height);
             int y = HeaderHeight + Sc(5) + (int)((track - h) * (_scroll / (float)max));
             return new Rectangle(Width - Sc(8), y, Sc(4), h);
+        }
+
+        Rectangle HBarRect()
+        {
+            int max = MaxHScroll;
+            if (max <= 0) return Rectangle.Empty;
+            int[] widths = ComputeWidths();
+            int startX = LeftX + widths[0] + Sc(5);
+            int track = Width - startX - Sc(10);
+            if (track <= Sc(20)) return Rectangle.Empty;
+
+            int totalScrollableW = 0;
+            for (int c = 1; c < widths.Length; c++) totalScrollableW += widths[c];
+            int visibleW = Width - (LeftX + widths[0]) - PadX;
+
+            int w = Math.Max(Sc(30), (int)(track * (float)visibleW / Math.Max(1, totalScrollableW)));
+            int x = startX + (int)((track - w) * (_scrollX / (float)max));
+            return new Rectangle(x, Height - Sc(6), w, Sc(4));
         }
 
         protected override void OnMouseMove(MouseEventArgs e)
@@ -515,6 +730,21 @@ namespace AbletonManager
                 _scroll = (int)(t * max);
                 _scrollTarget = _scrollCurrent = _scroll;
                 ClampScroll();
+                Invalidate();
+                return;
+            }
+
+            if (_draggingHBar)
+            {
+                int[] widths = ComputeWidths();
+                int startX = LeftX + widths[0] + Sc(5);
+                int track = Width - startX - Sc(10);
+                Rectangle hbar = HBarRect();
+                int max = MaxHScroll;
+                float t = (e.X - _dragHOffset - startX) / (float)Math.Max(1, track - hbar.Width);
+                _scrollX = (int)Math.Max(0, Math.Min(max, t * max));
+                _scrollXTarget = _scrollXCurrent = _scrollX;
+                ClampScrollX();
                 Invalidate();
                 return;
             }
@@ -568,11 +798,12 @@ namespace AbletonManager
         int DropIndexAt(int px)
         {
             int[] widths = ComputeWidths();
-            int x = LeftX;
-            for (int c = 0; c < _columns.Count; c++)
+            if (_columns.Count == 0) return 0;
+            if (px < LeftX + widths[0]) return 0;
+            for (int c = 1; c < _columns.Count; c++)
             {
+                int x = ColX(widths, c);
                 if (px < x + widths[c] / 2) return c;
-                x += widths[c];
             }
             return _columns.Count;
         }
@@ -585,11 +816,18 @@ namespace AbletonManager
         int GripAt(int px, int[] widths)
         {
             if (!ColumnsConfigurable) return -1;
-            int x = LeftX;
-            for (int c = 0; c < _columns.Count; c++)
+            if (_columns.Count > 0)
             {
-                if (_columns[c].Width > 0 && Math.Abs(px - x) <= Sc(4)) return c;
-                x += widths[c];
+                int edge0 = LeftX + widths[0];
+                if (Math.Abs(px - edge0) <= Sc(4)) return 0;
+            }
+            for (int c = 1; c < _columns.Count; c++)
+            {
+                if (_columns[c].Width > 0)
+                {
+                    int x = ColX(widths, c);
+                    if (x >= LeftX + widths[0] - Sc(2) && Math.Abs(px - x) <= Sc(4)) return c;
+                }
             }
             return -1;
         }
@@ -597,30 +835,31 @@ namespace AbletonManager
         void DoResize(int mouseX)
         {
             int[] widths = ComputeWidths();
-
-            // Правый край колонки прижат к правому краю списка и при перетаскивании
-            // не двигается; новую ширину задаёт положение левого края под курсором.
-            int rightX = LeftX;
-            for (int c = 0; c <= _resizeCol; c++) rightX += widths[c];
-            int newScaled = rightX - mouseX;
-
-            // Колонка не схлопывается, и у тянущейся колонки имени остаётся минимум места.
-            int minW = Sc(48);
-            bool hasFlex = false;
-            int otherFixed = 0;
-            for (int c = 0; c < _columns.Count; c++)
-            {
-                if (_columns[c].Width == 0) hasFlex = true;
-                else if (c != _resizeCol) otherFixed += widths[c];
-            }
-            int maxW = Width - LeftX - PadX - otherFixed - (hasFlex ? Sc(80) : 0);
-            if (maxW < minW) maxW = minW;
-            if (newScaled < minW) newScaled = minW;
-            if (newScaled > maxW) newScaled = maxW;
-
-            // В настройках ширина логическая (96 dpi) — так она переживает смену монитора.
             float scale = DeviceDpi / 96f;
-            _columns[_resizeCol].Width = Math.Max(1, (int)Math.Round(newScaled / scale));
+
+            if (_resizeCol == 0 && _columns.Count > 0)
+            {
+                int newScaled = mouseX - LeftX;
+                int minW = Sc(100);
+                int maxW = Width - LeftX - PadX - Sc(100);
+                if (maxW < minW) maxW = minW;
+                if (newScaled < minW) newScaled = minW;
+                if (newScaled > maxW) newScaled = maxW;
+                _columns[0].Width = Math.Max(1, (int)Math.Round(newScaled / scale));
+            }
+            else if (_resizeCol > 0 && _resizeCol < _columns.Count)
+            {
+                int rightX = ColX(widths, _resizeCol) + widths[_resizeCol];
+                int newScaled = rightX - mouseX;
+
+                int minW = Sc(48);
+                int maxW = Width - LeftX - PadX - Sc(80);
+                if (maxW < minW) maxW = minW;
+                if (newScaled < minW) newScaled = minW;
+                if (newScaled > maxW) newScaled = maxW;
+
+                _columns[_resizeCol].Width = Math.Max(1, (int)Math.Round(newScaled / scale));
+            }
             Invalidate();
         }
 
@@ -656,12 +895,15 @@ namespace AbletonManager
 
         int ColumnAt(int px)
         {
+            if (_columns.Count == 0) return -1;
             int[] widths = ComputeWidths();
-            int x = LeftX;
-            for (int c = 0; c < _columns.Count; c++)
+            if (px < LeftX) return -1;
+            if (px < LeftX + widths[0]) return 0;
+
+            for (int c = 1; c < _columns.Count; c++)
             {
+                int x = ColX(widths, c);
                 if (px >= x && px < x + widths[c]) return c;
-                x += widths[c];
             }
             return -1;
         }
@@ -706,6 +948,15 @@ namespace AbletonManager
             {
                 _draggingBar = true;
                 _dragOffset = e.Y - bar.Y;
+                return;
+            }
+
+            Rectangle hbar = HBarRect();
+            if (!hbar.IsEmpty &&
+                new Rectangle(hbar.X, hbar.Y - Sc(4), hbar.Width, hbar.Height + Sc(6)).Contains(e.Location))
+            {
+                _draggingHBar = true;
+                _dragHOffset = e.X - hbar.X;
                 return;
             }
 
@@ -801,6 +1052,13 @@ namespace AbletonManager
             }
 
             _draggingBar = false;
+            if (_draggingHBar)
+            {
+                _draggingHBar = false;
+                _scrollXTarget = GetNearestSnapTarget(_scrollX);
+                ClampScrollXTarget();
+                if (!_scrollTimer.Enabled) _scrollTimer.Start();
+            }
             base.OnMouseUp(e);
         }
 
@@ -815,7 +1073,13 @@ namespace AbletonManager
         protected override void OnMouseDoubleClick(MouseEventArgs e)
         {
             int idx = RowAt(e.Y);
-            if (idx < 0 || OnRowAccessory(idx, e.Location))
+            if (idx >= 0 && OnRowAccessory(idx, e.Location))
+            {
+                OnMouseDown(e);
+                base.OnMouseDoubleClick(e);
+                return;
+            }
+            if (idx < 0)
             {
                 base.OnMouseDoubleClick(e);
                 return;
@@ -936,7 +1200,13 @@ namespace AbletonManager
             }
             int available = Width - LeftX - PadX - fixedTotal;
             for (int i = 0; i < _columns.Count; i++)
-                if (_columns[i].Width == 0) w[i] = Math.Max(Sc(80), available / Math.Max(1, flexCount));
+            {
+                if (_columns[i].Width == 0)
+                {
+                    int minW = i == 0 ? Sc(220) : Sc(80);
+                    w[i] = Math.Max(minW, available / Math.Max(1, flexCount));
+                }
+            }
             return w;
         }
 
@@ -950,6 +1220,9 @@ namespace AbletonManager
             int rowH = RowHeight;
             int pillH = Sc(Theme.RowPillH);
 
+            int scrollLeft = LeftX + widths[0];
+            int scrollWidth = Math.Max(0, Width - scrollLeft);
+
             // Пока ручки колонок проявляются/гаснут, таймер дёргает Invalidate только
             // по прямоугольнику шапки — тело списка в клип не попадает и всё равно
             // отсекается, так что весь проход по строкам ниже можно пропустить.
@@ -957,8 +1230,7 @@ namespace AbletonManager
 
             if (!headerOnly)
             {
-                Region oldClip = g.Clip;
-                g.SetClip(new Rectangle(0, HeaderHeight, Width, Math.Max(0, Height - HeaderHeight)));
+                Region baseClip = g.Clip;
 
                 // Прямоугольники хвостиков «+N» собираем заново за каждый полный проход:
                 // строки уехали прокруткой, и вчерашние координаты кликать нельзя.
@@ -967,7 +1239,11 @@ namespace AbletonManager
                 Array.Clear(_countHit, 0, _countHit.Length);
 
                 int first = Math.Max(0, (_scroll - Sc(8)) / rowH);
-                for (int i = first; i < _rows.Count; i++)
+                int last = Math.Min(_rows.Count - 1, (_scroll + Height + Sc(8)) / rowH);
+
+                // 1. Проход: фон строк (пилюли выделения и ховера) на всю ширину
+                g.SetClip(new Rectangle(0, HeaderHeight, Width, Math.Max(0, Height - HeaderHeight)));
+                for (int i = first; i <= last; i++)
                 {
                     int top = HeaderHeight + i * rowH - _scroll;
                     if (top > Height) break;
@@ -978,8 +1254,6 @@ namespace AbletonManager
                     int offsetY = (int)Math.Round((1.0f - entrance) * Sc(18));
                     int topAnim = top + offsetY;
 
-                    RowData row = _rows[i];
-
                     Rectangle pill = new Rectangle(0, topAnim + (rowH - pillH) / 2, Width, pillH);
                     float hoverFactor = (_rowHoverFactors != null && i < _rowHoverFactors.Length) ? _rowHoverFactors[i] : (i == _hot ? 1f : 0f);
 
@@ -989,111 +1263,99 @@ namespace AbletonManager
                         Color c = Color.FromArgb((int)Math.Round(hoverFactor * Theme.RowHover.A * entrance), Theme.RowHover);
                         Theme.FillRound(g, pill, pillH / 2f, c);
                     }
+                }
 
-                    if (ShowCheckboxes) PaintCheckbox(g, topAnim, rowH, row.Checked);
-                    if (ShowPinIndicator && (row.Pinned || i == _hot))
-                        PaintPin(g, topAnim, rowH, i == _pinHot, row.Pinned);
-                    if (ShowPlayButton && row.CanPlay)
-                        PaintPlay(g, topAnim, rowH, i == _playHot,
-                                  Playing && PlayingTag != null && ReferenceEquals(PlayingTag, row.Tag));
+                // 2. Проход: прокручиваемые колонки (с 1 по N-1), строго обрезанные границей scrollLeft
+                if (_columns.Count > 1 && scrollWidth > 0)
+                {
+                    g.SetClip(new Rectangle(scrollLeft, HeaderHeight, scrollWidth, Math.Max(0, Height - HeaderHeight)));
 
-                    // Выключенная строка (чекбокс снят) читается приглушённой — сама по себе,
-                    // без нужды лезть в глаза, пока не включена обратно.
-                    bool dim = ShowCheckboxes && !row.Checked;
-
-                    // У выделенной строки приглушённые ячейки читаются в полную силу:
-                    // выделение — это «сейчас смотрим сюда», и дата с темпом там нужны
-                    // так же, как имя. Шрифт при этом не меняется — только цвет, иначе
-                    // строка дёргалась бы по ширине от одного щелчка по ней.
-                    bool bright = i == _selected;
-
-                    int x = LeftX;
-                    for (int c = 0; c < _columns.Count && c < row.Cells.Length; c++)
+                    for (int i = first; i <= last; i++)
                     {
-                        Column col = _columns[c];
-                        Font f = col.Font ?? Theme.FBody;
-                        Color color = dim ? Theme.TextDim
-                                          : (col.Color ?? (c == 0 || bright ? Theme.Text : Theme.TextDim));
-                        if (entrance < 1.0f) color = Color.FromArgb((int)Math.Round(color.A * entrance), color);
+                        int top = HeaderHeight + i * rowH - _scroll;
+                        if (top > Height) break;
 
-                        // Версия под раскрытой строкой отступает в колонке имени, а прямо
-                        // в этом отступе — короткий рельс: только у дочерних строк и только
-                        // рядом с текстом, а не через всю строку, — как «|» перед именем в
-                        // дереве файлов.
-                        bool childHere = row.ChildRow && col.Id == "Set";
-                        int indent = childHere ? Sc(20) : 0;
-                        if (childHere)
+                        float entrance = (_rowEntrance != null && i < _rowEntrance.Length) ? _rowEntrance[i] : 1.0f;
+                        if (entrance <= 0.001f) continue;
+
+                        int offsetY = (int)Math.Round((1.0f - entrance) * Sc(18));
+                        int topAnim = top + offsetY;
+                        RowData row = _rows[i];
+                        bool dim = ShowCheckboxes && !row.Checked;
+                        bool bright = i == _selected;
+
+                        for (int c = 1; c < _columns.Count && c < row.Cells.Length; c++)
                         {
-                            Rectangle rail = new Rectangle(x + Sc(6), topAnim + Sc(4), Sc(2), rowH - Sc(8));
-                            Color railColor = Color.FromArgb((int)Math.Round(120 * entrance), Theme.TextDim);
-                            g.FillRectangle(Theme.GetBrush(railColor), rail);
+                            int cx = ColX(widths, c);
+                            if (cx < scrollLeft || cx >= Width) continue;
+                            PaintCell(g, widths, topAnim, rowH, entrance, dim, bright, row, c, false, i);
                         }
-                        Rectangle cr = new Rectangle(x + indent, topAnim, Math.Max(0, widths[c] - Sc(10) - indent), rowH);
-                        if (col.Chips) PaintChips(g, cr, row.Cells[c], color);
-                        else
+
+                        foreach (CellMark m in row.Marks)
                         {
-                            string cellText = row.Cells[c];
-                            int plusIdx = !col.Right ? CountAt(cellText) : -1;
-                            if (plusIdx > 0)
+                            if (m.Column >= 1)
                             {
-                                string mainText = cellText.Substring(0, plusIdx);
-                                string countText = cellText.Substring(plusIdx + CountSep.Length);
-
-                                // Под курсором хвостик светлеет — иначе о том, что по нему
-                                // можно щёлкнуть и раскрыть версии, никто не догадается.
-                                Color countColor = i == _countHot ? Theme.Text : Theme.TextDim;
-                                if (entrance < 1.0f) countColor = Color.FromArgb((int)Math.Round(countColor.A * entrance), countColor);
-
-                                Size countSz = TextRenderer.MeasureText(countText, f);
-                                Size mainSz = TextRenderer.MeasureText(mainText, f);
-
-                                int countX = cr.X + mainSz.Width - Sc(4);
-                                if (countX + countSz.Width <= cr.Right)
-                                {
-                                    Rectangle mainR = new Rectangle(cr.X, cr.Y, mainSz.Width, cr.Height);
-                                    Chrome.DrawText(g, mainText, f, mainR, color, Chrome.Left);
-
-                                    Rectangle countR = new Rectangle(countX, cr.Y, Math.Max(0, cr.Right - countX), cr.Height);
-                                    Chrome.DrawText(g, countText, f, countR, countColor, Chrome.Left);
-                                    RememberCount(i, countX, cr.Y, countSz.Width, cr.Height);
-                                }
-                                else
-                                {
-                                    int maxMainW = Math.Max(0, cr.Width - countSz.Width - Sc(4));
-                                    Rectangle mainR = new Rectangle(cr.X, cr.Y, maxMainW, cr.Height);
-                                    Chrome.DrawText(g, mainText, f, mainR, color, Chrome.Left);
-
-                                    int cX = cr.X + maxMainW + Sc(4);
-                                    if (cX < cr.Right)
-                                    {
-                                        Rectangle countR = new Rectangle(cX, cr.Y, Math.Max(0, cr.Right - cX), cr.Height);
-                                        Chrome.DrawText(g, countText, f, countR, countColor, Chrome.Left);
-                                        RememberCount(i, cX, cr.Y, Math.Min(countSz.Width, cr.Right - cX), cr.Height);
-                                    }
-                                }
-                            }
-                            else
-                            {
-                                Chrome.DrawText(g, row.Cells[c], f, cr, color,
-                                               col.Right ? Chrome.Right : Chrome.Left);
+                                int mx = ColX(widths, m.Column);
+                                if (mx < scrollLeft || mx >= Width) continue;
+                                PaintMark(g, widths, topAnim, rowH, m);
                             }
                         }
-                        x += widths[c];
-                    }
-
-                    foreach (CellMark m in row.Marks) PaintMark(g, widths, top, rowH, m);
-
-                    // Граница между закреплёнными и остальными: волосяная линия в тот же
-                    // цвет, что и прочие линейки, во всю ширину списка.
-                    if (i == GroupSeparatorAfter)
-                    {
-                        int sy = top + rowH - 1;
-                        using (Pen sep = new Pen(Theme.Hairline))
-                            g.DrawLine(sep, PadX, sy, Width - PadX, sy);
                     }
                 }
 
-                g.Clip = oldClip;
+                // 3. Проход: закреплённая колонка имени (0) и гутеры слева (0 .. scrollLeft)
+                {
+                    g.SetClip(new Rectangle(0, HeaderHeight, scrollLeft, Math.Max(0, Height - HeaderHeight)));
+
+                    for (int i = first; i <= last; i++)
+                    {
+                        int top = HeaderHeight + i * rowH - _scroll;
+                        if (top > Height) break;
+
+                        float entrance = (_rowEntrance != null && i < _rowEntrance.Length) ? _rowEntrance[i] : 1.0f;
+                        if (entrance <= 0.001f) continue;
+
+                        int offsetY = (int)Math.Round((1.0f - entrance) * Sc(18));
+                        int topAnim = top + offsetY;
+                        RowData row = _rows[i];
+                        bool dim = ShowCheckboxes && !row.Checked;
+                        bool bright = i == _selected;
+
+                        if (ShowCheckboxes) PaintCheckbox(g, topAnim, rowH, row.Checked);
+                        if (ShowPinIndicator && (row.Pinned || i == _hot))
+                            PaintPin(g, topAnim, rowH, i == _pinHot, row.Pinned);
+                        if (ShowPlayButton && row.CanPlay)
+                            PaintPlay(g, topAnim, rowH, i == _playHot,
+                                      Playing && PlayingTag != null && ReferenceEquals(PlayingTag, row.Tag));
+
+                        if (_columns.Count > 0 && row.Cells.Length > 0)
+                        {
+                            PaintCell(g, widths, topAnim, rowH, entrance, dim, bright, row, 0, i == _countHot, i);
+                        }
+
+                        foreach (CellMark m in row.Marks)
+                        {
+                            if (m.Column == 0) PaintMark(g, widths, topAnim, rowH, m);
+                        }
+
+                        // Граница между закреплёнными и остальными
+                        if (i == GroupSeparatorAfter)
+                        {
+                            int sy = top + rowH - 1;
+                            using (Pen sep = new Pen(Theme.Hairline))
+                                g.DrawLine(sep, PadX, sy, Width - PadX, sy);
+                        }
+                    }
+                }
+
+                g.Clip = baseClip;
+
+                // 4. Тонкий вертикальный разделитель между закреплённой колонкой и прокручиваемой областью
+                if (_scrollX > 0 && _columns.Count > 1)
+                {
+                    using (Pen divPen = new Pen(Color.FromArgb(40, Theme.Hairline)))
+                        g.DrawLine(divPen, scrollLeft - 1, HeaderHeight, scrollLeft - 1, Height);
+                }
 
                 // Нижние строки растворяются в фоне — список не обрывается ровным срезом.
                 // На стекле это гасим целиком, см. комментарий у FadeBottom.
@@ -1115,17 +1377,100 @@ namespace AbletonManager
                 Rectangle bar = BarRect();
                 if (!bar.IsEmpty && (Hot || _draggingBar))
                     Theme.FillRound(g, bar, bar.Width / 2f, Theme.SurfacePressed);
+
+                Rectangle hbar = HBarRect();
+                if (!hbar.IsEmpty && (Hot || _draggingHBar || _scrollX > 0))
+                    Theme.FillRound(g, hbar, hbar.Height / 2f, Theme.SurfacePressed);
             }
         }
 
+        void PaintCell(Graphics g, int[] widths, int topAnim, int rowH, float entrance, bool dim, bool bright, RowData row, int c, bool countHot, int rowIndex)
+        {
+            Column col = _columns[c];
+            Font f = col.Font ?? Theme.FBody;
+            Color color = dim ? Theme.TextDim
+                              : (col.Color ?? (c == 0 || bright ? Theme.Text : Theme.TextDim));
+            if (entrance < 1.0f) color = Color.FromArgb((int)Math.Round(color.A * entrance), color);
+
+            // Версия под раскрытой строкой отступает в колонке имени, а прямо
+            // в этом отступе — короткий рельс: только у дочерних строк и только
+            // рядом с текстом, а не через всю строку, — как «|» перед именем в
+            // дереве файлов.
+            bool childHere = row.ChildRow && col.Id == "Set";
+            int indent = childHere ? Sc(20) : 0;
+            int x = ColX(widths, c);
+
+            if (childHere)
+            {
+                Rectangle rail = new Rectangle(x + Sc(6), topAnim + Sc(4), Sc(2), rowH - Sc(8));
+                Color railColor = Color.FromArgb((int)Math.Round(120 * entrance), Theme.TextDim);
+                g.FillRectangle(Theme.GetBrush(railColor), rail);
+            }
+            Rectangle cr = new Rectangle(x + indent, topAnim, Math.Max(0, widths[c] - Sc(10) - indent), rowH);
+            if (col.Chips) PaintChips(g, cr, row.Cells[c], color);
+            else
+            {
+                string cellText = row.Cells[c];
+                int plusIdx = !col.Right ? CountAt(cellText) : -1;
+                if (plusIdx > 0)
+                {
+                    string mainText = cellText.Substring(0, plusIdx);
+                    string countText = cellText.Substring(plusIdx + CountSep.Length);
+
+                    // Под курсором хвостик светлеет — иначе о том, что по нему
+                    // можно щёлкнуть и раскрыть версии, никто не догадается.
+                    Color countColor = countHot ? Theme.Text : Theme.TextDim;
+                    if (entrance < 1.0f) countColor = Color.FromArgb((int)Math.Round(countColor.A * entrance), countColor);
+
+                    Size countSz = TextRenderer.MeasureText(countText, f);
+                    Size mainSz = TextRenderer.MeasureText(mainText, f);
+
+                    int countX = cr.X + mainSz.Width - Sc(4);
+                    if (countX + countSz.Width <= cr.Right)
+                    {
+                        Rectangle mainR = new Rectangle(cr.X, cr.Y, mainSz.Width, cr.Height);
+                        Chrome.DrawText(g, mainText, f, mainR, color, Chrome.CellLeft);
+
+                        Rectangle countR = new Rectangle(countX, cr.Y, Math.Max(0, cr.Right - countX), cr.Height);
+                        Chrome.DrawText(g, countText, f, countR, countColor, Chrome.CellLeft);
+                        RememberCount(rowIndex, countX, cr.Y, countSz.Width, cr.Height);
+                    }
+                    else
+                    {
+                        int maxMainW = Math.Max(0, cr.Width - countSz.Width - Sc(4));
+                        Rectangle mainR = new Rectangle(cr.X, cr.Y, maxMainW, cr.Height);
+                        Chrome.DrawText(g, mainText, f, mainR, color, Chrome.CellLeft);
+
+                        int cX = cr.X + maxMainW + Sc(4);
+                        if (cX < cr.Right)
+                        {
+                            Rectangle countR = new Rectangle(cX, cr.Y, Math.Max(0, cr.Right - cX), cr.Height);
+                            Chrome.DrawText(g, countText, f, countR, countColor, Chrome.CellLeft);
+                            RememberCount(rowIndex, cX, cr.Y, Math.Min(countSz.Width, cr.Right - cX), cr.Height);
+                        }
+                    }
+                }
+                else
+                {
+                    Chrome.DrawText(g, row.Cells[c], f, cr, color,
+                                   col.Right ? Chrome.CellRight : Chrome.CellLeft);
+                }
+            }
+        }
+
+        int ColX(int[] widths, int col)
+        {
+            if (col <= 0) return LeftX;
+            int x = LeftX + widths[0] - _scrollX;
+            for (int c = 1; c < col; c++) x += widths[c];
+            return x;
+        }
+
         // Заголовок и отметка в данных под ним всегда делят один и тот же прямоугольник —
-        // левую границу собственной колонки, без залезания в соседнюю. Ширину колонок,
-        // где живут отметки (Plugins/Files и т.п.), поэтому задаём с запасом на стороне
-        // вызова (MainForm), а не растим их здесь за счёт соседей.
+        // левую границу собственной колонки, без залезания в соседнюю.
         Rectangle ColSlot(int[] widths, int top, int rowH, int col)
         {
-            int x = LeftX;
-            for (int c = 0; c < col; c++) x += widths[c];
+            int x = ColX(widths, col);
             return new Rectangle(x, top, Math.Max(0, widths[col] - Sc(10)), rowH);
         }
 
@@ -1204,7 +1549,7 @@ namespace AbletonManager
 
                 Rectangle chip = new Rectangle(x, y, w, h);
                 Theme.FillRound(g, chip, h / 2f, Color.FromArgb(0x22, 0xFF, 0xFF, 0xFF));
-                Chrome.DrawText(g, tags[i], f, chip, textColor, Chrome.Center);
+                Chrome.DrawText(g, tags[i], f, chip, textColor, Chrome.CellCenter);
                 x += w + gap;
             }
         }
@@ -1221,56 +1566,93 @@ namespace AbletonManager
 
             int textW = Math.Max(0, slot.Width - barW - Sc(8));
             Rectangle tr = new Rectangle(slot.Left, top, textW, rowH);
-            Chrome.DrawText(g, m.Text, Theme.FBody, tr, m.Color, Chrome.Right);
+            Chrome.DrawText(g, m.Text, Theme.FBody, tr, m.Color, Chrome.CellRight);
         }
 
         void PaintHeader(Graphics g, int[] widths)
         {
             Chrome.PaintBase(this, g, new Rectangle(0, 0, Width, HeaderHeight), Surface);
 
-            // Звёздочка «закреплённые сверху» — ровно над гутером со звёздами строк,
-            // чтобы связь между ними читалась без подписи.
-            if (ShowPinIndicator && ShowHeaderPin)
+            int scrollLeft = LeftX + widths[0];
+            int scrollWidth = Math.Max(0, Width - scrollLeft);
+
+            // 1. Отрисовка заголовков прокручиваемых колонок (с 1 по N-1)
+            if (_columns.Count > 1 && scrollWidth > 0)
             {
-                RectangleF hp = PinRect(0, HeaderHeight);
-                Color ink = PinnedFirst ? Theme.Light
-                          : (_headPinHot ? Theme.Text : Color.FromArgb(0xFF, 0x8E, 0x8E, 0x93));
-                Icons.Draw(g, PinnedFirst ? Glyph.StarFill : Glyph.Star,
-                           RectangleF.Inflate(hp, -Sc(4), -Sc(4)), ink, 1.3f);
-            }
+                Region oldClip = g.Clip;
+                g.SetClip(new Rectangle(scrollLeft, 0, scrollWidth, HeaderHeight));
 
-            for (int c = 0; c < _columns.Count; c++)
-            {
-                bool active = c == SortColumn;
-                Column col = _columns[c];
-
-                Rectangle hr = ColSlot(widths, 0, HeaderHeight, c);
-
-                Size tsz = TextRenderer.MeasureText(col.Title, Theme.FLabel);
-                if (active)
+                for (int c = 1; c < _columns.Count; c++)
                 {
-                    // Треугольник рисуем отдельным элементом, иначе он обрезается вместе
-                    // с текстом в узкой колонке.
-                    int arrow = Sc(14);
-                    RectangleF ar = col.Right
-                        ? new RectangleF(hr.Right - arrow, (HeaderHeight - arrow) / 2f, arrow, arrow)
-                        : new RectangleF(Math.Min(hr.X + tsz.Width + Sc(6), hr.Right - arrow),
-                                         (HeaderHeight - arrow) / 2f, arrow, arrow);
-                    Icons.Draw(g, SortDescending ? Glyph.SortDown : Glyph.SortUp, ar, Theme.Text, 1f);
-                    hr.Width -= arrow + Sc(4);
+                    int cx = ColX(widths, c);
+                    if (cx < scrollLeft || cx >= Width) continue;
+                    PaintHeaderCell(g, widths, c);
                 }
 
-                // Заголовок, который сейчас тащат, гаснет: он «взят в руку», а место, куда
-                // он встанет, показывает вертикальная черта ниже.
-                Color ink = active ? Theme.Text : Theme.TextDim;
-                if (c == _dragCol) ink = Color.FromArgb(ink.A / 3, ink);
+                g.Clip = oldClip;
+            }
 
-                Chrome.DrawText(g, col.Title, Theme.FLabel, hr, ink,
-                                col.Right ? Chrome.Right : Chrome.Left);
+            // 2. Закреплённая область заголовка (колонка 0 и левый гутер)
+            {
+                Region oldClip = g.Clip;
+                g.SetClip(new Rectangle(0, 0, scrollLeft, HeaderHeight));
+
+                if (ShowPinIndicator && ShowHeaderPin)
+                {
+                    RectangleF hp = PinRect(0, HeaderHeight);
+                    Color ink = PinnedFirst ? Theme.Light
+                              : (_headPinHot ? Theme.Text : Color.FromArgb(0xFF, 0x8E, 0x8E, 0x93));
+                    Icons.Draw(g, PinnedFirst ? Glyph.StarFill : Glyph.Star,
+                               RectangleF.Inflate(hp, -Sc(4), -Sc(4)), ink, 1.3f);
+                }
+
+                if (_columns.Count > 0)
+                {
+                    PaintHeaderCell(g, widths, 0);
+                }
+
+                g.Clip = oldClip;
+            }
+
+            // 3. Тонкий вертикальный разделитель в шапке
+            if (_scrollX > 0 && _columns.Count > 1)
+            {
+                using (Pen divPen = new Pen(Color.FromArgb(40, Theme.Hairline)))
+                    g.DrawLine(divPen, scrollLeft - 1, 0, scrollLeft - 1, HeaderHeight);
             }
 
             PaintDropMark(g, widths);
             PaintGrip(g, widths);
+        }
+
+        void PaintHeaderCell(Graphics g, int[] widths, int c)
+        {
+            bool active = c == SortColumn;
+            Column col = _columns[c];
+
+            Rectangle hr = ColSlot(widths, 0, HeaderHeight, c);
+
+            Size tsz = TextRenderer.MeasureText(col.Title, Theme.FLabel);
+            if (active)
+            {
+                // Треугольник рисуем отдельным элементом, иначе он обрезается вместе
+                // с текстом в узкой колонке.
+                int arrow = Sc(14);
+                RectangleF ar = col.Right
+                    ? new RectangleF(hr.Right - arrow, (HeaderHeight - arrow) / 2f, arrow, arrow)
+                    : new RectangleF(Math.Min(hr.X + tsz.Width + Sc(6), hr.Right - arrow),
+                                     (HeaderHeight - arrow) / 2f, arrow, arrow);
+                Icons.Draw(g, SortDescending ? Glyph.SortDown : Glyph.SortUp, ar, Theme.Text, 1f);
+                hr.Width -= arrow + Sc(4);
+            }
+
+            // Заголовок, который сейчас тащат, гаснет: он «взят в руку», а место, куда
+            // он встанет, показывает вертикальная черта ниже.
+            Color ink = active ? Theme.Text : Theme.TextDim;
+            if (c == _dragCol) ink = Color.FromArgb(ink.A / 3, ink);
+
+            Chrome.DrawText(g, col.Title, Theme.FLabel, hr, ink,
+                            col.Right ? Chrome.CellRight : Chrome.CellLeft);
         }
 
         /// <summary>
@@ -1283,8 +1665,7 @@ namespace AbletonManager
             if (_dragCol < 0 || _dropAt < 0) return;
             if (_dropAt == _dragCol || _dropAt == _dragCol + 1) return;   // вернуть на место
 
-            int x = LeftX;
-            for (int c = 0; c < _dropAt && c < widths.Length; c++) x += widths[c];
+            int x = _dropAt == 0 ? LeftX : (_dropAt < _columns.Count ? ColX(widths, _dropAt) : ColX(widths, _columns.Count - 1) + widths[_columns.Count - 1]);
 
             int top = Sc(10), bottom = HeaderHeight - Sc(10);
             using (Pen p = new Pen(Theme.Text, Sc(2)))
@@ -1306,13 +1687,19 @@ namespace AbletonManager
             int a = (int)(180 * Math.Min(1f, Math.Max(0f, _gripAlpha)));
             using (Pen p = new Pen(Color.FromArgb(a, Theme.TextDim)))
             {
-                int x = LeftX;
-                for (int c = 0; c < _columns.Count; c++)
+                if (_columns.Count > 0)
                 {
-                    // Граница резайзится, только если у неё справа колонка с фиксированной
-                    // шириной — ровно то же условие, что и в GripAt.
-                    if (_columns[c].Width > 0) g.DrawLine(p, x, top, x, bottom);
-                    x += widths[c];
+                    int x0 = LeftX + widths[0];
+                    g.DrawLine(p, x0, top, x0, bottom);
+                }
+                for (int c = 1; c < _columns.Count; c++)
+                {
+                    if (_columns[c].Width > 0)
+                    {
+                        int x = ColX(widths, c);
+                        if (x >= LeftX + widths[0] - Sc(2))
+                            g.DrawLine(p, x, top, x, bottom);
+                    }
                 }
             }
         }

@@ -61,6 +61,18 @@ namespace AbletonManager
             TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.SingleLine |
             TextFormatFlags.NoPrefix | TextFormatFlags.NoClipping;
 
+        public static readonly TextFormatFlags CellLeft =
+            TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.SingleLine |
+            TextFormatFlags.NoPrefix | TextFormatFlags.EndEllipsis;
+
+        public static readonly TextFormatFlags CellRight =
+            TextFormatFlags.Right | TextFormatFlags.VerticalCenter | TextFormatFlags.SingleLine |
+            TextFormatFlags.NoPrefix | TextFormatFlags.EndEllipsis;
+
+        public static readonly TextFormatFlags CellCenter =
+            TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.SingleLine |
+            TextFormatFlags.NoPrefix;
+
         public static readonly TextFormatFlags Wrap =
             TextFormatFlags.Left | TextFormatFlags.Top | TextFormatFlags.WordBreak |
             TextFormatFlags.NoPrefix | TextFormatFlags.NoPadding;
@@ -247,8 +259,15 @@ namespace AbletonManager
 
         public GlassButton()
         {
+            SetStyle(ControlStyles.StandardDoubleClick, false);
             Cursor = Cursors.Hand;
             Height = Theme.ControlH;
+        }
+
+        protected override void OnDoubleClick(EventArgs e)
+        {
+            OnClick(e);
+            base.OnDoubleClick(e);
         }
 
         public void FitToText(int hPadding)
@@ -295,12 +314,17 @@ namespace AbletonManager
             }
             else if (Quiet)
             {
-                if (HoverFactor > 0.001f)
+                // Обычная кнопка сливается с покоем задолго до HoverFactor==0 (её alpha
+                // идёт от 0x14, не от нуля). У Quiet заливка идёт от нуля, поэтому хвост
+                // виден вдвое дольше и ховер «залипает». Сдвигаем шкалу на ту же долю.
+                float rest = Theme.GlassSurfaceAlpha / (float)Theme.GlassSurfaceHotAlpha;
+                float shown = Math.Max(0f, (HoverFactor - rest) / (1f - rest));
+                if (shown > 0.001f)
                 {
-                    int alpha = (int)Math.Round(HoverFactor * Theme.GlassSurfaceHotAlpha);
+                    int alpha = (int)Math.Round(shown * Theme.GlassSurfaceHotAlpha);
                     Theme.PaintGlassSurface(this, g, r, Height / 2f, alpha);
                 }
-                text = Theme.Interpolate(Theme.TextDim, Theme.Text, HoverFactor);
+                text = Theme.Interpolate(Theme.TextDim, Theme.Text, shown);
             }
             else
             {
@@ -331,9 +355,16 @@ namespace AbletonManager
 
         public FiltersButton()
         {
+            SetStyle(ControlStyles.StandardDoubleClick, false);
             Cursor = Cursors.Hand;
             Height = Theme.ControlH;
             Font = Theme.FButton;
+        }
+
+        protected override void OnDoubleClick(EventArgs e)
+        {
+            OnClick(e);
+            base.OnDoubleClick(e);
         }
 
         protected override void OnPaint(PaintEventArgs e)
@@ -374,8 +405,15 @@ namespace AbletonManager
 
         public IconButton()
         {
+            SetStyle(ControlStyles.StandardDoubleClick, false);
             Cursor = Cursors.Hand;
             Size = new Size(Theme.IconSize, Theme.IconSize);
+        }
+
+        protected override void OnDoubleClick(EventArgs e)
+        {
+            OnClick(e);
+            base.OnDoubleClick(e);
         }
 
         protected override void OnPaint(PaintEventArgs e)
@@ -413,7 +451,13 @@ namespace AbletonManager
 
         protected override float PillRadius { get { return Height / 2f; } }
 
-        public PillToggle() { Cursor = Cursors.Hand; Height = Theme.ControlH; Font = Theme.FButton; }
+        public PillToggle()
+        {
+            SetStyle(ControlStyles.StandardDoubleClick, false);
+            Cursor = Cursors.Hand;
+            Height = Theme.ControlH;
+            Font = Theme.FButton;
+        }
 
         public bool Checked
         {
@@ -439,6 +483,12 @@ namespace AbletonManager
         {
             if (Enabled) Checked = !Checked;
             base.OnClick(e);
+        }
+
+        protected override void OnDoubleClick(EventArgs e)
+        {
+            OnClick(e);
+            base.OnDoubleClick(e);
         }
 
         protected override void OnPaint(PaintEventArgs e)
@@ -488,7 +538,13 @@ namespace AbletonManager
 
         public event EventHandler SelectedChanged;
 
-        public Segmented() { Height = 38; Cursor = Cursors.Hand; Font = Theme.FButton; }
+        public Segmented()
+        {
+            SetStyle(ControlStyles.StandardDoubleClick, false);
+            Height = 38;
+            Cursor = Cursors.Hand;
+            Font = Theme.FButton;
+        }
 
         public void SetItems(params string[] items)
         {
@@ -534,6 +590,17 @@ namespace AbletonManager
             base.OnMouseDown(e);
         }
 
+        protected override void OnDoubleClick(EventArgs e)
+        {
+            MouseEventArgs me = e as MouseEventArgs;
+            if (me != null)
+            {
+                for (int i = 0; i < _items.Length; i++)
+                    if (SegRect(i).Contains(me.Location)) SelectedIndex = i;
+            }
+            base.OnDoubleClick(e);
+        }
+
         protected override void OnPaint(PaintEventArgs e)
         {
             Graphics g = e.Graphics;
@@ -569,6 +636,7 @@ namespace AbletonManager
 
         public IconToggle()
         {
+            SetStyle(ControlStyles.StandardDoubleClick, false);
             Height = Sc(38);
             Cursor = Cursors.Hand;
         }
@@ -610,6 +678,13 @@ namespace AbletonManager
             if (_glyphs.Length > 0)
                 SelectedIndex = (_index + 1) % _glyphs.Length;
             base.OnMouseDown(e);
+        }
+
+        protected override void OnDoubleClick(EventArgs e)
+        {
+            if (_glyphs.Length > 0)
+                SelectedIndex = (_index + 1) % _glyphs.Length;
+            base.OnDoubleClick(e);
         }
 
         protected override void OnPaint(PaintEventArgs e)

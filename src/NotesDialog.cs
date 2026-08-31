@@ -31,7 +31,7 @@ namespace AbletonManager
             Caption = set.Name;
             ClientSize = new Size(Sc(560), Sc(430));
 
-            _tags.Cue = L.S("remix, collab, femobycore",
+            _tags.Cue = L.S("remix, collab, femboycore",
                             "drum, wip, для Саши — через запятую");
             _tags.Box.Text = ProjectMeta.JoinTags(ProjectMeta.TagsOf(_dir));
             Controls.Add(_tags);

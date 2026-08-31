@@ -83,17 +83,18 @@ namespace AbletonManager
             // нет, ни чинить, ни версионировать нечего. Оба Quiet, без заливки: панель
             // уже говорит «Open in Live» громче всего, а эти две нужны далеко не на
             // каждом сете, и пилюли рядом с главной кнопкой спорили бы с ней за взгляд.
+            // Никакой SurfaceOverlay: Quiet-кнопка — это текст-ссылка без заливки, а
+            // непрозрачная накладка при затухании ховера (PaintGlassSurface рисует
+            // SourceCopy) на миг пробивала кнопку в дыру и тут же возвращала плашку.
             _rescue.Text = L.S("Rescue Project", "Восстановить проект");
             _rescue.Quiet = true;
             _rescue.Surface = Theme.Backdrop;
-            _rescue.SurfaceOverlay = Theme.Surface;
             _rescue.Click += delegate { if (RescueRequested != null) RescueRequested(); };
             Controls.Add(_rescue);
 
             _forks.Text = L.S("Forks", "Версии");
             _forks.Quiet = true;
             _forks.Surface = Theme.Backdrop;
-            _forks.SurfaceOverlay = Theme.Surface;
             _forks.Click += delegate { if (ForksRequested != null) ForksRequested(); };
             Controls.Add(_forks);
 
@@ -252,7 +253,17 @@ namespace AbletonManager
             if (_contentHeight <= BodyBottom) return;
             _scrollTarget -= (int)(e.Delta / 120f * Sc(60));
             ClampScrollTarget();
-            if (!_scrollTimer.Enabled) _scrollTimer.Start();
+            if (!Theme.SmoothScroll)
+            {
+                _scroll = (int)_scrollTarget;
+                _scrollCurrent = _scrollTarget;
+                ClampScroll();
+                Invalidate();
+            }
+            else
+            {
+                if (!_scrollTimer.Enabled) _scrollTimer.Start();
+            }
             base.OnMouseWheel(e);
         }
 

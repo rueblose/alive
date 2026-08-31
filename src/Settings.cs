@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Text;
@@ -37,6 +37,12 @@ namespace AbletonManager
         /// там этого нет — поэтому не выключаем сами, а отдаём переключателем.
         /// </summary>
         public bool DisableGlass;
+
+        /// <summary>
+        /// Включена ли плавная вертикальная прокрутка (доводка таймером).
+        /// При false прокрутка во всех списках и панелях происходит мгновенно.
+        /// </summary>
+        public bool SmoothScroll = true;
 
         /// <summary>
         /// Схлопывать ли сеты одной папки в одну строку. По умолчанию да: у проекта
@@ -107,6 +113,8 @@ namespace AbletonManager
                     else if (key == "plugincolumns") s.PluginColumns = val;
                     else if (key == "pinnedfirst") s.PinnedFirst = val == "1";
                     else if (key == "noglass") s.DisableGlass = val == "1";
+                    else if (key == "smoothscroll") s.SmoothScroll = val != "0";
+                    else if (key == "nosmoothscroll") s.SmoothScroll = val != "1";
                     else if (key == "groupbyfolder") s.GroupByFolder = val == "1";
                     else if (key == "pluginfolders") s.PluginsFromFolders = val == "1";
                     else if (key == "pluginsource") s.PluginSource = val;
@@ -118,6 +126,7 @@ namespace AbletonManager
                 }
             }
             catch { }
+            Theme.SmoothScroll = s.SmoothScroll;
             return s;
         }
 
@@ -141,6 +150,7 @@ namespace AbletonManager
                 foreach (string r in DisabledRoots) sb.Append("root_off=").AppendLine(r);
                 sb.Append("pinnedfirst=").AppendLine(PinnedFirst ? "1" : "0");
                 sb.Append("noglass=").AppendLine(DisableGlass ? "1" : "0");
+                sb.Append("smoothscroll=").AppendLine(SmoothScroll ? "1" : "0");
                 sb.Append("groupbyfolder=").AppendLine(GroupByFolder ? "1" : "0");
                 sb.Append("pluginfolders=").AppendLine(PluginsFromFolders ? "1" : "0");
                 sb.Append("pluginsource=").AppendLine(PluginSource);

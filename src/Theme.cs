@@ -14,6 +14,12 @@ namespace AbletonManager
     /// </summary>
     public static class Theme
     {
+        /// <summary>
+        /// Включена ли плавная вертикальная прокрутка (доводка таймером).
+        /// При false прокрутка во всех списках и панелях происходит мгновенно.
+        /// </summary>
+        public static bool SmoothScroll = true;
+
         // ------------------------------------------------------------------- цвета
         public static readonly Color Bg      = Color.FromArgb(0xFF, 0x1B, 0x1B, 0x1D);
 
@@ -277,12 +283,22 @@ namespace AbletonManager
             FillRound(g, r, radius, fill);
             g.CompositingMode = old;
 
+            // Обводка и блик держат постоянную альфу, пока заливка не упадёт ниже
+            // состояния покоя. У Quiet-кнопок покоя нет: без этого затухания контур
+            // висел на полной силе весь хвост анимации и «отлипал» рывком в конце.
+            float k = Math.Min(1f, fillAlpha / (float)GlassSurfaceAlpha);
+            Pen borderPen = k < 1f ? new Pen(Color.FromArgb((int)Math.Round(10 * k), 255, 255, 255), 1.5f) : _borderPen;
+            Pen highlightPen = k < 1f ? new Pen(Color.FromArgb((int)Math.Round(20 * k), 255, 255, 255), 1.5f) : _highlightPen;
+
             RectangleF border = RectangleF.Inflate(r, -0.5f, -0.5f);
-            DrawRoundCached(g, border, Math.Max(0f, radius - 0.5f), _borderPen);                          // 4%
+            DrawRoundCached(g, border, Math.Max(0f, radius - 0.5f), borderPen);                           // 4%
 
             RectangleF hi = RectangleF.Inflate(r, -1.5f, -1.5f);
             using (GraphicsPath top = RoundTop(hi, Math.Max(0f, radius - 1.5f)))
-                g.DrawPath(_highlightPen, top);                                                           // 8%
+                g.DrawPath(highlightPen, top);                                                            // 8%
+
+            if (borderPen != _borderPen) borderPen.Dispose();
+            if (highlightPen != _highlightPen) highlightPen.Dispose();
         }
 
         public static void Smooth(Graphics g)

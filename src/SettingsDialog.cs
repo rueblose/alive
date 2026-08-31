@@ -25,6 +25,7 @@ namespace AbletonManager
         readonly Settings _s;
 
         readonly PillToggle _compat = new PillToggle();
+        readonly PillToggle _smooth = new PillToggle();
 
         readonly Segmented _source = new Segmented();
         readonly DropField _install = new DropField();
@@ -55,6 +56,14 @@ namespace AbletonManager
             _s = s;
             Caption = L.S("Settings", "Настройки");
             ClientSize = new Size(Sc(700), Sc(660));
+
+            _smooth.Checked = _s.SmoothScroll;
+            _smooth.CheckedChanged += delegate
+            {
+                _s.SmoothScroll = _smooth.Checked;
+                Theme.SmoothScroll = _s.SmoothScroll;
+            };
+            State(_smooth);
 
             _compat.Checked = _s.DisableGlass;
             _compat.CheckedChanged += delegate { ToggleCompat(); };
@@ -328,29 +337,27 @@ namespace AbletonManager
             int y = Card.Top + Sc(66);
 
             Section(x, ref y, w, L.S("WINDOW", "ОКНО"));
+            Line(x, ref y, w, h, _smooth,
+                 L.S("Smooth scrolling", "Плавная прокрутка"),
+                 L.S("Smooth animation in lists and panels.",
+                     "Анимация прокрутки в списках и панелях."));
             Line(x, ref y, w, h, _compat,
-                 L.S("Windows 10 compatible mode", "Режим совместимости с Windows 10"),
-                 L.S("Turns the transparent background off. On Windows 10 the blur is redrawn on every "
-                   + "move of the window, and dragging it lags behind the cursor. Applies after a restart.",
-                     "Выключает прозрачный фон. На Windows 10 размытие пересчитывается на каждый сдвиг "
-                   + "окна, и оно едет за курсором с задержкой. Действует после перезапуска."));
+                 L.S("Disable transparency", "Отключить прозрачность"),
+                 L.S("Turns off glass effect if window dragging lags. Applies after restart.",
+                     "Убирает прозрачность, если окно перемещается с задержкой. Требует перезапуска."));
 
             Section(x, ref y, w, L.S("PLUG-INS", "ПЛАГИНЫ"));
             Line(x, ref y, w, h, _source,
-                 L.S("Where the list comes from", "Откуда берётся список"),
+                 L.S("Plug-in source", "Источник плагинов"),
                  Folders
-                 ? L.S("Walk the folders below. Shows files, not plug-ins: a shell like WaveShell is one "
-                     + "file with hundreds of plug-ins inside, and stays one line here.",
-                       "Обход папок ниже. Видно файлы, а не плагины: шелл вроде WaveShell — один файл "
-                     + "с сотнями плагинов внутри, и здесь он останется одной строкой.")
-                 : L.S("Live has already scanned every folder with its own settings and unpacked the "
-                     + "shells. All installed versions of Live are read at once, the freshest wins.",
-                       "Live уже обошла все папки со своими настройками и развернула шеллы. Читаются "
-                     + "сразу все установленные версии Live, свежая важнее."));
+                 ? L.S("Direct folder scan (VST2 / VST3 files).",
+                       "Прямой поиск файлов в папках VST2 / VST3.")
+                 : L.S("Uses internal database from installed Live versions.",
+                       "Использовать базу данных плагинов Ableton Live."));
 
             _install.Visible = !Folders;
             if (!Folders)
-                Line(x, ref y, w, h, _install, L.S("Live install", "Установка Live"), "");
+                Line(x, ref y, w, h, _install, L.S("Live install", "Версия Live"), "");
 
             foreach (Control c in new Control[] { _vst2On, _vst2Browse, _vst3SysOn, _vst3On, _vst3Browse })
                 c.Visible = Folders;
@@ -358,17 +365,17 @@ namespace AbletonManager
             if (Folders)
             {
                 Line(x, ref y, w, h, _vst2On,
-                     L.S("Use VST2 Plug-In Custom Folder", "Своя папка VST2"), "");
+                     L.S("Custom VST2 folder", "Папка VST2"), "");
                 Line(x, ref y, w, h, _vst2Browse,
-                     L.S("VST2 Plug-In Custom Folder", "Путь к папке VST2"),
+                     L.S("VST2 folder path", "Путь к папке VST2"),
                      _s.Vst2CustomPath.Length > 0 ? _s.Vst2CustomPath : L.S("not set", "не задана"));
 
                 Line(x, ref y, w, h, _vst3SysOn,
-                     L.S("Use VST3 Plug-In System Folders", "Системные папки VST3"), "");
+                     L.S("System VST3 folders", "Системные папки VST3"), "");
                 Line(x, ref y, w, h, _vst3On,
-                     L.S("Use VST3 Plug-In Custom Folder", "Своя папка VST3"), "");
+                     L.S("Custom VST3 folder", "Своя папка VST3"), "");
                 Line(x, ref y, w, h, _vst3Browse,
-                     L.S("VST3 Plug-In Custom Folder", "Путь к папке VST3"),
+                     L.S("VST3 folder path", "Путь к папке VST3"),
                      _s.Vst3CustomPath.Length > 0 ? _s.Vst3CustomPath : L.S("not set", "не задана"));
             }
 
@@ -379,8 +386,8 @@ namespace AbletonManager
             Section(x, ref y, w, L.S("TOOLS", "ИНСТРУМЕНТЫ"));
             Line(x, ref y, w, h, _options,
                  L.S("Live's Options.txt", "Options.txt для Live"),
-                 L.S("Hidden switches of Live itself — with descriptions, by tickbox.",
-                     "Скрытые переключатели самой Live — с описанием, галочкой."));
+                 L.S("Hidden and experimental Live parameters.",
+                     "Скрытые и экспериментальные настройки Live."));
             Line(x, ref y, w, h, _shortcuts, L.S("Keyboard shortcuts", "Горячие клавиши"), "");
 
             FitHeight(y + Sc(18) + _close.Height + pad);

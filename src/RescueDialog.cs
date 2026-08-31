@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.Globalization;
@@ -519,6 +519,7 @@ namespace AbletonManager
 
         public PluginCheckList()
         {
+            SetStyle(ControlStyles.StandardDoubleClick, false);
             Surface = Theme.Backdrop;
             Cursor = Cursors.Hand;
         }
@@ -598,6 +599,13 @@ namespace AbletonManager
             string uid = Items[i].Uid;
             if (!_on.Remove(uid)) _on.Add(uid);
             Fire();
+        }
+
+        protected override void OnDoubleClick(EventArgs e)
+        {
+            MouseEventArgs me = e as MouseEventArgs;
+            if (me != null) OnMouseDown(me);
+            base.OnDoubleClick(e);
         }
 
         protected override void OnMouseMove(MouseEventArgs e)

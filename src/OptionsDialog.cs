@@ -268,6 +268,7 @@ namespace AbletonManager
 
         public OptionListView()
         {
+            SetStyle(ControlStyles.StandardDoubleClick, false);
             Surface = Theme.Backdrop;
             Cursor = Cursors.Hand;
 
@@ -362,6 +363,13 @@ namespace AbletonManager
 
             Invalidate();
             if (Changed != null) Changed(this, EventArgs.Empty);
+        }
+
+        protected override void OnDoubleClick(EventArgs e)
+        {
+            MouseEventArgs me = e as MouseEventArgs;
+            if (me != null) OnMouseDown(me);
+            base.OnDoubleClick(e);
         }
 
         void ChooseValue(int i)
