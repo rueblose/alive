@@ -120,6 +120,11 @@ namespace AbletonManager
                                Action<int, int, string> progress, CancellationToken cancel)
         {
             bool ok = false;
+            // CreateDirectory на уже существующей папке — тихий no-op, он не скажет,
+            // создал он что-то или нет. Запоминаем сами, пока папки точно ещё нет:
+            // Plan() у двух запусков по одному сету, посчитанные до того, как хоть
+            // один создал папку на диске, может отдать один и тот же TargetDir.
+            bool createdHere = !Directory.Exists(plan.TargetDir);
             try
             {
                 Directory.CreateDirectory(plan.TargetDir);
@@ -170,8 +175,10 @@ namespace AbletonManager
             }
             finally
             {
-                // Папку создали мы в этот запуск, чужого в ней нет.
-                if (!ok) { try { Directory.Delete(plan.TargetDir, true); } catch { } }
+                // Удаляем только то, что создал этот запуск. Если TargetDir уже
+                // существовал до Run — там может лежать чужая, уже собранная копия
+                // (второй Plan() по тому же сету), и её мы не трогаем.
+                if (!ok && createdHere) { try { Directory.Delete(plan.TargetDir, true); } catch { } }
             }
         }
 

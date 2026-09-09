@@ -306,6 +306,38 @@ namespace AliveTools
 
             Console.WriteLine(string.Format("collected {0} files, {1:N1} MB -> {2}",
                                             plan.Copy.Count, plan.TotalBytes / 1048576.0, plan.TargetDir));
+
+            // Run() при обрыве обязан удалить только ту папку, которую создал сам:
+            // TargetDir у двух Plan() по одному сету может совпасть, и снос чужой
+            // уже собранной копии — потеря данных. Проверяем оба исхода отдельным
+            // Run с заранее отменённым токеном: cancel.ThrowIfCancellationRequested()
+            // в цикле копирования бросает на первой же итерации.
+            System.Threading.CancellationTokenSource cts = new System.Threading.CancellationTokenSource();
+            cts.Cancel();
+
+            // Свежая папка — Run создаёт её сам, при обрыве обязана исчезнуть.
+            CollectPlan freshPlan = CollectAll.Plan(set, info, deps, opt);
+            freshPlan.TargetDir = Path.Combine(temp, "cancel-fresh Project");
+            bool threwFresh = false;
+            try { CollectAll.Run(freshPlan, set, info, null, cts.Token); }
+            catch (OperationCanceledException) { threwFresh = true; }
+            Check(threwFresh, "cancelled Run did not throw on a fresh target dir");
+            Check(!Directory.Exists(freshPlan.TargetDir), "cancelled Run left behind a folder it created itself");
+
+            // Уже существующая папка с чужим файлом — Run её не создавал, при обрыве
+            // обязана остаться нетронутой вместе с содержимым.
+            CollectPlan existingPlan = CollectAll.Plan(set, info, deps, opt);
+            existingPlan.TargetDir = Path.Combine(temp, "cancel-existing Project");
+            Directory.CreateDirectory(existingPlan.TargetDir);
+            string marker = Path.Combine(existingPlan.TargetDir, "someone else's file.txt");
+            File.WriteAllText(marker, "not ours", new UTF8Encoding(false));
+            bool threwExisting = false;
+            try { CollectAll.Run(existingPlan, set, info, null, cts.Token); }
+            catch (OperationCanceledException) { threwExisting = true; }
+            Check(threwExisting, "cancelled Run did not throw on a pre-existing target dir");
+            Check(Directory.Exists(existingPlan.TargetDir), "cancelled Run deleted a folder it did not create");
+            Check(File.Exists(marker), "cancelled Run deleted someone else's file from a pre-existing folder");
+
             try { Directory.Delete(temp, true); } catch { }
         }
 
