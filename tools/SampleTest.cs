@@ -65,7 +65,7 @@ namespace AliveTools
 
             int[] byOrigin = new int[6];
             long[] bytesByOrigin = new long[6];
-            int devices = 0, totalRefs = 0, totalDeps = 0;
+            int devices = 0, totalRefs = 0, totalDeps = 0, dirDeps = 0;
 
             foreach (string file in sets)
             {
@@ -95,6 +95,14 @@ namespace AliveTools
                           "missing dep has a size in " + file);
                     Check(d.Origin != SampleOrigin.FactoryPack || d.PackName.Length > 0,
                           "FactoryPack dep without a pack name in " + file);
+
+                    // Найденная зависимость-папка (.adg/.amxd бывают папками) должна
+                    // иметь ненулевой размер — иначе она неотличима от «не нашли».
+                    if (d.Origin != SampleOrigin.Missing && Directory.Exists(d.Path))
+                    {
+                        dirDeps++;
+                        Check(d.Size > 0, "folder dep has zero size in " + file + ": " + d.Path);
+                    }
                 }
 
                 int expected = 0;
@@ -114,6 +122,7 @@ namespace AliveTools
 
             Console.WriteLine(string.Format("sets={0}  refs={1}  distinct files={2}  devices={3}",
                                             sets.Count, totalRefs, totalDeps, devices));
+            Console.WriteLine(string.Format("folder deps (size checked): {0}", dirDeps));
             Console.WriteLine();
             string[] names = { "InProject", "OtherProject", "UserLibrary", "FactoryPack", "Elsewhere", "Missing" };
             for (int i = 0; i < names.Length; i++)

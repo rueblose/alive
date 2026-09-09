@@ -33,7 +33,7 @@ namespace AbletonManager
         public ResolvedRef Resolved;       // где нашёлся
         public SampleOrigin Origin;
         public string PackName = "";       // заполнено у FactoryPack
-        public long Size;                  // с диска; 0, если не нашли
+        public long Size;                  // с диска; 0, если не нашли или не смогли посчитать
         public bool IsDevice;              // .amxd (MxPatchRef), а не сэмпл
 
         /// <summary>Номера FileRef в порядке документа — по ним адресует AlsSamplePatch.</summary>
@@ -196,14 +196,51 @@ namespace AbletonManager
             return false;
         }
 
+        /// <summary>
+        /// .adg и .amxd бывают папками (см. RefResolver.Probe) — их размер это сумма
+        /// файлов внутри, а не 0. 0 у найденной (Origin != Missing) зависимости иначе
+        /// неотличим от «не нашли», что противоречит комментарию у SampleDep.Size.
+        /// </summary>
         static long SizeOf(string path)
         {
             try
             {
                 FileInfo fi = new FileInfo(path);
-                return fi.Exists ? fi.Length : 0L;
+                if (fi.Exists) return fi.Length;
             }
             catch { return 0L; }
+
+            if (!Directory.Exists(path)) return 0L;
+            return DirSize(path);
+        }
+
+        /// <summary>
+        /// Рекурсивная сумма размеров файлов в папке. Обход вручную, а не через
+        /// Directory.GetFiles(path, "*", SearchOption.AllDirectories): тот бросает на
+        /// первой недоступной подпапке и не отдаёт то, что уже насчитал. Здесь же
+        /// недоступная подпапка обрывает счёт только для себя — берём максимум того,
+        /// что смогли посчитать.
+        /// </summary>
+        static long DirSize(string dir)
+        {
+            long total = 0L;
+
+            string[] files;
+            try { files = Directory.GetFiles(dir); }
+            catch { return total; }
+            foreach (string f in files)
+            {
+                try { total += new FileInfo(f).Length; }
+                catch { }
+            }
+
+            string[] subdirs;
+            try { subdirs = Directory.GetDirectories(dir); }
+            catch { return total; }
+            foreach (string d in subdirs)
+                total += DirSize(d);
+
+            return total;
         }
     }
 }
