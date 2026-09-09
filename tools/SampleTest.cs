@@ -33,10 +33,12 @@ namespace AliveTools
 
             if (cmd == "scan") Scan(arg);
             else if (cmd == "patch") Patch(arg);
+            else if (cmd == "collect") Collect(arg);
             else
             {
                 Console.WriteLine("usage: SampleTest.exe scan <folder or .als>");
                 Console.WriteLine("       SampleTest.exe patch <set.als>");
+                Console.WriteLine("       SampleTest.exe collect <set.als>");
                 return 2;
             }
 
@@ -222,6 +224,89 @@ namespace AliveTools
             Console.WriteLine(string.Format("patched {0} of {1} FileRef in {2}",
                                             patched, before.Files.Count, Path.GetFileName(file)));
             Console.WriteLine(string.Format("pack cleared (raw): {0} touched FileRef checked", packChecked));
+        }
+
+        /// <summary>
+        /// Собирает сет во временную папку и проверяет главное обещание сборки: каждая
+        /// ссылка собранной копии разрешается в существующий файл ВНУТРИ этой папки.
+        /// Ради этого сборка и делается, и проверять это надо тем же RefResolver,
+        /// которым потом будет пользоваться каталог.
+        /// </summary>
+        static void Collect(string file)
+        {
+            if (!File.Exists(file)) { Check(false, "no such set: " + file); return; }
+
+            LiveEnvironment env = LiveEnvironment.Detect();
+            AlsInfo info = AlsFile.Read(file);
+            Check(info.Error == null, "cannot read " + file);
+            if (info.Error != null) return;
+
+            SetEntry set = new SetEntry();
+            set.Path = file;
+            set.Name = Path.GetFileNameWithoutExtension(file);
+
+            List<SampleDep> deps = SampleScan.Of(info, Path.GetDirectoryName(file), env);
+
+            CollectOptions opt = new CollectOptions();
+            opt.FromFactoryPacks = true;    // в стенде собираем всё, чтобы проверить все ветки
+
+            CollectPlan plan = CollectAll.Plan(set, info, deps, opt);
+
+            // План обязан разложить каждую зависимость ровно в одну корзину.
+            int total = plan.Copy.Count + plan.Skipped.Count + plan.NotFound.Count;
+            Check(total == deps.Count,
+                  string.Format("plan covers {0} deps of {1}", total, deps.Count));
+            Check(plan.Skipped.Count == 0, "nothing should be skipped when all options are on");
+
+            // Разные файлы не должны попасть в одно место назначения.
+            HashSet<string> dests = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (SampleDep d in plan.Copy)
+            {
+                string rel;
+                Check(plan.Dest.TryGetValue(d, out rel), "no destination for " + d.Name);
+                if (rel != null) Check(dests.Add(rel), "two files land on " + rel);
+            }
+
+            // Внутрипроектные ссылки не переписываются: их путь в копии верен как есть.
+            foreach (SampleDep d in plan.Copy)
+                if (d.Origin == SampleOrigin.InProject)
+                    foreach (int i in d.RefIndexes)
+                        Check(!plan.Rewrites.ContainsKey(i), "in-project ref rewritten at " + i);
+
+            string temp = Path.Combine(Path.GetTempPath(), "alive-collect-probe");
+            try { if (Directory.Exists(temp)) Directory.Delete(temp, true); } catch { }
+            Directory.CreateDirectory(temp);
+            plan.TargetDir = Path.Combine(temp, set.Name + " Project");
+
+            int done = 0;
+            CollectAll.Run(plan, set, info,
+                delegate (int n, int of, string what) { done = n; },
+                System.Threading.CancellationToken.None);
+
+            Check(done == plan.Copy.Count, string.Format("copied {0} of {1}", done, plan.Copy.Count));
+
+            string copied = Path.Combine(plan.TargetDir, set.Name + ".als");
+            Check(File.Exists(copied), "collected .als is missing");
+            if (!File.Exists(copied)) return;
+
+            AlsInfo after = AlsFile.Read(copied);
+            Check(after.Error == null, "collected .als does not parse");
+            if (after.Error != null) return;
+
+            List<SampleDep> afterDeps = SampleScan.Of(after, Path.GetDirectoryName(copied), env);
+            int outside = 0, missing = 0;
+            foreach (SampleDep d in afterDeps)
+            {
+                if (d.Origin == SampleOrigin.Missing) { missing++; continue; }
+                if (d.Origin != SampleOrigin.InProject) outside++;
+            }
+            Check(outside == 0, string.Format("{0} refs still point outside the collected folder", outside));
+            Check(missing == plan.NotFound.Count,
+                  string.Format("{0} missing after collect, {1} were missing before", missing, plan.NotFound.Count));
+
+            Console.WriteLine(string.Format("collected {0} files, {1:N1} MB -> {2}",
+                                            plan.Copy.Count, plan.TotalBytes / 1048576.0, plan.TargetDir));
+            try { Directory.Delete(temp, true); } catch { }
         }
 
         /// <summary>
