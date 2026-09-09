@@ -16,3 +16,6 @@ scratch/
 .claude/
 *.user
 *.suo
+
+# Superpowers SDD scratch (ledger, briefs, review packages)
+.superpowers/
