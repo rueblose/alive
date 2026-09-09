@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.IO.Compression;
+using System.Text;
 using AbletonManager;
 
 namespace AliveTools
@@ -201,6 +203,13 @@ namespace AliveTools
                 }
             }
 
+            // AlsFile поле LivePackId не разбирает — его в модели просто нет, — а обнулённый
+            // LivePackId и есть то, что отцепляет собранную копию от пака: RefResolver ходит
+            // по имени пака, а сама Live — по идентификатору. Проверяем по сырому тексту,
+            // независимо от модели, тем же правилом обхода узлов, что и сам патчер.
+            int packChecked = CheckPackCleared(dst, rewrites);
+            Check(packChecked == rewrites.Count, "pack-clear check did not cover all touched nodes");
+
             // Неверное ожидаемое число узлов обязано убить результат, а не записать его.
             string bad = Path.Combine(Path.GetTempPath(), "alive-patch-bad.als");
             bool threw = false;
@@ -212,6 +221,72 @@ namespace AliveTools
             try { File.Delete(dst); } catch { }
             Console.WriteLine(string.Format("patched {0} of {1} FileRef in {2}",
                                             patched, before.Files.Count, Path.GetFileName(file)));
+            Console.WriteLine(string.Format("pack cleared (raw): {0} touched FileRef checked", packChecked));
+        }
+
+        /// <summary>
+        /// Сырая, не зависящая от AlsFile проверка обнуления LivePackId у тронутых узлов —
+        /// того самого поля, которого нет в модели FileRefInfo. Распаковывает dst сама
+        /// (GZipStream поверх FileStream, как AlsSamplePatch.Rewrite) и находит &lt;FileRef&gt;
+        /// тем же правилом, что и патчер: открывающий тег, не самозакрывающийся, до
+        /// &lt;/FileRef&gt;. У каждого узла, чей номер есть в rewrites, утверждает пустоту
+        /// LivePackId; заодно тем же проходом по тексту сверяет LivePackName — дешёвая
+        /// независимая от модели проверка того, что уже проверяется через AlsFile выше.
+        /// Про узлы вне rewrites ничего не утверждает: их патчер не трогает, пак у них может
+        /// быть любым. Возвращает число проверенных узлов.
+        /// </summary>
+        static int CheckPackCleared(string dst, Dictionary<int, NewRef> rewrites)
+        {
+            int index = -1, checkedNodes = 0;
+            using (FileStream fin = new FileStream(dst, FileMode.Open, FileAccess.Read,
+                                                   FileShare.ReadWrite, 64 * 1024))
+            using (GZipStream gin = new GZipStream(fin, CompressionMode.Decompress))
+            using (StreamReader rin = new StreamReader(gin, new UTF8Encoding(false), false, 64 * 1024))
+            {
+                AlsPatch.LineReader lines = new AlsPatch.LineReader(rin);
+                StringBuilder node = null;
+
+                string line;
+                while ((line = lines.Next()) != null)
+                {
+                    if (node == null)
+                    {
+                        int at = line.IndexOf("<FileRef", StringComparison.Ordinal);
+                        if (at < 0 || SelfClosing(line, at)) continue;
+                        index++;
+                        node = new StringBuilder(line);
+                    }
+                    else node.Append(line);
+
+                    if (line.IndexOf("</FileRef>", StringComparison.Ordinal) < 0) continue;
+
+                    string text = node.ToString();
+                    node = null;
+                    if (!rewrites.ContainsKey(index)) continue;
+
+                    checkedNodes++;
+                    Check(AttrEmpty(text, "<LivePackId Value=\""), "LivePackId not cleared (raw) at " + index);
+                    Check(AttrEmpty(text, "<LivePackName Value=\""), "LivePackName not cleared (raw) at " + index);
+                }
+            }
+            return checkedNodes;
+        }
+
+        /// <summary>Тег найден, и сразу после открывающей кавычки значения идёт закрывающая — значение пустое.</summary>
+        static bool AttrEmpty(string node, string tag)
+        {
+            int at = node.IndexOf(tag, StringComparison.Ordinal);
+            return at >= 0 && at + tag.Length < node.Length && node[at + tag.Length] == '"';
+        }
+
+        /// <summary>
+        /// Стоит ли «/» перед закрывающей скобкой тега — то есть узел пустой. Копия того же
+        /// правила из AlsSamplePatch: там оно приватно классу и общей сборки не разделяет.
+        /// </summary>
+        static bool SelfClosing(string line, int at)
+        {
+            int close = line.IndexOf('>', at);
+            return close > at && line[close - 1] == '/';
         }
     }
 }
