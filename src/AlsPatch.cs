@@ -227,7 +227,8 @@ namespace AbletonManager
         /// (журнал) — одиночный «\n», а копия обязана совпадать с оригиналом байт в байт
         /// везде, кроме подменённых значений.
         /// </summary>
-        sealed class LineReader
+        /// <summary>Внутренний, а не приватный: тем же чтением пользуется AlsSamplePatch.</summary>
+        internal sealed class LineReader
         {
             readonly TextReader _r;
             readonly char[] _buf = new char[64 * 1024];

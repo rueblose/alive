@@ -30,9 +30,11 @@ namespace AliveTools
             string arg = args.Length > 1 ? args[1] : "";
 
             if (cmd == "scan") Scan(arg);
+            else if (cmd == "patch") Patch(arg);
             else
             {
                 Console.WriteLine("usage: SampleTest.exe scan <folder or .als>");
+                Console.WriteLine("       SampleTest.exe patch <set.als>");
                 return 2;
             }
 
@@ -128,6 +130,88 @@ namespace AliveTools
             for (int i = 0; i < names.Length; i++)
                 Console.WriteLine(string.Format("{0,-14} {1,6} files  {2,10:N1} MB",
                                                 names[i], byOrigin[i], bytesByOrigin[i] / 1048576.0));
+        }
+
+        /// <summary>
+        /// Круг: переписать пути у части ссылок, прочитать результат тем же AlsFile и
+        /// убедиться, что поменялось ровно заказанное и ровно на заказанное, а всё
+        /// остальное осталось прежним. Это тот самый инвариант, ради которого патчер
+        /// адресует узлы по номеру, а не по содержимому.
+        /// </summary>
+        static void Patch(string file)
+        {
+            if (!File.Exists(file)) { Check(false, "no such set: " + file); return; }
+
+            LiveEnvironment env = LiveEnvironment.Detect();
+            AlsInfo before = AlsFile.Read(file);
+            Check(before.Error == null, "cannot read " + file);
+            if (before.Error != null) return;
+
+            List<SampleDep> deps = SampleScan.Of(before, Path.GetDirectoryName(file), env);
+            Check(deps.Count > 0, "no sample dependencies in " + file);
+            if (deps.Count == 0) return;
+
+            // Берём каждую вторую зависимость — так проверяется и что тронутое
+            // изменилось, и что нетронутое рядом с ним уцелело.
+            Dictionary<int, NewRef> rewrites = new Dictionary<int, NewRef>();
+            HashSet<int> touched = new HashSet<int>();
+            int n = 0;
+            foreach (SampleDep d in deps)
+            {
+                if ((n++ % 2) != 0) continue;
+                NewRef nr = new NewRef();
+                nr.RelativePath = "Samples/Imported/probe " + n + ".wav";
+                nr.AbsolutePath = "C:/probe/Samples/Imported/probe " + n + ".wav";
+                nr.RelativePathType = 3;
+                foreach (int i in d.RefIndexes) { rewrites[i] = nr; touched.Add(i); }
+            }
+
+            string dst = Path.Combine(Path.GetTempPath(), "alive-patch-probe.als");
+            int patched = AlsSamplePatch.Rewrite(file, dst, rewrites, before.Files.Count);
+            Check(patched == rewrites.Count,
+                  string.Format("rewrote {0} nodes, asked for {1}", patched, rewrites.Count));
+
+            AlsInfo after = AlsFile.Read(dst);
+            Check(after.Error == null, "patched copy does not parse");
+            if (after.Error != null) return;
+
+            Check(after.Files.Count == before.Files.Count, "FileRef count changed");
+            Check(after.Plugins.Count == before.Plugins.Count, "plugin count changed");
+            Check(after.Tempo == before.Tempo, "tempo changed");
+            Check(after.TotalTracks == before.TotalTracks, "track count changed");
+
+            for (int i = 0; i < before.Files.Count && i < after.Files.Count; i++)
+            {
+                FileRefInfo a = before.Files[i], b = after.Files[i];
+                if (touched.Contains(i))
+                {
+                    NewRef nr = rewrites[i];
+                    Check(b.RelativePath == nr.RelativePath, "RelativePath not applied at " + i);
+                    Check(b.AbsolutePath == nr.AbsolutePath, "Path not applied at " + i);
+                    Check(b.RelativePathType == nr.RelativePathType, "RelativePathType not applied at " + i);
+                    Check(b.LivePackName.Length == 0, "LivePackName not cleared at " + i);
+                    Check(b.OriginalFileSize == a.OriginalFileSize, "OriginalFileSize touched at " + i);
+                }
+                else
+                {
+                    Check(b.RelativePath == a.RelativePath, "untouched RelativePath changed at " + i);
+                    Check(b.AbsolutePath == a.AbsolutePath, "untouched Path changed at " + i);
+                    Check(b.RelativePathType == a.RelativePathType, "untouched type changed at " + i);
+                    Check(b.LivePackName == a.LivePackName, "untouched LivePackName changed at " + i);
+                }
+            }
+
+            // Неверное ожидаемое число узлов обязано убить результат, а не записать его.
+            string bad = Path.Combine(Path.GetTempPath(), "alive-patch-bad.als");
+            bool threw = false;
+            try { AlsSamplePatch.Rewrite(file, bad, rewrites, before.Files.Count + 1); }
+            catch (InvalidDataException) { threw = true; }
+            Check(threw, "count mismatch did not throw");
+            Check(!File.Exists(bad), "failed patch left a file behind");
+
+            try { File.Delete(dst); } catch { }
+            Console.WriteLine(string.Format("patched {0} of {1} FileRef in {2}",
+                                            patched, before.Files.Count, Path.GetFileName(file)));
         }
     }
 }
