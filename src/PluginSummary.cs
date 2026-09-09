@@ -37,11 +37,11 @@ namespace AbletonManager
         public void Update(PluginHealth h)
         {
             _cards.Clear();
-            Add(L.S("Used in sets", "Используется"), h.Used, Theme.Text);
-            Add(L.S("Installed", "Установлено"), h.InstalledTotal, Theme.Green);
-            Add(L.S("Not installed", "Не установлено"), h.Missing,
+            Add("Used in sets", h.Used, Theme.Text);
+            Add("Installed", h.InstalledTotal, Theme.Green);
+            Add("Not installed", h.Missing,
                 h.Missing > 0 ? Theme.Red : Theme.Text);
-            Add(L.S("Never used", "Не используется"), h.InstalledUnused, Theme.TextDim);
+            Add("Never used", h.InstalledUnused, Theme.TextDim);
             PlaceCards();
             Invalidate();
         }

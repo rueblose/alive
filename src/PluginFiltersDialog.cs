@@ -17,7 +17,6 @@ namespace AbletonManager
         readonly PillToggle _statusInstalled = new PillToggle();
         readonly PillToggle _statusOtherFormat = new PillToggle();
         readonly PillToggle _statusMissing = new PillToggle();
-        readonly PillToggle _statusUnused = new PillToggle();
 
         readonly PillToggle _fmtVst3 = new PillToggle();
         readonly PillToggle _fmtVst2 = new PillToggle();
@@ -31,6 +30,11 @@ namespace AbletonManager
 
         readonly GlassButton _reset = new GlassButton();
         readonly GlassButton _apply = new GlassButton();
+
+        /// <summary>
+        /// Условия применяются на лету: список плагинов за окном обновляется сразу при любых изменениях.
+        /// </summary>
+        public event Action Changed;
 
         readonly List<string> _categoryList = new List<string>();
         readonly List<string> _vendorList = new List<string>();
@@ -46,20 +50,18 @@ namespace AbletonManager
         {
             _allStats = allStats ?? new List<PluginStat>();
             _filter.CopyFrom(current);
-            Caption = L.S("Plugin Filters", "Фильтры плагинов");
+            Caption = "Plugin Filters";
             ClientSize = new Size(Sc(740), Sc(540));
 
-            _statusInstalled.Text = L.S("Installed", "Установлены");
-            _statusMissing.Text = L.S("Not Installed", "Не установлены");
-            _statusOtherFormat.Text = L.S("Other Format", "Другой формат");
-            _statusUnused.Text = L.S("Unused", "Не используются");
+            _statusInstalled.Text = "Installed";
+            _statusMissing.Text = "Not Installed";
+            _statusOtherFormat.Text = "Other Format";
 
             _statusInstalled.Checked = _filter.StatusInstalled;
             _statusMissing.Checked = _filter.StatusMissing;
             _statusOtherFormat.Checked = _filter.StatusOtherFormat;
-            _statusUnused.Checked = _filter.StatusUnused;
 
-            foreach (PillToggle p in new PillToggle[] { _statusInstalled, _statusMissing, _statusOtherFormat, _statusUnused })
+            foreach (PillToggle p in new PillToggle[] { _statusInstalled, _statusMissing, _statusOtherFormat })
             {
                 p.FitToText();
                 p.CheckedChanged += delegate { Collect(); };
@@ -68,7 +70,7 @@ namespace AbletonManager
 
             _fmtVst3.Text = "VST3";
             _fmtVst2.Text = "VST2";
-            _fmtOther.Text = L.S("Other", "Другие");
+            _fmtOther.Text = "Other";
 
             _fmtVst3.Checked = _filter.Formats.Contains("VST3");
             _fmtVst2.Checked = _filter.Formats.Contains("VST2");
@@ -84,11 +86,11 @@ namespace AbletonManager
             BuildOptions();
 
             _categoriesTag.SetOptions(_categoryList);
-            _categoriesTag.Placeholder = L.S("any type/category", "любой тип FX / категория");
+            _categoriesTag.Placeholder = "any type/category";
             _categoriesTag.SetSelected(IndexesOf(_categoryList, _filter.Categories));
 
             _vendorsTag.SetOptions(_vendorList);
-            _vendorsTag.Placeholder = L.S("any developer", "любой разработчик");
+            _vendorsTag.Placeholder = "any developer";
             _vendorsTag.SetSelected(IndexesOf(_vendorList, _filter.Vendors));
 
             foreach (TagField t in new TagField[] { _categoriesTag, _vendorsTag })
@@ -104,15 +106,15 @@ namespace AbletonManager
                 f.Box.TextChanged += delegate { Collect(); };
                 Controls.Add(f);
             }
-            Cue(_setsMin, L.S("from", "от"));
-            Cue(_setsMax, L.S("to", "до"));
+            Cue(_setsMin, "from");
+            Cue(_setsMax, "to");
 
-            _reset.Text = L.S("Reset", "Сбросить");
-            _reset.FitToText(20);
+            _reset.Text = "Reset";
+            _reset.FitToText(18);
             _reset.Click += delegate
             {
                 _filter.Clear();
-                _statusInstalled.Checked = _statusOtherFormat.Checked = _statusMissing.Checked = _statusUnused.Checked = false;
+                _statusInstalled.Checked = _statusOtherFormat.Checked = _statusMissing.Checked = false;
                 _fmtVst3.Checked = _fmtVst2.Checked = _fmtOther.Checked = false;
                 _categoriesTag.SetSelected(new int[0]);
                 _vendorsTag.SetSelected(new int[0]);
@@ -122,16 +124,18 @@ namespace AbletonManager
             };
             Controls.Add(_reset);
 
-            _apply.Text = L.S("Apply", "Применить");
+            _apply.Text = "Ok";
             _apply.Primary = true;
             _apply.Click += delegate
             {
-                Collect();
                 DialogResult = DialogResult.OK;
                 Close();
             };
-            _apply.FitToText(28);
+            _apply.FitToText(18);
             Controls.Add(_apply);
+
+            int pairW = Math.Max(_reset.Width, _apply.Width);
+            _reset.Width = _apply.Width = pairW;
 
             LayoutControls();
             Collect();
@@ -174,7 +178,6 @@ namespace AbletonManager
             _filter.StatusInstalled = _statusInstalled.Checked;
             _filter.StatusOtherFormat = _statusOtherFormat.Checked;
             _filter.StatusMissing = _statusMissing.Checked;
-            _filter.StatusUnused = _statusUnused.Checked;
 
             _filter.Formats.Clear();
             if (_fmtVst3.Checked) _filter.Formats.Add("VST3");
@@ -199,6 +202,7 @@ namespace AbletonManager
 
             UpdateFacets();
             Invalidate();
+            if (Changed != null) Changed();
         }
 
         void UpdateFacets()
@@ -254,17 +258,6 @@ namespace AbletonManager
             _statusOtherFormat.Enabled = countOtherFormat > 0 || _statusOtherFormat.Checked;
             _statusMissing.Enabled = countMissing > 0 || _statusMissing.Checked;
 
-            // 3b. Unused Pill Toggle
-            int countUnused = 0;
-            foreach (PluginStat st in _allStats)
-            {
-                if (_filter.Matches(st, ignoreUnused: true))
-                {
-                    if (st.IsUnused) countUnused++;
-                }
-            }
-            _statusUnused.Enabled = countUnused > 0 || _statusUnused.Checked;
-
             // 4. Format Pill Toggles
             int countVst3 = 0, countVst2 = 0, countOther = 0;
             foreach (PluginStat st in _allStats)
@@ -305,19 +298,17 @@ namespace AbletonManager
                 int ch = Sc(Theme.ControlH);
 
                 // Состояние
-                Label(L.S("Status", "Состояние"), pad, y, labelW);
+                Label("Status", pad, y, labelW);
                 int sx = left;
                 foreach (PillToggle p in new PillToggle[] { _statusInstalled, _statusMissing, _statusOtherFormat })
                 {
                     p.Location = new Point(sx, y);
                     sx += p.Width + Sc(8);
                 }
-                y += ch + Sc(8);
-                _statusUnused.Location = new Point(left, y);
                 y += ch + rowGap;
 
                 // Формат
-                Label(L.S("Format", "Формат"), pad, y, labelW);
+                Label("Format", pad, y, labelW);
                 int fx = left;
                 foreach (PillToggle p in new PillToggle[] { _fmtVst3, _fmtVst2, _fmtOther })
                 {
@@ -327,15 +318,15 @@ namespace AbletonManager
                 y += ch + rowGap;
 
                 // Тип FX / Категория
-                Label(L.S("FX Type", "Тип FX"), pad, y, labelW);
+                Label("FX Type", pad, y, labelW);
                 y = TagRow(_categoriesTag, left, y, contentW) + rowGap;
 
                 // Разработчик
-                Label(L.S("Developer", "Разработчик"), pad, y, labelW);
+                Label("Developer", pad, y, labelW);
                 y = TagRow(_vendorsTag, left, y, contentW) + rowGap;
 
                 // Число сетов
-                Label(L.S("Sets Count", "В скольких сетах"), pad, y, labelW);
+                Label("Sets Count", pad, y, labelW);
                 int numW = Sc(120);
                 _setsMin.SetBounds(left, y, numW, ch);
                 _setsMax.SetBounds(left + numW + Sc(12), y, numW, ch);
@@ -375,7 +366,7 @@ namespace AbletonManager
             for (int i = 0; i < _labels.Count; i++)
                 Chrome.DrawText(g, _labelTexts[i], Theme.FBody, _labels[i], Theme.TextDim, Chrome.Left);
 
-            string count = _matches + L.S(" plugins match", " плагинов подходит");
+            string count = _matches + " plugins match";
             Chrome.DrawText(g, count, Theme.FBody,
                 new Rectangle(Sc(Theme.Pad), _apply.Top, Math.Max(0, _reset.Left - Sc(40)), _apply.Height),
                 _matches == 0 ? Theme.Red : Theme.TextDim, Chrome.Left);

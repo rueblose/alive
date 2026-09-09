@@ -38,6 +38,7 @@ namespace AbletonManager
         /// </summary>
         public bool DisableGlass;
 
+
         /// <summary>
         /// Включена ли плавная вертикальная прокрутка (доводка таймером).
         /// При false прокрутка во всех списках и панелях происходит мгновенно.
@@ -113,8 +114,8 @@ namespace AbletonManager
                     else if (key == "plugincolumns") s.PluginColumns = val;
                     else if (key == "pinnedfirst") s.PinnedFirst = val == "1";
                     else if (key == "noglass") s.DisableGlass = val == "1";
-                    else if (key == "smoothscroll") s.SmoothScroll = val != "0";
-                    else if (key == "nosmoothscroll") s.SmoothScroll = val != "1";
+                    else if (key == "smoothscroll") s.SmoothScroll = val == "1";
+                    else if (key == "nosmoothscroll") s.SmoothScroll = val == "0";
                     else if (key == "groupbyfolder") s.GroupByFolder = val == "1";
                     else if (key == "pluginfolders") s.PluginsFromFolders = val == "1";
                     else if (key == "pluginsource") s.PluginSource = val;
@@ -137,6 +138,26 @@ namespace AbletonManager
             foreach (string s in list)
                 if (string.Equals(s, value, StringComparison.OrdinalIgnoreCase)) return true;
             return false;
+        }
+
+        public static event Action<object> RootsChanged;
+
+        public static void NotifyRootsChanged(object source)
+        {
+            Action<object> h = RootsChanged;
+            if (h != null)
+            {
+                try { h(source); } catch { }
+            }
+        }
+
+        public void ReloadRoots()
+        {
+            Settings s = Load();
+            Roots.Clear();
+            Roots.AddRange(s.Roots);
+            DisabledRoots.Clear();
+            DisabledRoots.AddRange(s.DisabledRoots);
         }
 
         public void Save()

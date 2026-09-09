@@ -349,24 +349,6 @@ namespace AbletonManager.Nebula
                 Color.FromArgb(0xEE, 0x5F, 0xC8), Color.FromArgb(0xFF, 0x77, 0x6B),
                 Color.FromArgb(0xFF, 0xC8, 0x4D)
             } },
-            new Gradient { Id = "viridis", Title = "Viridis", Stops = new[]
-            {
-                Color.FromArgb(0x44, 0x01, 0x54), Color.FromArgb(0x3B, 0x52, 0x8B),
-                Color.FromArgb(0x21, 0x90, 0x8D), Color.FromArgb(0x5D, 0xC9, 0x63),
-                Color.FromArgb(0xFD, 0xE7, 0x25)
-            } },
-            new Gradient { Id = "plasma", Title = "Plasma", Stops = new[]
-            {
-                Color.FromArgb(0x0D, 0x08, 0x87), Color.FromArgb(0x7E, 0x03, 0xA8),
-                Color.FromArgb(0xCC, 0x47, 0x78), Color.FromArgb(0xF8, 0x94, 0x41),
-                Color.FromArgb(0xF0, 0xF9, 0x21)
-            } },
-            new Gradient { Id = "inferno", Title = "Inferno", Stops = new[]
-            {
-                Color.FromArgb(0x00, 0x00, 0x04), Color.FromArgb(0x57, 0x10, 0x6E),
-                Color.FromArgb(0xBC, 0x37, 0x54), Color.FromArgb(0xF9, 0x8C, 0x0A),
-                Color.FromArgb(0xFC, 0xFF, 0xA4)
-            } },
             new Gradient { Id = "ocean", Title = "Ocean", Stops = new[]
             {
                 Color.FromArgb(0x04, 0x12, 0x2B), Color.FromArgb(0x0B, 0x3D, 0x5C),

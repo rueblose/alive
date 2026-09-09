@@ -75,7 +75,7 @@ namespace AbletonManager
         int _dragOffset, _dragHOffset;
         float _scrollTarget, _scrollCurrent;
         float _scrollXTarget, _scrollXCurrent;
-        readonly Timer _scrollTimer;
+        readonly SmoothScroller _scroller;
         float[] _rowHoverFactors;
         float[] _rowEntrance;
         int _entranceStartTick;
@@ -174,6 +174,13 @@ namespace AbletonManager
         /// </summary>
         public bool ShowPlayButton;
 
+        /// <summary>
+        /// Зазор справа от пилюли строки (px). Если задан, пилюли заканчиваются
+        /// на Width - PillRightGap, а вертикальный скроллбар центрируется ровно
+        /// в этом промежутке между пилюлей выделения и правым краем контрола.
+        /// </summary>
+        public int PillRightGap;
+
         /// <summary>Строка, чью кнопку play сейчас держит курсор, иначе -1.</summary>
         int _playHot = -1;
 
@@ -222,12 +229,54 @@ namespace AbletonManager
 
         /// <summary>Строка, которая сейчас загружена в плеер (необязательно играет —
         /// см. Playing), — её треугольник горит светлым.</summary>
-        public object PlayingTag;
+        public object PlayingTag
+        {
+            get { return _playingTag; }
+            set { if (!ReferenceEquals(_playingTag, value)) { _playingTag = value; SyncPulse(); } }
+        }
+        object _playingTag;
 
         /// <summary>Плеер сейчас действительно звучит, а не на паузе. Иконка PlayingTag
         /// становится паузой только при обоих условиях разом — иначе после паузы через
         /// футер строка продолжала бы показывать паузу, хотя играть уже нечему.</summary>
-        public bool Playing;
+        public bool Playing
+        {
+            get { return _playing; }
+            set { if (_playing != value) { _playing = value; SyncPulse(); } }
+        }
+        bool _playing;
+
+        // Оверлейные полосы прокрутки: тонкие в покое, толще под курсором, гаснут
+        // через секунду после последней прокрутки.
+        ScrollFade _barFade, _hbarFade;
+
+        /// <summary>Волосяная линия под шапкой. Отключается там, где шапка и так стоит
+        /// на своей поверхности (диалоги с одной колонкой).</summary>
+        public bool ShowHeaderRule = true;
+
+        /// <summary>Пока звучит — перерисовываем не весь список, а только кружок play
+        /// у играющей строки; она ездит с прокруткой, поэтому считаем каждый тик.</summary>
+        void SyncPulse()
+        {
+            if (_playing && _playingTag != null) PlayPulse.Attach(this, PulseRect);
+            else PlayPulse.Detach(this);
+            Invalidate();
+        }
+
+        Rectangle PulseRect()
+        {
+            if (_playingTag == null || !ShowPlayButton) return Rectangle.Empty;
+            int rowH = RowHeight;
+            int over = _scroller != null ? (int)Math.Round(_scroller.Overscroll) : 0;
+            for (int i = 0; i < _rows.Count; i++)
+            {
+                if (!ReferenceEquals(_rows[i].Tag, _playingTag)) continue;
+                int top = HeaderHeight + i * rowH - _scroll - over;
+                if (top + rowH < HeaderHeight || top > Height) return Rectangle.Empty;
+                return PlayRect(top, rowH);
+            }
+            return Rectangle.Empty;
+        }
 
         /// <summary>
         /// Звёздочка закрепления в гутере, тем же приёмом, что и play: у закреплённой
@@ -247,13 +296,6 @@ namespace AbletonManager
         public bool PinnedFirst;
         public event Action PinnedFirstToggled;
         bool _headPinHot;
-
-        /// <summary>
-        /// После какой строки провести разделитель групп (-1 — не проводить). Сам список
-        /// не знает, что такое «закреплённые», и знать не должен: где граница — решает
-        /// тот, кто собрал строки.
-        /// </summary>
-        public int GroupSeparatorAfter = -1;
 
         /// <summary>
         /// Растворять ли нижние строки в фон — как в макете у длинного списка. На стекле
@@ -296,14 +338,21 @@ namespace AbletonManager
             _gripTimer = new Timer();
             _gripTimer.Interval = 10;
             _gripTimer.Tick += delegate { StepGripFade(); };
-            _scrollTimer = new Timer();
-            _scrollTimer.Interval = 16;
-            _scrollTimer.Tick += delegate { ScrollTick(); };
+            _barFade = new ScrollFade(this, BarRect);
+            _hbarFade = new ScrollFade(this, HBarRect);
+            _scroller = new SmoothScroller(this,
+                delegate (int s) { _scroll = s; _scrollCurrent = s; ClampScroll(); },
+                delegate { return Math.Max(0, _rows.Count * RowHeight - (ViewH - HeaderHeight)); });
         }
 
         protected override void Dispose(bool disposing)
         {
-            if (disposing) { _gripTimer.Dispose(); _scrollTimer.Dispose(); }
+            if (disposing)
+            {
+                PlayPulse.Detach(this);
+                _gripTimer.Dispose(); _scroller.Dispose();
+                _barFade.Dispose(); _hbarFade.Dispose();
+            }
             base.Dispose(disposing);
         }
 
@@ -312,9 +361,11 @@ namespace AbletonManager
         int RowHeight { get { return Sc(Theme.RowH); } }
         int HeaderHeight { get { return Sc(45); } }
         int PadX { get { return Sc(Theme.CellPadX); } }
+        int PadRight { get { return Math.Max(PadX, (int)Math.Ceiling(Sc(Theme.RowPillH) / 2f) + Sc(16)) + PillRightGap; } }
 
         // Чекбокс живёт в отдельной колонке слева от первой обычной колонки — левый
-        // отступ содержимого от этого растёт, правый (PadX) не меняется.
+        // отступ содержимого от этого растёт. Правый отступ (PadRight) гарантирует,
+        // что текст колонок не залезает под скругление пилюли выделения строки.
         int CheckW { get { return ShowCheckboxes ? Sc(30) : 0; } }
         int PinW { get { return ShowPinIndicator ? Sc(32) : 0; } }
         int PlayW { get { return ShowPlayButton ? Sc(32) : 0; } }
@@ -347,6 +398,8 @@ namespace AbletonManager
         {
             _columns.Clear();
             _columns.AddRange(cols);
+            ClampScrollX();
+            _scrollXTarget = _scrollXCurrent = _scrollX;
             Invalidate();
         }
 
@@ -362,13 +415,13 @@ namespace AbletonManager
             _rows.Clear();
             _rows.AddRange(rows);
             _scroll = 0;
-            _scrollX = 0;
             _scrollTarget = _scrollCurrent = 0;
-            _scrollXTarget = _scrollXCurrent = 0;
+            if (_scroller != null) _scroller.SyncPosition(0);
             _selected = -1;
             _hot = -1;
             ClampScroll();
             ClampScrollX();
+            _scrollXTarget = _scrollXCurrent = _scrollX;
 
             if (animate) { TriggerEntrance(); return; }
 
@@ -416,6 +469,7 @@ namespace AbletonManager
                 _scroll = value;
                 ClampScroll();
                 _scrollTarget = _scrollCurrent = _scroll;
+                if (_scroller != null) _scroller.SyncPosition(_scroll);
                 Invalidate();
             }
         }
@@ -440,16 +494,25 @@ namespace AbletonManager
                 if (widths.Length <= 1) return 0;
                 int scrollableW = 0;
                 for (int c = 1; c < widths.Length; c++) scrollableW += widths[c];
-                int visibleScrollableW = Width - (LeftX + widths[0]) - PadX;
+                int visibleScrollableW = Width - (LeftX + widths[0]) - PadRight;
                 return Math.Max(0, scrollableW - visibleScrollableW);
             }
         }
+
+        /// <summary>Полоса горизонтальной прокрутки живёт в нижних Sc(10). Её высота
+        /// вычитается из области строк целиком, а не добавляется к содержимому: иначе
+        /// пустая полоска появлялась только в самом низу списка, а на любой другой
+        /// прокрутке полоса по-прежнему лежала поперёк строки.</summary>
+        int HBarSpace { get { return MaxHScroll > 0 ? Sc(14) : 0; } }
+
+        /// <summary>Высота области строк — окно минус полоса горизонтальной прокрутки.</summary>
+        int ViewH { get { return Height - HBarSpace; } }
 
         int ContentHeight { get { return _rows.Count * RowHeight + Sc(8) + HeaderHeight; } }
 
         void ClampScroll()
         {
-            int max = Math.Max(0, ContentHeight - Height);
+            int max = Math.Max(0, ContentHeight - ViewH);
             if (_scroll > max) _scroll = max;
             if (_scroll < 0) _scroll = 0;
         }
@@ -568,23 +631,13 @@ namespace AbletonManager
                 _scrollX = (int)_scrollXTarget;
                 _scrollXCurrent = _scrollXTarget;
                 ClampScrollX();
+                _hbarFade.Ping();
                 Invalidate();
             }
             else
             {
-                _scrollTarget -= (int)(e.Delta / 120f * RowHeight * 3);
-                ClampScrollTarget();
-                if (!Theme.SmoothScroll)
-                {
-                    _scroll = (int)_scrollTarget;
-                    _scrollCurrent = _scrollTarget;
-                    ClampScroll();
-                    Invalidate();
-                }
-                else
-                {
-                    if (!_scrollTimer.Enabled) _scrollTimer.Start();
-                }
+                _scroller.OnMouseWheel(e.Delta, RowHeight * 3);
+                _barFade.Ping();
             }
             base.OnMouseWheel(e);
         }
@@ -632,33 +685,20 @@ namespace AbletonManager
             if (_scrollXTarget < 0) _scrollXTarget = 0;
         }
 
-        void ScrollTick()
+
+        /// <summary>
+        /// Смещение содержимого по вертикали: прокрутка плюс резиновый перелёт. Попадания
+        /// мыши обязаны считаться по нему же, что и отрисовка, — иначе во время отскока
+        /// звёздочка и play срабатывают там, где их уже не видно.
+        /// </summary>
+        int ScrollY
         {
-            _scrollCurrent += (_scrollTarget - _scrollCurrent) * 0.35f;
-            _scrollX = (int)_scrollXTarget;
-            _scrollXCurrent = _scrollXTarget;
-
-            bool vDone = Math.Abs(_scrollTarget - _scrollCurrent) < 0.5f;
-
-            if (vDone)
-            {
-                _scrollCurrent = _scrollTarget;
-                _scrollTimer.Stop();
-            }
-
-            int newScroll = (int)Math.Round(_scrollCurrent);
-
-            if (newScroll != _scroll)
-            {
-                _scroll = newScroll;
-                ClampScroll();
-                Invalidate();
-            }
+            get { return _scroll + (_scroller != null ? (int)Math.Round(_scroller.Overscroll) : 0); }
         }
 
         int RowAt(int y)
         {
-            int top = HeaderHeight - _scroll;
+            int top = HeaderHeight - ScrollY;
             if (y < HeaderHeight) return -1;
             int idx = (y - top) / RowHeight;
             return idx >= 0 && idx < _rows.Count ? idx : -1;
@@ -667,12 +707,16 @@ namespace AbletonManager
         Rectangle BarRect()
         {
             int content = ContentHeight;
-            if (content <= Height) return Rectangle.Empty;
-            int track = Height - HeaderHeight - Sc(10);
-            int h = Math.Max(Sc(40), (int)(track * (float)Height / content));
-            int max = Math.Max(1, content - Height);
+            if (content <= ViewH) return Rectangle.Empty;
+            int track = ViewH - HeaderHeight - Sc(10);
+            int h = Math.Max(Sc(40), (int)(track * (float)ViewH / content));
+            int max = Math.Max(1, content - ViewH);
             int y = HeaderHeight + Sc(5) + (int)((track - h) * (_scroll / (float)max));
-            return new Rectangle(Width - Sc(8), y, Sc(4), h);
+            int barW = Sc(4);
+            int barX = PillRightGap > 0
+                ? (Width - PillRightGap) + (PillRightGap - barW) / 2
+                : Width - Sc(8);
+            return new Rectangle(barX, y, barW, h);
         }
 
         Rectangle HBarRect()
@@ -681,12 +725,12 @@ namespace AbletonManager
             if (max <= 0) return Rectangle.Empty;
             int[] widths = ComputeWidths();
             int startX = LeftX + widths[0] + Sc(5);
-            int track = Width - startX - Sc(10);
+            int track = Width - startX - PadRight;
             if (track <= Sc(20)) return Rectangle.Empty;
 
             int totalScrollableW = 0;
             for (int c = 1; c < widths.Length; c++) totalScrollableW += widths[c];
-            int visibleW = Width - (LeftX + widths[0]) - PadX;
+            int visibleW = Width - (LeftX + widths[0]) - PadRight;
 
             int w = Math.Max(Sc(30), (int)(track * (float)visibleW / Math.Max(1, totalScrollableW)));
             int x = startX + (int)((track - w) * (_scrollX / (float)max));
@@ -724,11 +768,12 @@ namespace AbletonManager
             if (_draggingBar)
             {
                 Rectangle bar = BarRect();
-                int track = Height - HeaderHeight - Sc(10);
-                int max = Math.Max(1, ContentHeight - Height);
+                int track = ViewH - HeaderHeight - Sc(10);
+                int max = Math.Max(1, ContentHeight - ViewH);
                 float t = (e.Y - _dragOffset - HeaderHeight - Sc(5)) / (float)Math.Max(1, track - bar.Height);
                 _scroll = (int)(t * max);
                 _scrollTarget = _scrollCurrent = _scroll;
+                if (_scroller != null) _scroller.SyncPosition(_scroll);
                 ClampScroll();
                 Invalidate();
                 return;
@@ -738,7 +783,7 @@ namespace AbletonManager
             {
                 int[] widths = ComputeWidths();
                 int startX = LeftX + widths[0] + Sc(5);
-                int track = Width - startX - Sc(10);
+                int track = Width - startX - PadRight;
                 Rectangle hbar = HBarRect();
                 int max = MaxHScroll;
                 float t = (e.X - _dragHOffset - startX) / (float)Math.Max(1, track - hbar.Width);
@@ -748,6 +793,11 @@ namespace AbletonManager
                 Invalidate();
                 return;
             }
+
+            // Полосы прокрутки просыпаются только когда курсор рядом с ними самими,
+            // а не когда он где угодно над списком.
+            _barFade.SetHot(e.X >= Width - Sc(22) && e.Y > HeaderHeight);
+            _hbarFade.SetHot(MaxHScroll > 0 && e.Y >= Height - Sc(18));
 
             // В шапке у краёв изменяемых колонок курсор — «раздвинуть», в остальном рука.
             // Полоски-ручки показываем все разом, лишь только курсор зашёл в шапку.
@@ -766,11 +816,12 @@ namespace AbletonManager
             SetHeaderHot(false);
             if (Cursor != Cursors.Hand) Cursor = Cursors.Hand;
 
-            int idx = RowAt(e.Y);
+            int pillW = Math.Max(0, Width - PillRightGap);
+            int idx = (PillRightGap > 0 && e.X >= pillW) ? -1 : RowAt(e.Y);
             int playHot = -1, pinHot = -1;
             if (idx >= 0)
             {
-                int top = HeaderHeight + idx * RowHeight - _scroll;
+                int top = HeaderHeight + idx * RowHeight - ScrollY;
                 if (ShowPlayButton && _rows[idx].CanPlay && PlayRect(top, RowHeight).Contains(e.Location))
                     playHot = idx;
                 if (ShowPinIndicator && PinRect(top, RowHeight).Contains(e.Location))
@@ -826,7 +877,7 @@ namespace AbletonManager
                 if (_columns[c].Width > 0)
                 {
                     int x = ColX(widths, c);
-                    if (x >= LeftX + widths[0] - Sc(2) && Math.Abs(px - x) <= Sc(4)) return c;
+                    if (x >= LeftX + widths[0] - Sc(2) && x <= Width - PadRight + Sc(2) && Math.Abs(px - x) <= Sc(4)) return c;
                 }
             }
             return -1;
@@ -841,7 +892,7 @@ namespace AbletonManager
             {
                 int newScaled = mouseX - LeftX;
                 int minW = Sc(100);
-                int maxW = Width - LeftX - PadX - Sc(100);
+                int maxW = Width - LeftX - PadRight - Sc(100);
                 if (maxW < minW) maxW = minW;
                 if (newScaled < minW) newScaled = minW;
                 if (newScaled > maxW) newScaled = maxW;
@@ -853,7 +904,7 @@ namespace AbletonManager
                 int newScaled = rightX - mouseX;
 
                 int minW = Sc(48);
-                int maxW = Width - LeftX - PadX - Sc(80);
+                int maxW = Width - LeftX - PadRight - Sc(80);
                 if (maxW < minW) maxW = minW;
                 if (newScaled < minW) newScaled = minW;
                 if (newScaled > maxW) newScaled = maxW;
@@ -897,7 +948,7 @@ namespace AbletonManager
         {
             if (_columns.Count == 0) return -1;
             int[] widths = ComputeWidths();
-            if (px < LeftX) return -1;
+            if (px < LeftX || px >= Width - PadRight) return -1;
             if (px < LeftX + widths[0]) return 0;
 
             for (int c = 1; c < _columns.Count; c++)
@@ -960,7 +1011,8 @@ namespace AbletonManager
                 return;
             }
 
-            int idx = RowAt(e.Y);
+            int pillW = Math.Max(0, Width - PillRightGap);
+            int idx = (PillRightGap > 0 && e.X >= pillW) ? -1 : RowAt(e.Y);
 
             if (e.Button == MouseButtons.Right)
             {
@@ -985,7 +1037,7 @@ namespace AbletonManager
 
             if (idx >= 0 && ShowPinIndicator)
             {
-                int pinTop = HeaderHeight + idx * RowHeight - _scroll;
+                int pinTop = HeaderHeight + idx * RowHeight - ScrollY;
                 if (PinRect(pinTop, RowHeight).Contains(e.Location))
                 {
                     // Закрепление — тоже независимое действие, как и play ниже.
@@ -996,7 +1048,7 @@ namespace AbletonManager
 
             if (idx >= 0 && ShowPlayButton && _rows[idx].CanPlay)
             {
-                int top = HeaderHeight + idx * RowHeight - _scroll;
+                int top = HeaderHeight + idx * RowHeight - ScrollY;
                 if (PlayRect(top, RowHeight).Contains(e.Location))
                 {
                     // Прослушивание — независимое действие: выделение строки не трогаем,
@@ -1057,7 +1109,10 @@ namespace AbletonManager
                 _draggingHBar = false;
                 _scrollXTarget = GetNearestSnapTarget(_scrollX);
                 ClampScrollXTarget();
-                if (!_scrollTimer.Enabled) _scrollTimer.Start();
+                _scrollX = (int)_scrollXTarget;
+                _scrollXCurrent = _scrollXTarget;
+                ClampScrollX();
+                Invalidate();
             }
             base.OnMouseUp(e);
         }
@@ -1096,12 +1151,12 @@ namespace AbletonManager
 
             if (ShowPinIndicator)
             {
-                int pinTop = HeaderHeight + idx * RowHeight - _scroll;
+                int pinTop = HeaderHeight + idx * RowHeight - ScrollY;
                 if (PinRect(pinTop, RowHeight).Contains(p)) return true;
             }
             if (ShowPlayButton && _rows[idx].CanPlay)
             {
-                int top = HeaderHeight + idx * RowHeight - _scroll;
+                int top = HeaderHeight + idx * RowHeight - ScrollY;
                 if (PlayRect(top, RowHeight).Contains(p)) return true;
             }
             if (ShowCheckboxes && p.X < PadX + CheckW) return true;
@@ -1174,7 +1229,7 @@ namespace AbletonManager
         /// </summary>
         public Point RowMenuPoint(int idx)
         {
-            int top = HeaderHeight + idx * RowHeight - _scroll + RowHeight / 2;
+            int top = HeaderHeight + idx * RowHeight - ScrollY + RowHeight / 2;
             return new Point(LeftX, Math.Max(0, Math.Min(Height - 1, top)));
         }
 
@@ -1182,8 +1237,9 @@ namespace AbletonManager
         {
             int top = HeaderHeight + idx * RowHeight - _scroll;
             if (top < HeaderHeight) _scroll += top - HeaderHeight;
-            else if (top + RowHeight > Height) _scroll += top + RowHeight - Height;
+            else if (top + RowHeight > ViewH) _scroll += top + RowHeight - ViewH;
             _scrollTarget = _scrollCurrent = _scroll;
+            if (_scroller != null) _scroller.SyncPosition(_scroll);
             ClampScroll();
         }
 
@@ -1198,7 +1254,7 @@ namespace AbletonManager
                 if (_columns[i].Width > 0) { w[i] = Sc(_columns[i].Width); fixedTotal += w[i]; }
                 else flexCount++;
             }
-            int available = Width - LeftX - PadX - fixedTotal;
+            int available = Width - LeftX - PadRight - fixedTotal;
             for (int i = 0; i < _columns.Count; i++)
             {
                 if (_columns[i].Width == 0)
@@ -1221,7 +1277,7 @@ namespace AbletonManager
             int pillH = Sc(Theme.RowPillH);
 
             int scrollLeft = LeftX + widths[0];
-            int scrollWidth = Math.Max(0, Width - scrollLeft);
+            int scrollWidth = Math.Max(0, Width - PadRight - scrollLeft);
 
             // Пока ручки колонок проявляются/гаснут, таймер дёргает Invalidate только
             // по прямоугольнику шапки — тело списка в клип не попадает и всё равно
@@ -1232,21 +1288,26 @@ namespace AbletonManager
             {
                 Region baseClip = g.Clip;
 
+                // Резиновый перелёт за край. Сдвигаем только тело списка: шапка
+                // закреплена и уезжать вместе со строками не должна.
+                int over = _scroller != null ? (int)Math.Round(_scroller.Overscroll) : 0;
+                int slack = Sc(8) + Math.Abs(over);
+
                 // Прямоугольники хвостиков «+N» собираем заново за каждый полный проход:
                 // строки уехали прокруткой, и вчерашние координаты кликать нельзя.
                 if (_countHit == null || _countHit.Length != _rows.Count)
                     _countHit = new Rectangle[_rows.Count];
                 Array.Clear(_countHit, 0, _countHit.Length);
 
-                int first = Math.Max(0, (_scroll - Sc(8)) / rowH);
-                int last = Math.Min(_rows.Count - 1, (_scroll + Height + Sc(8)) / rowH);
+                int first = Math.Max(0, (_scroll - slack) / rowH);
+                int last = Math.Min(_rows.Count - 1, (_scroll + ViewH + slack) / rowH);
 
                 // 1. Проход: фон строк (пилюли выделения и ховера) на всю ширину
-                g.SetClip(new Rectangle(0, HeaderHeight, Width, Math.Max(0, Height - HeaderHeight)));
+                g.SetClip(new Rectangle(0, HeaderHeight, Width, Math.Max(0, ViewH - HeaderHeight)));
                 for (int i = first; i <= last; i++)
                 {
-                    int top = HeaderHeight + i * rowH - _scroll;
-                    if (top > Height) break;
+                    int top = HeaderHeight + i * rowH - _scroll - over;
+                    if (top > ViewH) break;
 
                     float entrance = (_rowEntrance != null && i < _rowEntrance.Length) ? _rowEntrance[i] : 1.0f;
                     if (entrance <= 0.001f) continue;
@@ -1254,26 +1315,39 @@ namespace AbletonManager
                     int offsetY = (int)Math.Round((1.0f - entrance) * Sc(18));
                     int topAnim = top + offsetY;
 
-                    Rectangle pill = new Rectangle(0, topAnim + (rowH - pillH) / 2, Width, pillH);
+                    int pillW = Math.Max(0, Width - PillRightGap);
+                    Rectangle pill = new Rectangle(0, topAnim + (rowH - pillH) / 2, pillW, pillH);
                     float hoverFactor = (_rowHoverFactors != null && i < _rowHoverFactors.Length) ? _rowHoverFactors[i] : (i == _hot ? 1f : 0f);
 
-                    if (i == _selected) Theme.PaintGlassSurface(this, g, pill, pillH / 2f, (int)Math.Round(Theme.GlassSurfacePressedAlpha * entrance));
-                    else if (hoverFactor > 0.001f)
+                    // На уже выделенной строке заливка ховера не нужна — у неё и так
+                    // есть свой контур, а сверху ещё и заливка спорила с текстом.
+                    if (i != _selected && hoverFactor > 0.001f)
                     {
                         Color c = Color.FromArgb((int)Math.Round(hoverFactor * Theme.RowHover.A * entrance), Theme.RowHover);
                         Theme.FillRound(g, pill, pillH / 2f, c);
                     }
+                    if (i == _selected)
+                    {
+                        // Выделение — обычным светлым, только контуром: заливка спорила
+                        // с текстом строки, а сам цвет от выбора акцента не зависит —
+                        // акцент выбирают кнопки, прогресс и переключатели.
+                        RectangleF ring = RectangleF.Inflate(pill, -0.75f, -0.75f);
+                        Color line = Color.FromArgb((int)Math.Round(0xC0 * entrance), Theme.Light);
+                        using (GraphicsPath rp = Theme.Round(ring, pillH / 2f - 0.75f))
+                        using (Pen pen = new Pen(line, 1.5f))
+                            g.DrawPath(pen, rp);
+                    }
                 }
 
-                // 2. Проход: прокручиваемые колонки (с 1 по N-1), строго обрезанные границей scrollLeft
+                // 2. Проход: прокручиваемые колонки (с 1 по N-1), строго обрезанные границами scrollLeft и PadRight
                 if (_columns.Count > 1 && scrollWidth > 0)
                 {
-                    g.SetClip(new Rectangle(scrollLeft, HeaderHeight, scrollWidth, Math.Max(0, Height - HeaderHeight)));
+                    g.SetClip(new Rectangle(scrollLeft, HeaderHeight, scrollWidth, Math.Max(0, ViewH - HeaderHeight)));
 
                     for (int i = first; i <= last; i++)
                     {
-                        int top = HeaderHeight + i * rowH - _scroll;
-                        if (top > Height) break;
+                        int top = HeaderHeight + i * rowH - _scroll - over;
+                        if (top > ViewH) break;
 
                         float entrance = (_rowEntrance != null && i < _rowEntrance.Length) ? _rowEntrance[i] : 1.0f;
                         if (entrance <= 0.001f) continue;
@@ -1287,7 +1361,7 @@ namespace AbletonManager
                         for (int c = 1; c < _columns.Count && c < row.Cells.Length; c++)
                         {
                             int cx = ColX(widths, c);
-                            if (cx < scrollLeft || cx >= Width) continue;
+                            if (cx < scrollLeft || cx >= Width - PadRight) continue;
                             PaintCell(g, widths, topAnim, rowH, entrance, dim, bright, row, c, false, i);
                         }
 
@@ -1296,7 +1370,7 @@ namespace AbletonManager
                             if (m.Column >= 1)
                             {
                                 int mx = ColX(widths, m.Column);
-                                if (mx < scrollLeft || mx >= Width) continue;
+                                if (mx < scrollLeft || mx >= Width - PadRight) continue;
                                 PaintMark(g, widths, topAnim, rowH, m);
                             }
                         }
@@ -1305,12 +1379,13 @@ namespace AbletonManager
 
                 // 3. Проход: закреплённая колонка имени (0) и гутеры слева (0 .. scrollLeft)
                 {
-                    g.SetClip(new Rectangle(0, HeaderHeight, scrollLeft, Math.Max(0, Height - HeaderHeight)));
+                    int col0W = Math.Min(scrollLeft, Width - PadRight);
+                    g.SetClip(new Rectangle(0, HeaderHeight, col0W, Math.Max(0, ViewH - HeaderHeight)));
 
                     for (int i = first; i <= last; i++)
                     {
-                        int top = HeaderHeight + i * rowH - _scroll;
-                        if (top > Height) break;
+                        int top = HeaderHeight + i * rowH - _scroll - over;
+                        if (top > ViewH) break;
 
                         float entrance = (_rowEntrance != null && i < _rowEntrance.Length) ? _rowEntrance[i] : 1.0f;
                         if (entrance <= 0.001f) continue;
@@ -1337,23 +1412,20 @@ namespace AbletonManager
                         {
                             if (m.Column == 0) PaintMark(g, widths, topAnim, rowH, m);
                         }
-
-                        // Граница между закреплёнными и остальными
-                        if (i == GroupSeparatorAfter)
-                        {
-                            int sy = top + rowH - 1;
-                            using (Pen sep = new Pen(Theme.Hairline))
-                                g.DrawLine(sep, PadX, sy, Width - PadX, sy);
-                        }
                     }
                 }
 
                 g.Clip = baseClip;
 
-                // 4. Тонкий вертикальный разделитель между закреплённой колонкой и прокручиваемой областью
+                // Разделителя между закреплёнными и остальными больше нет: закреплённые
+                // и так видны звёздочкой, а линия внутри списка спорила с линией под
+                // шапкой — на их пересечении с вертикальным разделителем получался
+                // лишний светлый пиксель.
+
+                // 5. Тонкий вертикальный разделитель между закреплённой колонкой и прокручиваемой областью
                 if (_scrollX > 0 && _columns.Count > 1)
                 {
-                    using (Pen divPen = new Pen(Color.FromArgb(40, Theme.Hairline)))
+                    using (Pen divPen = new Pen(Theme.Hairline))
                         g.DrawLine(divPen, scrollLeft - 1, HeaderHeight, scrollLeft - 1, Height);
                 }
 
@@ -1362,7 +1434,8 @@ namespace AbletonManager
                 if (FadeBottom && !Glass.Enabled && ContentHeight > Height)
                 {
                     int fadeH = Sc(110);
-                    Rectangle fr = new Rectangle(0, Height - fadeH, Width, fadeH);
+                    int fadeW = Math.Max(0, Width - PillRightGap);
+                    Rectangle fr = new Rectangle(0, Height - fadeH, fadeW, fadeH);
                     using (LinearGradientBrush lb = new LinearGradientBrush(
                         new Rectangle(fr.X, fr.Y - 1, fr.Width, fr.Height + 2),
                         Color.FromArgb(0, Surface), Surface, LinearGradientMode.Vertical))
@@ -1374,14 +1447,35 @@ namespace AbletonManager
 
             if (!headerOnly)
             {
-                Rectangle bar = BarRect();
-                if (!bar.IsEmpty && (Hot || _draggingBar))
-                    Theme.FillRound(g, bar, bar.Width / 2f, Theme.SurfacePressed);
+                // Полоса под строками — своя дорожка. Clip тут не помогает: текст рисует
+                // TextRenderer мимо GDI+, и обрезку он игнорирует, поэтому нижнюю
+                // полоску просто закрашиваем фоном, а уже поверх кладём полосу.
+                if (HBarSpace > 0)
+                    Chrome.PaintBase(this, g, new Rectangle(0, Height - HBarSpace, Width, HBarSpace), Surface);
 
-                Rectangle hbar = HBarRect();
-                if (!hbar.IsEmpty && (Hot || _draggingHBar || _scrollX > 0))
-                    Theme.FillRound(g, hbar, hbar.Height / 2f, Theme.SurfacePressed);
+                PaintFadingBar(g, BarRect(), _barFade, _draggingBar, true);
+                PaintFadingBar(g, HBarRect(), _hbarFade, _draggingHBar, false);
             }
+        }
+
+        /// <summary>
+        /// Полоса прокрутки поверх содержимого: Sc(4) в покое, Sc(8) под курсором,
+        /// растёт от дальнего края, чтобы не наползать на текст.
+        /// </summary>
+        void PaintFadingBar(Graphics g, Rectangle bar, ScrollFade fade, bool dragging, bool vertical)
+        {
+            if (bar.IsEmpty) return;
+            float a = dragging ? 1f : fade.Alpha;
+            if (a <= 0.01f) return;
+
+            float thick = dragging ? 1f : fade.Thick;
+            int grow = (int)Math.Round(Sc(4) * thick);
+            if (vertical) bar = new Rectangle(bar.Right - bar.Width - grow, bar.Y, bar.Width + grow, bar.Height);
+            else bar = new Rectangle(bar.X, bar.Bottom - bar.Height - grow, bar.Width, bar.Height + grow);
+
+            int alpha = (int)Math.Round((0x4A + 0x50 * thick) * a);
+            float r = (vertical ? bar.Width : bar.Height) / 2f;
+            Theme.FillRound(g, bar, r, Color.FromArgb(alpha, 0xFF, 0xFF, 0xFF));
         }
 
         void PaintCell(Graphics g, int[] widths, int topAnim, int rowH, float entrance, bool dim, bool bright, RowData row, int c, bool countHot, int rowIndex)
@@ -1406,7 +1500,12 @@ namespace AbletonManager
                 Color railColor = Color.FromArgb((int)Math.Round(120 * entrance), Theme.TextDim);
                 g.FillRectangle(Theme.GetBrush(railColor), rail);
             }
-            Rectangle cr = new Rectangle(x + indent, topAnim, Math.Max(0, widths[c] - Sc(10) - indent), rowH);
+            int maxRight = Width - PadRight;
+            int cellX = x + indent;
+            int cellW = Math.Max(0, widths[c] - Sc(10) - indent);
+            if (cellX + cellW > maxRight) cellW = Math.Max(0, maxRight - cellX);
+            if (cellW <= 0 && cellX >= maxRight) return;
+            Rectangle cr = new Rectangle(cellX, topAnim, cellW, rowH);
             if (col.Chips) PaintChips(g, cr, row.Cells[c], color);
             else
             {
@@ -1471,7 +1570,10 @@ namespace AbletonManager
         Rectangle ColSlot(int[] widths, int top, int rowH, int col)
         {
             int x = ColX(widths, col);
-            return new Rectangle(x, top, Math.Max(0, widths[col] - Sc(10)), rowH);
+            int maxRight = Width - PadRight;
+            int w = Math.Max(0, widths[col] - Sc(10));
+            if (x + w > maxRight) w = Math.Max(0, maxRight - x);
+            return new Rectangle(x, top, w, rowH);
         }
 
         /// <summary>Квадратный чекбокс в гутере слева от первой колонки.</summary>
@@ -1498,6 +1600,17 @@ namespace AbletonManager
         void PaintPlay(Graphics g, int top, int rowH, bool hot, bool playing)
         {
             RectangleF r = PlayRect(top, rowH);
+
+            // Пока строка звучит и на неё не наведён курсор — вместо значка живой
+            // пульс: видно, что играет именно эта строка. Под курсором возвращается
+            // пауза, иначе остановить нечем.
+            if (playing && !hot)
+            {
+                RectangleF pr = RectangleF.Inflate(r, -Sc(5), -Sc(6));
+                PlayPulse.Paint(g, pr, Theme.Light);
+                return;
+            }
+
             Color ink = playing ? Theme.Light : Color.FromArgb(0xFF, 0x8E, 0x8E, 0x93);
             // Меньше отступа, чем у звезды: сам треугольник/пауза рисуются мельче
             // своего бокса (собственные пропорции глифа), и с тем же отступом, что у
@@ -1559,14 +1672,17 @@ namespace AbletonManager
             if (m.Column < 0 || m.Column >= _columns.Count || string.IsNullOrEmpty(m.Text)) return;
 
             Rectangle slot = ColSlot(widths, top, rowH, m.Column);
+            if (slot.Width <= 0) return;
 
-            int barW = Sc(Theme.StatusBarW), barH = Sc(Theme.StatusBarH);
-            Rectangle bar = new Rectangle(slot.Right - barW, top + (rowH - barH) / 2, barW, barH);
-            Theme.FillRound(g, bar, barW / 2f, m.Color);
+            int yOffset = 0;
+            // Символ галочки (Segoe UI/Emoji) из-за метрик шрифта садится ниже оптического центра строки
+            if (m.Text.IndexOfAny(new char[] { '\u2714', '\u2713', '\u2705' }) >= 0)
+                yOffset = -Sc(2);
 
-            int textW = Math.Max(0, slot.Width - barW - Sc(8));
-            Rectangle tr = new Rectangle(slot.Left, top, textW, rowH);
-            Chrome.DrawText(g, m.Text, Theme.FBody, tr, m.Color, Chrome.CellRight);
+            // Цветной полоски у правого края больше нет: сам текст уже покрашен, и
+            // полоска только удваивала одно и то же сообщение в самой правой колонке.
+            Chrome.DrawText(g, m.Text, Theme.FBody, new Rectangle(slot.Left, top + yOffset, slot.Width, rowH),
+                            m.Color, Chrome.CellRight);
         }
 
         void PaintHeader(Graphics g, int[] widths)
@@ -1574,7 +1690,7 @@ namespace AbletonManager
             Chrome.PaintBase(this, g, new Rectangle(0, 0, Width, HeaderHeight), Surface);
 
             int scrollLeft = LeftX + widths[0];
-            int scrollWidth = Math.Max(0, Width - scrollLeft);
+            int scrollWidth = Math.Max(0, Width - PadRight - scrollLeft);
 
             // 1. Отрисовка заголовков прокручиваемых колонок (с 1 по N-1)
             if (_columns.Count > 1 && scrollWidth > 0)
@@ -1585,7 +1701,7 @@ namespace AbletonManager
                 for (int c = 1; c < _columns.Count; c++)
                 {
                     int cx = ColX(widths, c);
-                    if (cx < scrollLeft || cx >= Width) continue;
+                    if (cx < scrollLeft || cx >= Width - PadRight) continue;
                     PaintHeaderCell(g, widths, c);
                 }
 
@@ -1595,7 +1711,8 @@ namespace AbletonManager
             // 2. Закреплённая область заголовка (колонка 0 и левый гутер)
             {
                 Region oldClip = g.Clip;
-                g.SetClip(new Rectangle(0, 0, scrollLeft, HeaderHeight));
+                int head0W = Math.Min(scrollLeft, Width - PadRight);
+                g.SetClip(new Rectangle(0, 0, head0W, HeaderHeight));
 
                 if (ShowPinIndicator && ShowHeaderPin)
                 {
@@ -1617,8 +1734,16 @@ namespace AbletonManager
             // 3. Тонкий вертикальный разделитель в шапке
             if (_scrollX > 0 && _columns.Count > 1)
             {
-                using (Pen divPen = new Pen(Color.FromArgb(40, Theme.Hairline)))
+                using (Pen divPen = new Pen(Theme.Hairline))
                     g.DrawLine(divPen, scrollLeft - 1, 0, scrollLeft - 1, HeaderHeight);
+            }
+
+            // 4. Линия под шапкой: без неё заголовки набраны тем же кеглем и цветом,
+            // что и тело, и шапка от списка не отделяется вовсе.
+            if (ShowHeaderRule && _columns.Count > 0)
+            {
+                using (Pen rule = new Pen(Theme.Hairline))
+                    g.DrawLine(rule, PadX, HeaderHeight - 1, Width - PadRight, HeaderHeight - 1);
             }
 
             PaintDropMark(g, widths);
@@ -1631,6 +1756,7 @@ namespace AbletonManager
             Column col = _columns[c];
 
             Rectangle hr = ColSlot(widths, 0, HeaderHeight, c);
+            if (hr.Width <= 0) return;
 
             Size tsz = TextRenderer.MeasureText(col.Title, Theme.FLabel);
             if (active)
@@ -1643,7 +1769,7 @@ namespace AbletonManager
                     : new RectangleF(Math.Min(hr.X + tsz.Width + Sc(6), hr.Right - arrow),
                                      (HeaderHeight - arrow) / 2f, arrow, arrow);
                 Icons.Draw(g, SortDescending ? Glyph.SortDown : Glyph.SortUp, ar, Theme.Text, 1f);
-                hr.Width -= arrow + Sc(4);
+                hr.Width = Math.Max(0, hr.Width - arrow - Sc(4));
             }
 
             // Заголовок, который сейчас тащат, гаснет: он «взят в руку», а место, куда
@@ -1666,6 +1792,7 @@ namespace AbletonManager
             if (_dropAt == _dragCol || _dropAt == _dragCol + 1) return;   // вернуть на место
 
             int x = _dropAt == 0 ? LeftX : (_dropAt < _columns.Count ? ColX(widths, _dropAt) : ColX(widths, _columns.Count - 1) + widths[_columns.Count - 1]);
+            if (x > Width - PadRight) x = Width - PadRight;
 
             int top = Sc(10), bottom = HeaderHeight - Sc(10);
             using (Pen p = new Pen(Theme.Text, Sc(2)))
@@ -1690,14 +1817,15 @@ namespace AbletonManager
                 if (_columns.Count > 0)
                 {
                     int x0 = LeftX + widths[0];
-                    g.DrawLine(p, x0, top, x0, bottom);
+                    if (x0 < Width - PadRight)
+                        g.DrawLine(p, x0, top, x0, bottom);
                 }
                 for (int c = 1; c < _columns.Count; c++)
                 {
                     if (_columns[c].Width > 0)
                     {
                         int x = ColX(widths, c);
-                        if (x >= LeftX + widths[0] - Sc(2))
+                        if (x >= LeftX + widths[0] - Sc(2) && x < Width - PadRight)
                             g.DrawLine(p, x, top, x, bottom);
                     }
                 }

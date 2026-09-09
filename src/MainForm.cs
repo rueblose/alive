@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Drawing;
+using System.Drawing.Drawing2D;
 using System.Globalization;
 using System.IO;
 using System.Runtime.InteropServices;
@@ -16,23 +17,27 @@ namespace AbletonManager
         readonly FieldBox _search = new FieldBox();
         readonly FiltersButton _filtersBtn = new FiltersButton();
 
-        // Действия — круглые значки: папка, пересканировать, новый проект.
+        // Действия — круглые значки: папка, настройки, новый проект.
         readonly IconButton _folders = new IconButton();
-        readonly IconButton _rescan = new IconButton();
+        readonly IconButton _settingsBtn = new IconButton();
         readonly GlassButton _newProject = new GlassButton();
 
         // Мини-транспорт плеера в футере — переключить сет и play/pause, не поднимая
-        // окно плеера. Прослушивание рендеров внутри сета там же, где всегда — в самом
-        // плеере, сюда его дублировать незачем.
+        // окно плеера. Раскладка слева направо: закрыть, prev, play, next, seek+время+трек, громкость, развернуть, имя сета.
+        readonly IconButton _playerClose = new IconButton();
         readonly IconButton _playerPrev = new IconButton();
         readonly IconButton _playerPlayPause = new IconButton();
         readonly IconButton _playerNext = new IconButton();
-        readonly IconButton _playerExpand = new IconButton();
         readonly SeekSlider _playerSeek = new SeekSlider();
-        readonly VolumeSlider _playerVol = new VolumeSlider();
+        readonly IconButton _playerVolBtn = new IconButton();
+        readonly VolumePopupControl _playerVolPopup = new VolumePopupControl();
+        readonly System.Windows.Forms.Timer _volPopupTimer = new System.Windows.Forms.Timer();
+        float _preMuteVolume = 0.5f;
+        readonly IconButton _playerExpand = new IconButton();
+        readonly PlayerSetLink _playerSetLink = new PlayerSetLink();
         readonly System.Windows.Forms.Timer _playerTimer = new System.Windows.Forms.Timer();
         string _playerTimeLeftStr = "", _playerTimeRightStr = "";
-        Rectangle _rPlayerTimeLeft, _rPlayerTimeRight;
+        Rectangle _rPlayerTimeLeft, _rPlayerTimeRight, _rPlayerTrack;
 
         // Кнопки самого окна.
         readonly IconButton _min = new IconButton();
@@ -67,7 +72,7 @@ namespace AbletonManager
         int _lastScanInvalidate;
 
         string _pluginFilter = "";
-        string _statusEn = "", _statusRu = "";
+        string _status = "";
 
         // Путь последнего выбранного сета — уход на вкладку Plugins (например, клик по
         // плагину в панели сведений) пересобирает список сетов и снимает выделение;
@@ -110,19 +115,12 @@ namespace AbletonManager
         List<ColDef> _setVisible = new List<ColDef>();
         List<PluginColDef> _pluginVisible = new List<PluginColDef>();
 
-        Rectangle _rCount, _rStatus, _rPluginSource, _rTitle;
-
-        // Само имя в шапке — кнопка, открывающая справку. Прямоугольник текста считаем
-        // при отрисовке: _rTitle это вся середина панели, и кликом по ней целиком
-        // справка вылезала бы от тычка мимо всего остального.
-        Rectangle _rTitleHit;
-        bool _titleHot;
+        Rectangle _rCount, _rStatus;
 
         readonly HelpOverlay _help = new HelpOverlay();
 
         // Откуда взяты данные о плагинах — показываем в статус-баре справа, только на
         // вкладке Плагинов, чтобы числам в карточках можно было верить.
-        string _pluginSource = "";
 
         // Окно прослушивания рендеров — одно на всё приложение, живёт рядом с главным.
         PlayerDialog _player;
@@ -137,11 +135,13 @@ namespace AbletonManager
             BackColor = Theme.Bg;
             if (Glass.AppIcon != null) Icon = Glass.AppIcon;
             KeyPreview = true;
+            AllowDrop = true;          // папку можно бросить прямо на окно — см. OnDragDrop
             DoubleBuffered = true;
             SetStyle(ControlStyles.OptimizedDoubleBuffer | ControlStyles.AllPaintingInWmPaint |
                      ControlStyles.UserPaint | ControlStyles.ResizeRedraw, true);
 
             _settings = Settings.Load();
+            Settings.RootsChanged += OnGlobalRootsChanged;
             LoadColumns();
 
             Build();
@@ -156,7 +156,7 @@ namespace AbletonManager
         sealed class ColDef
         {
             public string Id;
-            public string En, Ru;
+            public string En;
             public int Width;          // логический дефолт; 0 — колонка тянется
             public bool Right;
             public bool Chips;          // рисовать ячейку тегами-пилюлями, а не текстом
@@ -171,14 +171,14 @@ namespace AbletonManager
 
         // Что показываем при первом запуске и по «сбросить».
         static readonly string[] DefaultSetCols =
-            { "Set", "Modified", "BPM", "Key", "Plugins", "Files"};
+            { "Set", "Modified", "BPM", "Key", "PluginCount", "FileCount"};
 
         static List<ColDef> BuildCatalog()
         {
             List<ColDef> c = new List<ColDef>();
 
             c.Add(new ColDef {
-                Id = "Set", En = "Set", Ru = "Сет", Width = 0, Font = Theme.FTitle, Color = Theme.Text,
+                Id = "Set", En = "Set", Width = 0, Font = Theme.FTitle, Color = Theme.Text,
                 // «+3» — столько версий той же папки спрятано под этой строкой.
                 Text = delegate (SetEntry s)
                     { return s.CollapsedCount > 0 ? s.Name + "   +" + s.CollapsedCount : s.Name; },
@@ -186,35 +186,35 @@ namespace AbletonManager
                     { return string.Compare(a.Name, b.Name, StringComparison.CurrentCultureIgnoreCase); } });
 
             c.Add(new ColDef {
-                Id = "Place", En = "Place", Ru = "Место", Width = 150,
+                Id = "Place", En = "Place", Width = 150,
                 Text = delegate (SetEntry s) { return s.Place; },
                 Sort = delegate (SetEntry a, SetEntry b)
                     { return string.Compare(a.Place, b.Place, StringComparison.CurrentCultureIgnoreCase); } });
 
             c.Add(new ColDef {
-                Id = "Modified", En = "Modified", Ru = "Изменён", Width = 150,
+                Id = "Modified", En = "Modified", Width = 150,
                 Text = delegate (SetEntry s) { return s.Modified.ToLocalTime().ToString("yyyy-MM-dd"); },
                 Sort = delegate (SetEntry a, SetEntry b) { return a.Modified.CompareTo(b.Modified); } });
 
             c.Add(new ColDef {
-                Id = "Created", En = "Created", Ru = "Создан", Width = 150,
+                Id = "Created", En = "Created", Width = 150,
                 Text = delegate (SetEntry s)
                     { return s.Created == default(DateTime) ? "" : s.Created.ToLocalTime().ToString("yyyy-MM-dd"); },
                 Sort = delegate (SetEntry a, SetEntry b) { return a.Created.CompareTo(b.Created); } });
 
             c.Add(new ColDef {
-                Id = "Live", En = "Live", Ru = "Live", Width = 87,
+                Id = "Live", En = "Live", Width = 87,
                 Text = delegate (SetEntry s) { return s.ShortVersion; },
                 Sort = delegate (SetEntry a, SetEntry b) { return CompareVersion(a.ShortVersion, b.ShortVersion); } });
 
             c.Add(new ColDef {
-                Id = "BPM", En = "BPM", Ru = "Темп", Width = 81,
+                Id = "BPM", En = "BPM", Width = 81, Right = true,
                 Text = delegate (SetEntry s)
                     { return s.Tempo > 0 ? s.Tempo.ToString("0.##", CultureInfo.InvariantCulture) : ""; },
                 Sort = delegate (SetEntry a, SetEntry b) { return a.Tempo.CompareTo(b.Tempo); } });
 
             c.Add(new ColDef {
-                Id = "Key", En = "Key", Ru = "Тональность", Width = 143,
+                Id = "Key", En = "Key", Width = 143,
                 Text = delegate (SetEntry s) { return s.Key; },
                 Sort = delegate (SetEntry a, SetEntry b)
                     {
@@ -225,7 +225,7 @@ namespace AbletonManager
                     } });
 
             c.Add(new ColDef {
-                Id = "Tracks", En = "Tracks", Ru = "Треки", Width = 100,
+                Id = "Tracks", En = "Tracks", Width = 100, Right = true,
                 Text = delegate (SetEntry s) { return s.Tracks > 0 ? s.Tracks.ToString() : ""; },
                 Sort = delegate (SetEntry a, SetEntry b) { return a.Tracks.CompareTo(b.Tracks); } });
 
@@ -233,12 +233,12 @@ namespace AbletonManager
             // спрятаны и стоят перед своими «Missed»-соседками: сперва сколько всего,
             // потом сколько из них потеряно.
             c.Add(new ColDef {
-                Id = "PluginCount", En = "Plugins", Ru = "Плагины", Width = 100,
+                Id = "PluginCount", En = "Plugins", Width = 100, Right = true,
                 Text = delegate (SetEntry s) { return s.Plugins.Length > 0 ? s.Plugins.Length.ToString() : ""; },
                 Sort = delegate (SetEntry a, SetEntry b) { return a.Plugins.Length.CompareTo(b.Plugins.Length); } });
 
             c.Add(new ColDef {
-                Id = "FileCount", En = "Files", Ru = "Файлы", Width = 100,
+                Id = "FileCount", En = "Files", Width = 100, Right = true,
                 Text = delegate (SetEntry s) { return s.TotalRefs > 0 ? s.TotalRefs.ToString() : ""; },
                 Sort = delegate (SetEntry a, SetEntry b) { return a.TotalRefs.CompareTo(b.TotalRefs); } });
 
@@ -246,17 +246,17 @@ namespace AbletonManager
             // Сортировка — именно по ПОТЕРЯННЫМ: колонка так и называется, а раньше она
             // молча сортировала по общему числу плагинов, то есть не по тому, что показывает.
             c.Add(new ColDef {
-                Id = "Plugins", En = "Plugins Missed", Ru = "Плагины", Width = 165, Right = true,
+                Id = "Plugins", En = "Plugins Missed", Width = 165, Right = true,
                 Text = delegate (SetEntry s) { return ""; },
                 Sort = delegate (SetEntry a, SetEntry b) { return a.MissingPlugins.CompareTo(b.MissingPlugins); } });
 
             c.Add(new ColDef {
-                Id = "Files", En = "Files Missed", Ru = "Файлы", Width = 130, Right = true,
+                Id = "Files", En = "Files Missed", Width = 130, Right = true,
                 Text = delegate (SetEntry s) { return ""; },
                 Sort = delegate (SetEntry a, SetEntry b) { return a.MissingFiles.CompareTo(b.MissingFiles); } });
 
             c.Add(new ColDef {
-                Id = "Tags", En = "Tags", Ru = "Теги", Width = 180, Chips = true,
+                Id = "Tags", En = "Tags", Width = 180, Chips = true,
                 Text = delegate (SetEntry s) { return ProjectMeta.JoinTags(ProjectMeta.TagsOf(s.ProjectDir)); },
                 Sort = delegate (SetEntry a, SetEntry b)
                     {
@@ -273,7 +273,7 @@ namespace AbletonManager
             // килобайт всегда, а вопрос «что тут занимает место» — про сэмплы и
             // рендеры рядом с ним. Размер самого файла остался в панели сведений.
             c.Add(new ColDef {
-                Id = "Size", En = "Project size", Ru = "Размер", Width = 130, Right = true,
+                Id = "Size", En = "Project size", Width = 130, Right = true,
                 Text = delegate (SetEntry s) { return SizeMB(s.ProjectSize); },
                 Sort = delegate (SetEntry a, SetEntry b) { return a.ProjectSize.CompareTo(b.ProjectSize); } });
 
@@ -295,7 +295,7 @@ namespace AbletonManager
         sealed class PluginColDef
         {
             public string Id;
-            public string En, Ru;
+            public string En;
             public int Width;          // логический дефолт; 0 — колонка тянется
             public bool Right;
             public Font Font;
@@ -314,14 +314,14 @@ namespace AbletonManager
             List<PluginColDef> c = new List<PluginColDef>();
 
             c.Add(new PluginColDef {
-                Id = "Plugin", En = "Plugin", Ru = "Плагин", Width = 0,
+                Id = "Plugin", En = "Plugin", Width = 0,
                 Font = Theme.FTitle, Color = Theme.Text,
                 Text = delegate (PluginStat p) { return p.Name; },
                 Sort = delegate (PluginStat a, PluginStat b)
                     { return string.Compare(a.Name, b.Name, StringComparison.CurrentCultureIgnoreCase); } });
 
             c.Add(new PluginColDef {
-                Id = "Developer", En = "Developer", Ru = "Разработчик", Width = 180,
+                Id = "Developer", En = "Developer", Width = 180,
                 Text = delegate (PluginStat p) { return p.Vendor; },
                 Sort = delegate (PluginStat a, PluginStat b)
                     {
@@ -334,19 +334,19 @@ namespace AbletonManager
                     } });
 
             c.Add(new PluginColDef {
-                Id = "FxType", En = "Type", Ru = "Тип FX", Width = 150,
+                Id = "FxType", En = "Type", Width = 150,
                 Text = delegate (PluginStat p) { return p.FxType; },
                 Sort = delegate (PluginStat a, PluginStat b)
                     { return string.Compare(a.FxType, b.FxType, StringComparison.OrdinalIgnoreCase); } });
 
             c.Add(new PluginColDef {
-                Id = "Format", En = "Format", Ru = "Формат", Width = 120,
+                Id = "Format", En = "Format", Width = 120,
                 Text = delegate (PluginStat p) { return p.Format; },
                 Sort = delegate (PluginStat a, PluginStat b)
                     { return string.Compare(a.Format, b.Format, StringComparison.OrdinalIgnoreCase); } });
 
             c.Add(new PluginColDef {
-                Id = "Sets", En = "Sets", Ru = "Сетов", Width = 80,
+                Id = "Sets", En = "Sets", Width = 80, Right = true,
                 Text = delegate (PluginStat p) { return p.Sets > 0 ? p.Sets.ToString() : "—"; },
                 Sort = delegate (PluginStat a, PluginStat b) { return a.Sets.CompareTo(b.Sets); } });
 
@@ -354,7 +354,7 @@ namespace AbletonManager
             // По умолчанию спрятаны: нужны, когда разбираешься с конкретным плагином,
             // а не когда просматриваешь список.
             c.Add(new PluginColDef {
-                Id = "Version", En = "Version", Ru = "Версия", Width = 110,
+                Id = "Version", En = "Version", Width = 110,
                 Text = delegate (PluginStat p) { return p.Installed != null ? p.Installed.Version : ""; },
                 Sort = delegate (PluginStat a, PluginStat b)
                     {
@@ -366,7 +366,7 @@ namespace AbletonManager
                     } });
 
             c.Add(new PluginColDef {
-                Id = "File", En = "File", Ru = "Файл", Width = 240,
+                Id = "File", En = "File", Width = 240,
                 Text = delegate (PluginStat p) { return p.Installed != null ? p.Installed.Path : ""; },
                 Sort = delegate (PluginStat a, PluginStat b)
                     {
@@ -379,12 +379,22 @@ namespace AbletonManager
 
             // Только цветная отметка, текст ячейки пуст — как Plugins/Files у сетов.
             c.Add(new PluginColDef {
-                Id = "Status", En = "Status", Ru = "Состояние", Width = 160, Right = true,
+                Id = "Status", En = "Status", Width = 160, Right = true,
                 Text = delegate (PluginStat p) { return ""; },
                 Sort = delegate (PluginStat a, PluginStat b)
-                    { return ((int)a.Match).CompareTo((int)b.Match); } });
+                    {
+                        int sa = PluginStatusRank(a), sb = PluginStatusRank(b);
+                        return sa != sb ? sa.CompareTo(sb) : string.Compare(a.Name, b.Name, StringComparison.CurrentCultureIgnoreCase);
+                    } });
 
             return c;
+        }
+
+        static int PluginStatusRank(PluginStat p)
+        {
+            if (p.Match == MatchKind.Missing || (p.Installed != null && p.Installed.FileMissing)) return 2;
+            if (p.Match == MatchKind.OtherFormat) return 1;
+            return 0;
         }
 
         static PluginColDef FindPluginCol(string id)
@@ -485,21 +495,28 @@ namespace AbletonManager
         void Build()
         {
             _folders.Icon = Glyph.Folder;
-            _rescan.Icon = Glyph.Refresh;
+            _settingsBtn.Icon = Glyph.Settings;
             _min.Icon = Glyph.Minimize;
             _max.Icon = Glyph.Maximize;
             _close.Icon = Glyph.Close;
             _close.Danger = true;
 
+            _settingsBtn.Click += delegate { ShowSettings(); };
             _min.Click += delegate { WindowState = FormWindowState.Minimized; };
             _max.Click += delegate { ToggleMaximize(); };
             _close.Click += delegate { Close(); };
-            foreach (IconButton b in new IconButton[] { _folders, _rescan, _min, _max, _close })
+            foreach (IconButton b in new IconButton[] { _folders, _settingsBtn, _min, _max, _close })
                 Controls.Add(b);
 
             // Кнопка нового сета переехала в футер и стала подписанной — доставать
             // новый пустой проект по одной иконке было не очевидно.
             Controls.Add(_newProject);
+
+            _playerClose.Icon = Glyph.Close;
+            _playerClose.Quiet = true;
+            _playerClose.Visible = false;
+            _playerClose.Click += delegate { if (_player != null && !_player.IsDisposed) _player.ShutDown(); };
+            Controls.Add(_playerClose);
 
             _playerPrev.Icon = Glyph.PrevSet;
             _playerPlayPause.Icon = Glyph.Play;
@@ -522,11 +539,85 @@ namespace AbletonManager
                 }
             };
 
-            _playerVol.Value = 0.5f;
-            _playerVol.ValueChanged += delegate
+            _playerVolBtn.Icon = Glyph.VolumeHigh;
+            _playerVolBtn.Click += delegate
             {
                 if (_player != null && !_player.IsDisposed)
-                    _player.Volume = _playerVol.Value;
+                {
+                    if (_player.Volume > 0.001f)
+                    {
+                        _preMuteVolume = _player.Volume;
+                        _player.Volume = 0f;
+                    }
+                    else
+                    {
+                        _player.Volume = _preMuteVolume > 0.05f ? _preMuteVolume : 0.5f;
+                    }
+                    _playerVolPopup.Value = _player.Volume;
+                    UpdatePlayerVolumeIcon();
+                }
+            };
+            _playerVolBtn.MouseEnter += delegate
+            {
+                _volPopupTimer.Stop();
+                if (_player != null && !_player.IsDisposed)
+                {
+                    _playerVolPopup.Value = _player.Volume;
+                    _playerVolPopup.Visible = true;
+                    _playerVolPopup.BringToFront();
+                }
+            };
+            _playerVolBtn.MouseLeave += delegate
+            {
+                StartVolPopupCloseTimer();
+            };
+            _playerVolBtn.MouseWheel += delegate (object sender, MouseEventArgs e)
+            {
+                if (_player != null && !_player.IsDisposed && e.Delta != 0)
+                {
+                    int steps = e.Delta / 120;
+                    if (steps == 0) steps = e.Delta > 0 ? 1 : -1;
+                    float newVal = (float)Math.Round((_player.Volume + steps * 0.05f) / 0.05f) * 0.05f;
+                    _player.Volume = Math.Max(0f, Math.Min(1f, newVal));
+                    _playerVolPopup.Value = _player.Volume;
+                    UpdatePlayerVolumeIcon();
+                }
+            };
+
+            _playerVolPopup.MouseEnter += delegate
+            {
+                _volPopupTimer.Stop();
+            };
+            _playerVolPopup.MouseLeave += delegate
+            {
+                StartVolPopupCloseTimer();
+            };
+            _playerVolPopup.ValueChanged += delegate
+            {
+                if (_player != null && !_player.IsDisposed)
+                {
+                    _player.Volume = _playerVolPopup.Value;
+                    UpdatePlayerVolumeIcon();
+                }
+            };
+
+            _volPopupTimer.Interval = 300;
+            _volPopupTimer.Tick += delegate
+            {
+                Point pt = PointToClient(Cursor.Position);
+                if (!_playerVolBtn.Bounds.Contains(pt) && !_playerVolPopup.Bounds.Contains(pt))
+                {
+                    _playerVolPopup.Visible = false;
+                    _volPopupTimer.Stop();
+                }
+            };
+
+            _playerSetLink.Click += delegate
+            {
+                if (_player != null && !_player.IsDisposed && _player.CurrentSet != null)
+                {
+                    NavigateToSet(_player.CurrentSet);
+                }
             };
 
             _playerTimer.Interval = 50;
@@ -549,22 +640,35 @@ namespace AbletonManager
                         _playerTimeRightStr = "";
                         _playerSeek.Progress = 0f;
                     }
-                    _playerVol.Value = _player.Volume;
+                    if (!_playerVolPopup.Visible)
+                        _playerVolPopup.Value = _player.Volume;
+                    UpdatePlayerVolumeIcon();
                     UpdatePlayerTransport();
+                    string sname = _player.CurrentSet != null ? _player.CurrentSet.Name : "";
+                    if (_playerSetLink.SetName != sname)
+                    {
+                        _playerSetLink.SetName = sname;
+                        LayoutAll();
+                    }
                     if (!_rPlayerTimeLeft.IsEmpty) Invalidate(_rPlayerTimeLeft);
                     if (!_rPlayerTimeRight.IsEmpty) Invalidate(_rPlayerTimeRight);
+                    if (!_rPlayerTrack.IsEmpty) Invalidate(_rPlayerTrack);
                 }
             };
 
-            _playerPrev.Visible = _playerPlayPause.Visible = _playerNext.Visible =
-                _playerExpand.Visible = _playerSeek.Visible = _playerVol.Visible = false;
+            _playerClose.Visible = _playerPrev.Visible = _playerPlayPause.Visible = _playerNext.Visible =
+                _playerExpand.Visible = _playerSeek.Visible = _playerVolBtn.Visible = _playerVolPopup.Visible =
+                _playerSetLink.Visible = false;
             Controls.Add(_playerPrev); Controls.Add(_playerPlayPause);
             Controls.Add(_playerNext); Controls.Add(_playerSeek);
-            Controls.Add(_playerVol); Controls.Add(_playerExpand);
+            Controls.Add(_playerVolBtn); Controls.Add(_playerExpand);
+            Controls.Add(_playerSetLink); Controls.Add(_playerVolPopup);
 
             _mode.SelectedChanged += delegate
             {
                 _pluginFilter = "";
+                _list.ScrollOffsetX = 0;
+                _list.ScrollOffset = 0;
                 _pluginView = -1;
                 _summary.Selected = -1;
                 _setSortId = null; _pluginSortId = null; _sortDesc = false;
@@ -579,6 +683,8 @@ namespace AbletonManager
 
             _viewToggle.SelectedChanged += delegate
             {
+                _list.ScrollOffsetX = 0;
+                _list.ScrollOffset = 0;
                 SetEntry setFromTiles = _home.Selected;
                 RowData listRowBefore = _list.Selected;
                 SetEntry setFromList = listRowBefore != null ? listRowBefore.Tag as SetEntry : null;
@@ -602,6 +708,7 @@ namespace AbletonManager
             Controls.Add(_viewToggle);
 
             _dice.Icon = Glyph.Dice;
+            _dice.SpinOnClick = true;
             _dice.Click += delegate { RollRandomSet(); };
             Controls.Add(_dice);
 
@@ -623,7 +730,6 @@ namespace AbletonManager
 
             _newProject.Click += delegate { NewProject(); };
             _folders.Click += delegate { EditRoots(); };
-            _rescan.Click += delegate { StartScan(true); };
 
             _list.SelectionChanged += delegate { OnSelectionChanged(); };
             _list.ItemActivated += delegate { ActivateSelected(); };
@@ -681,6 +787,7 @@ namespace AbletonManager
             // его не закрыл ни список, ни плитки.
             Controls.Add(_toast);
             _toast.BringToFront();
+
         }
 
         /// <summary>Плитка открыта двойным щелчком — это то же «Open in Live», что и в списке.</summary>
@@ -698,11 +805,11 @@ namespace AbletonManager
 
         void ApplyTexts()
         {
-            _mode.SetItems(L.S("Sets", "Сеты"), L.S("Plugins", "Плагины"));
+            _mode.SetItems("Sets", "Plugins");
             _viewToggle.SetGlyphs(Glyph.ViewTiles, Glyph.ViewList);
-            _filtersBtn.Text = L.S("Filters", "Фильтры");
+            _filtersBtn.Text = "Filters";
             _filtersBtn.Count = _filter.ActiveCount;
-            _newProject.Text = L.S("New Live Set", "Новый сет Live");
+            _newProject.Text = "New Live Set";
             _newProject.FitToText(20);
             SetSearchCue();
         }
@@ -720,9 +827,9 @@ namespace AbletonManager
         {
             string cue;
             if (_mode.SelectedIndex == ModePlugins)
-                cue = L.S("Search in plugins…", "Поиск по плагинам и разработчикам…");
+                cue = "Search in plugins…";
             else
-                cue = L.S("Search in sets…", "Поиск по сетам, проектам, плагинам…");
+                cue = "Search in sets…";
             // Своя подсказка, а не системная EM_SETCUEBANNER — см. комментарий у FieldBox.Cue.
             if (_search.Cue == cue) return;
             _search.Cue = cue;
@@ -756,35 +863,29 @@ namespace AbletonManager
             int panelW = Sc(Theme.PanelW);
             int panelX = right - panelW;
 
-            _folders.SetBounds(panelX, y, icon, icon);
-            _rescan.SetBounds(panelX + step, y, icon, icon);
+            _folders.SetBounds(panelX + step, y, icon, icon);
+            _settingsBtn.SetBounds(panelX + step * 2, y, icon, icon);
 
-            int titleX = _rescan.Right + Sc(8);
-            int titleW = Math.Max(0, _min.Left - Sc(8) - titleX);
-            _rTitle = new Rectangle(titleX, y, titleW, icon);
-
-            _mode.Location = new Point(left, y - (_mode.Height - icon) / 2);
+            _mode.Height = h;
+            _mode.Location = new Point(left, y);
             bool setsMode = _mode.SelectedIndex == ModeSets;
             bool isTiles = setsMode && _viewToggle.SelectedIndex == ViewTiles;
             bool isList = setsMode && _viewToggle.SelectedIndex == ViewList;
 
-            _newProject.Visible = isList;
+            // Кнопку «New Live Set» из футера убрали: нижняя полоса теперь только плеер.
+            // Создать сет по-прежнему можно первой плиткой в Recent.
+            _newProject.Visible = false;
+
+            _viewToggle.Height = h;
+            _viewToggle.Location = new Point(_mode.Right + Sc(16), y);
+            _dice.SetBounds(_viewToggle.Right + Sc(16), y, icon, icon);
 
             _viewToggle.Visible = setsMode;
             _dice.Visible = setsMode;
-            if (setsMode)
-            {
-                _viewToggle.Location = new Point(_mode.Right + Sc(16), y - (_viewToggle.Height - icon) / 2);
-                _dice.SetBounds(_viewToggle.Right + Sc(16), y, icon, icon);
-                _filtersBtn.SetBounds(_dice.Right + Sc(16), y, Sc(140), h);
-            }
-            else
-            {
-                _filtersBtn.SetBounds(_mode.Right + Sc(16), y, Sc(140), h);
-            }
 
+            _filtersBtn.SetBounds(_dice.Right + Sc(16), y, Sc(140), h);
             _filtersBtn.Visible = true;
-            int searchX = _filtersBtn.Visible ? _filtersBtn.Right + Sc(15) : _mode.Right + Sc(16);
+            int searchX = _filtersBtn.Right + Sc(15);
             _search.SetBounds(searchX, y, Sc(315), h);
             _rCount = new Rectangle(_search.Right + Sc(16), y,
                                     Math.Max(0, panelX - Sc(16) - _search.Right - Sc(16)), h);
@@ -797,62 +898,109 @@ namespace AbletonManager
             int panelBottom = footerBottom + Sc(Theme.PanelPad);
             int controlH = Sc(Theme.ControlH);
             int footerControlY = footerBottom - controlH;
-            int listBottom = footerControlY - Sc(10);
+            int listGap = Sc(20);
 
-            _newProject.SetBounds(panelX - Sc(10) - _newProject.Width, footerControlY, _newProject.Width, controlH);
+            // Нижняя полоса — только плеер. Нет плеера — нет и полосы: содержимое
+            // забирает её высоту себе, а не оставляет пустой прогал во всю ширину.
+            bool playerOpen = _player != null && !_player.IsDisposed;
+            bool showTransport = playerOpen;
+            bool scanLine = _mode.SelectedIndex == ModeSets && _status.Length > 0;
+            int listBottom = showTransport || scanLine ? footerControlY - Sc(10) : footerBottom;
+
+            _newProject.SetBounds(panelX - listGap - _newProject.Width, footerControlY, _newProject.Width, controlH);
 
             int statusY = footerControlY + (controlH - statusH) / 2;
             _rStatus = new Rectangle(left + Sc(2), statusY, Sc(700), statusH);
-            _rPluginSource = new Rectangle(left, statusY, Math.Max(0, panelX - Sc(10) - left), statusH);
 
             bool plugins = _mode.SelectedIndex == ModePlugins;
             int listTop = top;
 
-            // Мини-транспорт — на Сетах (в любом виде), но не на Плагинах
-            bool playerOpen = _player != null && !_player.IsDisposed;
-            bool showTransport = !plugins && playerOpen;
-            _playerPrev.Visible = _playerPlayPause.Visible = _playerNext.Visible
-                = _playerExpand.Visible = _playerSeek.Visible = _playerVol.Visible = showTransport;
+            // Мини-транспорт — везде, где есть что играть, включая вкладку плагинов:
+            // подпись про источник плагинов оттуда убрана, полоса свободна.
+            _playerClose.Visible = _playerPrev.Visible = _playerPlayPause.Visible = _playerNext.Visible
+                = _playerExpand.Visible = _playerSeek.Visible = _playerVolBtn.Visible
+                = _playerSetLink.Visible = showTransport;
+            if (!showTransport)
+            {
+                _playerVolPopup.Visible = false;
+                _rPlayerTimeLeft = _rPlayerTimeRight = _rPlayerTrack = Rectangle.Empty;
+            }
             if (showTransport)
             {
                 int trIcon = controlH;
                 int trStep = trIcon + Sc(Theme.IconGap);
-                int contentRight = _newProject.Visible ? _newProject.Left - Sc(10) : panelX - Sc(10);
+                // Кнопка нового сета из футера убрана, и её место — тоже место имени:
+                // упираться в невидимый прямоугольник и резать имя многоточием незачем.
+                int contentRight = (_newProject.Visible ? _newProject.Left : panelX - listGap) - Sc(16);
 
-                int buttonsW = trIcon * 3 + Sc(Theme.IconGap) * 2;
-                int timeLeftW = Sc(70);
-                int timeRightW = Sc(70);
-                int volW = Sc(120);
-                int gapBtnsToTime = Sc(12);
-                int gapTimeToSeek = Sc(6);
-                int gapSeekToTime = Sc(6);
-                int gapTimeToVol = Sc(18);
-                int gapVolToExpand = Sc(14);
-
-                int fixedW = buttonsW + gapBtnsToTime + timeLeftW + gapTimeToSeek + gapSeekToTime + timeRightW + gapTimeToVol + volW + gapVolToExpand + trIcon;
-                int availableW = Math.Max(0, contentRight - left - fixedW);
-                int seekW = Math.Max(Sc(60), Math.Min(Sc(320), availableW));
+                // Ряд центрируем в полосе, оставшейся под таблицей: снизу поле окна
+                // Sc(Pad), сверху всего Sc(10) до таблицы — прижатый к нижнему полю ряд
+                // заметно уезжал вверх от середины этой полосы.
+                int playerY = listBottom + ((ClientSize.Height - listBottom) - controlH) / 2;
 
                 int startX = left + Sc(7);
 
-                _playerPrev.SetBounds(startX, footerControlY, trIcon, trIcon);
-                _playerPlayPause.SetBounds(startX + trStep, footerControlY, trIcon, trIcon);
-                _playerNext.SetBounds(startX + trStep * 2, footerControlY, trIcon, trIcon);
+                // 1. Крестик закрытия слева
+                _playerClose.SetBounds(startX, playerY, trIcon, trIcon);
+                int curX = _playerClose.Right + Sc(20);
 
-                int curX = startX + buttonsW + gapBtnsToTime;
-                _rPlayerTimeLeft = new Rectangle(curX, footerControlY, timeLeftW, controlH);
-                curX += timeLeftW + gapTimeToSeek;
+                // 2. Кнопки Prev, Play/Pause, Next
+                _playerPrev.SetBounds(curX, playerY, trIcon, trIcon);
+                _playerPlayPause.SetBounds(curX + trStep, playerY, trIcon, trIcon);
+                _playerNext.SetBounds(curX + trStep * 2, playerY, trIcon, trIcon);
+                curX = _playerNext.Right + Sc(24);
 
-                _playerSeek.SetBounds(curX, footerControlY, seekW, controlH);
-                curX += seekW + gapSeekToTime;
+                // 3. Прогресс-бар и подписи над ним: время по краям желобка,
+                //    имя файла — крупным по центру между ними.
+                int seekW = Sc(348);
+                int seekPad = Sc(4);              // внутренний отступ желобка в SeekSlider
+                int timeW = Sc(38);
 
-                _rPlayerTimeRight = new Rectangle(curX, footerControlY, timeRightW, controlH);
-                curX += timeRightW + gapTimeToVol;
+                // Высоту строки подписей берём у самого крупного шрифта в ней: на
+                // глазок поставленное число режет имени файла хвосты букв (p, y, g).
+                int textH = TextRenderer.MeasureText("Agjpq", Theme.FTitle).Height;
+                int seekH = Sc(14);
+                int textY = playerY + (controlH - (textH + Sc(1) + seekH)) / 2;
 
-                _playerVol.SetBounds(curX, footerControlY, volW, controlH);
-                curX += volW + gapVolToExpand;
+                // Время мельче имени трека, и по верху коробки они встали бы на разные
+                // линии — сажаем мелкую строку на базовую линию крупной.
+                int timeH = TextRenderer.MeasureText("Agjpq", Theme.FMini).Height;
+                int timeY = textY + Theme.Baseline(Theme.FTitle) - Theme.Baseline(Theme.FMini);
 
-                _playerExpand.SetBounds(curX, footerControlY, trIcon, trIcon);
+                _rPlayerTimeLeft = new Rectangle(curX + seekPad, timeY, timeW, timeH);
+                _rPlayerTimeRight = new Rectangle(curX + seekW - seekPad - timeW, timeY, timeW, timeH);
+
+                int trackLeft = _rPlayerTimeLeft.Right + Sc(6);
+                int trackW = Math.Max(0, (_rPlayerTimeRight.Left - Sc(6)) - trackLeft);
+                _rPlayerTrack = new Rectangle(trackLeft, textY, trackW, textH);
+
+                _playerSeek.SetBounds(curX, textY + textH + Sc(1), seekW, seekH);
+                curX += seekW + Sc(24);
+
+                // 4. Кнопка громкости и всплывающий регулятор над ней
+                _playerVolBtn.SetBounds(curX, playerY, trIcon, trIcon);
+                int popupW = Sc(34);
+                int popupH = Sc(140);
+                int popupX = _playerVolBtn.Left + (trIcon - popupW) / 2;
+                int popupY = _playerVolBtn.Top - popupH - Sc(12);
+                _playerVolPopup.SetBounds(popupX, popupY, popupW, popupH);
+                curX += trIcon + Sc(Theme.IconGap);
+
+                // 5. Кнопка разворачивания плеера (OpenPlaylist)
+                _playerExpand.SetBounds(curX, playerY, trIcon, trIcon);
+                curX += trIcon + Sc(16);
+
+                // 6. Кликабельное название сета
+                string sname = (_player != null && !_player.IsDisposed && _player.CurrentSet != null) ? _player.CurrentSet.Name : "";
+                _playerSetLink.SetName = sname;
+                int maxNameW = Math.Max(Sc(100), contentRight - curX);
+                int nameW = maxNameW;
+                if (!string.IsNullOrEmpty(sname))
+                {
+                    int measured = TextRenderer.MeasureText(sname, Theme.FTitle).Width + Sc(8);
+                    nameW = Math.Min(maxNameW, measured);
+                }
+                _playerSetLink.SetBounds(curX, playerY, nameW, controlH);
             }
 
             _summary.Visible = false;
@@ -867,7 +1015,8 @@ namespace AbletonManager
 
             if (isList || plugins)
             {
-                _list.SetBounds(left, listTop, Math.Max(Sc(200), panelX - Sc(10) - left),
+                _list.PillRightGap = listGap;
+                _list.SetBounds(left, listTop, Math.Max(Sc(200), panelX - left),
                                 Math.Max(Sc(80), listBottom - listTop));
                 _detail.SetBounds(panelX, top, panelW, Math.Max(Sc(120), panelBottom - top));
             }
@@ -883,9 +1032,9 @@ namespace AbletonManager
         Rectangle _toastArea;
 
         /// <summary>Показать сообщение в углу содержимого на пару секунд.</summary>
-        void Notify(string en, string ru)
+        void Notify(string msg)
         {
-            _toast.Post(L.S(en, ru), 2200);
+            _toast.Post(msg, 2200);
             _toast.PlaceIn(_toastArea);
             _toast.BringToFront();
         }
@@ -1103,76 +1252,32 @@ namespace AbletonManager
             }
 
             // За панель инструментов тащим окно — но не за само имя программы: оно
-            // кнопка, и под HTCAPTION клики до OnMouseDown просто не доходят.
-            if (p.Y < Sc(Theme.ContentY) - Sc(10) && !_rTitleHit.Contains(p)) m.Result = (IntPtr)2;
+            // За панель инструментов тащим окно.
+            if (p.Y < Sc(Theme.ContentY) - Sc(10)) m.Result = (IntPtr)2;
         }
 
         protected override void OnMouseDoubleClick(MouseEventArgs e)
         {
-            if (_rTitleHit.Contains(e.Location)) return;
             if (e.Y < Sc(Theme.ContentY) - Sc(10)) ToggleMaximize();
             base.OnMouseDoubleClick(e);
         }
 
-        protected override void OnMouseDown(MouseEventArgs e)
-        {
-            if (_rTitleHit.Contains(e.Location))
-            {
-                if (e.Button == MouseButtons.Left) { ShowSettings(); return; }
-                if (e.Button == MouseButtons.Right) { ShowHelp(); return; }
-            }
-            base.OnMouseDown(e);
-        }
-
         /// <summary>
-        /// Настройки — по имени программы в шапке. Раньше там открывалась справка, а
-        /// единственная настройка пряталась в меню правой кнопки: найти её мог только
-        /// тот, кто и так знал, что она есть. Теперь наоборот — левая кнопка открывает
-        /// настройки, правая сразу справку, а из настроек в справку есть кнопка.
+        /// Открыть диалог настроек.
         /// </summary>
         void ShowSettings()
         {
-            bool rescan, help, options;
+            bool rescan, help;
             using (SettingsDialog d = new SettingsDialog(_settings))
             {
                 d.ShowDialog(this);
                 rescan = d.RescanWanted;
                 help = d.ShortcutsWanted;
-                options = d.OptionsWanted;
             }
 
             _settings.Save();
             if (rescan) StartScan(true);
-            if (options) ShowOptionsEditor();
             if (help) ShowHelp();
-        }
-
-        void ShowOptionsEditor()
-        {
-            using (OptionsDialog d = new OptionsDialog()) d.ShowDialog(this);
-        }
-
-        protected override void OnMouseMove(MouseEventArgs e)
-        {
-            bool hot = _rTitleHit.Contains(e.Location);
-            if (hot != _titleHot)
-            {
-                _titleHot = hot;
-                Cursor = hot ? Cursors.Hand : Cursors.Default;
-                Invalidate(_rTitle);
-            }
-            base.OnMouseMove(e);
-        }
-
-        protected override void OnMouseLeave(EventArgs e)
-        {
-            if (_titleHot)
-            {
-                _titleHot = false;
-                Cursor = Cursors.Default;
-                Invalidate(_rTitle);
-            }
-            base.OnMouseLeave(e);
         }
 
         // ----------------------------------------------------------------- справка
@@ -1337,40 +1442,42 @@ namespace AbletonManager
             Chrome.DrawText(g, CountText(), Theme.FButton, _rCount, Theme.TextDim,
                 TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix);
 
-            string title = "Alive " + Application.ProductVersion;
-            Color titleColor = _titleHot ? Theme.Text : Theme.TextDim;
-            Chrome.DrawText(g, title, Theme.FTitle, _rTitle, titleColor,
-                TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.SingleLine | TextFormatFlags.NoPrefix);
+            // Над окном держат папку — обводим его, чтобы было видно, что бросать
+            // можно сюда. Обычным светлым, не акцентом — тот же принцип, что и у
+            // выделения строки/плитки.
+            if (_dragOverWindow)
+            {
+                RectangleF edge = new RectangleF(1.5f, 1.5f, ClientSize.Width - 3f, ClientSize.Height - 3f);
+                using (GraphicsPath ep = Theme.Round(edge, Sc(Theme.WindowR) - 1.5f))
+                using (Pen pen = new Pen(Color.FromArgb(0xE0, Theme.Light), 3f))
+                    g.DrawPath(pen, ep);
+            }
 
-            // Кликабельна ровно надпись, а не вся отведённая ей полоса.
-            Size ts = TextRenderer.MeasureText(title, Theme.FTitle);
-            _rTitleHit = new Rectangle(_rTitle.X + (_rTitle.Width - ts.Width) / 2, _rTitle.Y,
-                                       ts.Width, _rTitle.Height);
-
-            // Подчёркивание, указывающее на кликабельность (вызов справки)
-            int lineY = _rTitleHit.Y + (_rTitleHit.Height + ts.Height) / 2 - Sc(2);
-            using (Pen p = new Pen(titleColor))
-                g.DrawLine(p, _rTitleHit.Left, lineY, _rTitleHit.Right - Sc(3), lineY);
-
-            bool playerOpen = _player != null && !_player.IsDisposed;
-            bool showTransport = _mode.SelectedIndex != ModePlugins && playerOpen;
+            // Транспорт рисуется везде, где он разложен, — включая вкладку плагинов.
+            bool showTransport = _player != null && !_player.IsDisposed;
 
             if (showTransport)
             {
-                TextFormatFlags tfL = TextFormatFlags.Right | TextFormatFlags.VerticalCenter | TextFormatFlags.SingleLine | TextFormatFlags.NoPrefix;
-                TextFormatFlags tfR = TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.SingleLine | TextFormatFlags.NoPrefix;
-                if (!string.IsNullOrEmpty(_playerTimeLeftStr))
-                    Chrome.DrawText(g, _playerTimeLeftStr, Theme.FLabel, _rPlayerTimeLeft, Theme.Text, tfL);
-                if (!string.IsNullOrEmpty(_playerTimeRightStr))
-                    Chrome.DrawText(g, _playerTimeRightStr, Theme.FLabel, _rPlayerTimeRight, Theme.TextDim, tfR);
+                // Строго по верху коробки: прямоугольники уже разведены так, чтобы
+                // время и имя трека сели на одну базовую линию (см. LayoutAll).
+                TextFormatFlags tfL = TextFormatFlags.Left | TextFormatFlags.Top | TextFormatFlags.SingleLine | TextFormatFlags.NoPrefix;
+                TextFormatFlags tfR = TextFormatFlags.Right | TextFormatFlags.Top | TextFormatFlags.SingleLine | TextFormatFlags.NoPrefix;
+                TextFormatFlags tfC = TextFormatFlags.HorizontalCenter | TextFormatFlags.Top | TextFormatFlags.SingleLine | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix;
+
+                if (!string.IsNullOrEmpty(_playerTimeLeftStr) && !_rPlayerTimeLeft.IsEmpty)
+                    Chrome.DrawText(g, _playerTimeLeftStr, Theme.FMini, _rPlayerTimeLeft, Theme.TextDim, tfL);
+                if (!string.IsNullOrEmpty(_playerTimeRightStr) && !_rPlayerTimeRight.IsEmpty)
+                    Chrome.DrawText(g, _playerTimeRightStr, Theme.FMini, _rPlayerTimeRight, Theme.TextDim, tfR);
+
+                // Имя трека (файла) над прогресс-баром
+                string trackName = (_player != null && !_player.IsDisposed) ? _player.CurrentFileName : "";
+                if (!string.IsNullOrEmpty(trackName) && !_rPlayerTrack.IsEmpty)
+                    Chrome.DrawText(g, trackName, Theme.FTitle, _rPlayerTrack, Theme.Text, tfC);
             }
             else if (_mode.SelectedIndex == ModeSets)
             {
                 Chrome.DrawText(g, StatusText(), Theme.FLabel, _rStatus, Theme.TextDim, Chrome.Left);
             }
-
-            if (_mode.SelectedIndex == ModePlugins && _pluginSource.Length > 0)
-                Chrome.DrawText(g, _pluginSource, Theme.FLabel, _rPluginSource, Theme.TextDim, Chrome.Left);
 
             if (_scanning && _manualScan && _scanTotal > 0)
             {
@@ -1403,20 +1510,19 @@ namespace AbletonManager
                 // «0 / 0» тут врало: на большой папке это единственное, что видно
                 // секундами, и читается как «программа ничего не делает».
                 return _scanTotal > 0
-                     ? L.S("Scanning ", "Сканирую ") + _scanDone + " / " + _scanTotal
-                     : L.S("Looking for sets… ", "Ищу сеты… ") + _scanDone;
+                     ? "Scanning " + _scanDone + " / " + _scanTotal
+                     : "Looking for sets… " + _scanDone;
             // VisibleCount, а не VisibleSets().Count: счётчик рисуется на каждой
             // перерисовке окна (при открытом плеере — двадцать раз в секунду), и строить
             // ради него список сетов незачем.
             if (_mode.SelectedIndex == ModeSets && _viewToggle.SelectedIndex == ViewTiles)
-                return _home.VisibleCount + L.S(" shown", " показано");
-            return _list.Rows.Count + L.S(" shown", " показано");
+                return _home.VisibleCount + " shown";
+            return _list.Rows.Count + " shown";
         }
 
         string StatusText()
         {
-            string s = L.S(_statusEn, _statusRu);
-            return s.Length > 0 ? s : "";
+            return _status.Length > 0 ? _status : "";
         }
 
         // ------------------------------------------------------------ содержимое
@@ -1438,6 +1544,7 @@ namespace AbletonManager
             SetEntry keep = SelectedSet();
             string keepPath = keep != null ? keep.Path : null;
             int scroll = _list.ScrollOffset;
+            int scrollX = _list.ScrollOffsetX;
 
             Refill(false);
 
@@ -1462,6 +1569,7 @@ namespace AbletonManager
 
             // Строго после SelectRow: тот подкручивает список к найденной строке.
             _list.ScrollOffset = scroll;
+            _list.ScrollOffsetX = scrollX;
         }
 
         /// <summary>
@@ -1511,7 +1619,7 @@ namespace AbletonManager
                 int w = d.Width;                                  // логическая ширина
                 int ov;
                 if (d.Width != 0 && _setColW.TryGetValue(d.Id, out ov) && ov > 0) w = ov;
-                cols[i] = new Column(L.S(d.En, d.Ru), w)
+                cols[i] = new Column(d.En, w)
                     { Id = d.Id, Right = d.Right, Font = d.Font, Color = d.Color, Chips = d.Chips };
             }
             _list.ColumnsConfigurable = true;
@@ -1624,15 +1732,6 @@ namespace AbletonManager
 
             // Разделитель — ровно там, где кончились закреплённые. Ни линии без группы,
             // ни линии в самом низу, когда незакреплённых не осталось.
-            int lastPinned = -1;
-            if (pins != null)
-                for (int i = 0; i < matched.Count; i++)
-                {
-                    if (!pins.Contains(matched[i].Path)) break;
-                    lastPinned = i;
-                }
-            _list.GroupSeparatorAfter = lastPinned >= 0 && lastPinned < matched.Count - 1 ? lastPinned : -1;
-
             OnSelectionChanged();
         }
 
@@ -1684,16 +1783,16 @@ namespace AbletonManager
             // Отметки ставим только если их колонки сейчас видно.
             if (pIdx >= 0 && s.Plugins.Length > 0)
                 r.Marks.Add(new CellMark(pIdx, s.MissingPlugins > 0 ? Theme.Red : Theme.Green,
-                                         s.MissingPlugins == 0 ? L.S("","") : s.MissingPlugins + L.S(" ", " нет")));
+                                         s.MissingPlugins == 0 ? "" : s.MissingPlugins + " "));
 
             if (fIdx >= 0)
             {
                 if (s.Error.Length > 0)
-                    r.Marks.Add(new CellMark(fIdx, Theme.Red, L.S("unreadable", "не читается")));
+                    r.Marks.Add(new CellMark(fIdx, Theme.Red, "unreadable"));
                 else if (s.TotalRefs > 0 || s.MissingFiles > 0)
                     r.Marks.Add(new CellMark(fIdx, s.MissingFiles > 0 ? Theme.Red : Theme.Green,
-                     s.MissingFiles == 0 ? L.S("", "")
-                                         : s.MissingFiles + L.S(" ", " нет")));
+                     s.MissingFiles == 0 ? ""
+                                         : s.MissingFiles + " "));
             }
             return r;
         }
@@ -1720,6 +1819,7 @@ namespace AbletonManager
             // каталог целиком — как будто список построили заново.
             SetEntry keep = SelectedSet();
             int scroll = _list.ScrollOffset;
+            int scrollX = _list.ScrollOffsetX;
             Refill(false);
             if (keep != null)
             {
@@ -1731,6 +1831,7 @@ namespace AbletonManager
                 });
             }
             _list.ScrollOffset = scroll;
+            _list.ScrollOffsetX = scrollX;
         }
 
         void FillPlugins(bool animate)
@@ -1738,7 +1839,6 @@ namespace AbletonManager
             _list.ColumnsConfigurable = true;
             _list.ShowPlayButton = false;
             _list.ShowPinIndicator = false;
-            _list.GroupSeparatorAfter = -1;
 
             _pluginVisible = new List<PluginColDef>();
             foreach (string id in _pluginOrder)
@@ -1754,7 +1854,7 @@ namespace AbletonManager
                 int w = d.Width;
                 int ov;
                 if (d.Width != 0 && _pluginColW.TryGetValue(d.Id, out ov) && ov > 0) w = ov;
-                pcols[i] = new Column(L.S(d.En, d.Ru), w)
+                pcols[i] = new Column(d.En, w)
                     { Id = d.Id, Right = d.Right, Font = d.Font, Color = d.Color };
             }
             _list.SetColumns(pcols);
@@ -1768,7 +1868,6 @@ namespace AbletonManager
 
             List<PluginStat> all = _index.PluginUsage();
             _summary.Update(_index.Health(all));
-            _pluginSource = _index.Inventory.Describe();
 
             string q = _search.Box.Text.Trim();
             List<PluginStat> matched = new List<PluginStat>();
@@ -1811,19 +1910,16 @@ namespace AbletonManager
                 r.Cells = cells;
                 r.Tag = st;
 
-                // Отметку ставим, только если колонку состояния сейчас видно.
+                // Отметку ставим, только если колонку состояния сейчас видно:
+                // три состояния — Installed (✔️), not installed (❌), other format.
                 if (stIdx >= 0)
                 {
-                    if (st.Match == MatchKind.Missing)
-                        r.Marks.Add(new CellMark(stIdx, Theme.Red, L.S("❌", "не установлен")));
+                    if (st.Match == MatchKind.Missing || (st.Installed != null && st.Installed.FileMissing))
+                        r.Marks.Add(new CellMark(stIdx, Theme.Red, "❌"));
                     else if (st.Match == MatchKind.OtherFormat)
-                        r.Marks.Add(new CellMark(stIdx, Theme.TextDim, L.S("other format", "другой формат")));
-                    else if (st.Installed != null && st.Installed.FileMissing)
-                        r.Marks.Add(new CellMark(stIdx, Theme.Red, L.S("file gone", "файла нет")));
-                    else if (st.Sets == 0)
-                        r.Marks.Add(new CellMark(stIdx, Theme.TextDim, L.S("never used", "не используется")));
+                        r.Marks.Add(new CellMark(stIdx, Theme.TextDim, "other format"));
                     else
-                        r.Marks.Add(new CellMark(stIdx, Theme.Green, L.S("✔️", "установлен")));
+                        r.Marks.Add(new CellMark(stIdx, Theme.Green, "✔️"));
                 }
                 rows.Add(r);
             }
@@ -1890,21 +1986,48 @@ namespace AbletonManager
         /// </summary>
         void OnHeaderClicked(int column)
         {
+            SetEntry keepSet = SelectedSet();
+            string keepSetPath = keepSet != null ? keepSet.Path : null;
+            PluginStat keepPlugin = SelectedPlugin();
+            string keepPluginName = keepPlugin != null ? keepPlugin.Name : null;
+            int scroll = _list.ScrollOffset;
+            int scrollX = _list.ScrollOffsetX;
+
             if (_mode.SelectedIndex == ModeSets)
             {
                 if (column < 0 || column >= _setVisible.Count) return;
                 string id = _setVisible[column].Id;
                 if (_setSortId == id) _sortDesc = !_sortDesc;
                 else { _setSortId = id; _sortDesc = false; }
-                Refill();     // FillSets проставит _list.SortColumn/Descending
-                return;
+                Refill(false);     // FillSets проставит _list.SortColumn/Descending
+                if (keepSetPath != null)
+                {
+                    _list.SelectRow(delegate (RowData r)
+                    {
+                        SetEntry s = r.Tag as SetEntry;
+                        return s != null && string.Equals(s.Path, keepSetPath, StringComparison.OrdinalIgnoreCase);
+                    });
+                }
+            }
+            else
+            {
+                if (column < 0 || column >= _pluginVisible.Count) return;
+                string pid = _pluginVisible[column].Id;
+                if (_pluginSortId == pid) _sortDesc = !_sortDesc;
+                else { _pluginSortId = pid; _sortDesc = false; }
+                Refill(false);         // FillPlugins проставит _list.SortColumn/Descending
+                if (keepPluginName != null)
+                {
+                    _list.SelectRow(delegate (RowData r)
+                    {
+                        PluginStat p = r.Tag as PluginStat;
+                        return p != null && string.Equals(p.Name, keepPluginName, StringComparison.OrdinalIgnoreCase);
+                    });
+                }
             }
 
-            if (column < 0 || column >= _pluginVisible.Count) return;
-            string pid = _pluginVisible[column].Id;
-            if (_pluginSortId == pid) _sortDesc = !_sortDesc;
-            else { _pluginSortId = pid; _sortDesc = false; }
-            Refill();         // FillPlugins проставит _list.SortColumn/Descending
+            _list.ScrollOffset = scroll;
+            _list.ScrollOffsetX = scrollX;
         }
 
         // ------------------------------------------------------- меню колонок
@@ -1926,7 +2049,7 @@ namespace AbletonManager
                 // Группировка живёт здесь же: это про то, что показывает список, ровно как
                 // и набор колонок, и другого места для неё в интерфейсе нет.
                 ToolStripMenuItem group = new ToolStripMenuItem(
-                    L.S("One row per folder", "Одна строка на папку"));
+                    "One row per folder");
                 group.Checked = _settings.GroupByFolder;
                 group.Click += delegate
                 {
@@ -1957,9 +2080,9 @@ namespace AbletonManager
             List<string> ids = new List<string>();
             List<string> titles = new List<string>();
             if (sets)
-                foreach (ColDef d in Catalog) { ids.Add(d.Id); titles.Add(L.S(d.En, d.Ru)); }
+                foreach (ColDef d in Catalog) { ids.Add(d.Id); titles.Add(d.En); }
             else
-                foreach (PluginColDef d in PluginCatalog) { ids.Add(d.Id); titles.Add(L.S(d.En, d.Ru)); }
+                foreach (PluginColDef d in PluginCatalog) { ids.Add(d.Id); titles.Add(d.En); }
 
             List<ToolStripMenuItem> boxes = new List<ToolStripMenuItem>();
             for (int i = 0; i < ids.Count; i++)
@@ -1979,7 +2102,7 @@ namespace AbletonManager
             }
 
             menu.Items.Add(new ToolStripSeparator());
-            ToolStripMenuItem reset = new ToolStripMenuItem(L.S("Reset to defaults", "Сбросить по умолчанию"));
+            ToolStripMenuItem reset = new ToolStripMenuItem("Reset to defaults");
             List<string> resetIds = ids;
             List<ToolStripMenuItem> resetBoxes = boxes;
             List<string> resetOrder = order;
@@ -2015,7 +2138,13 @@ namespace AbletonManager
             else { if (_pluginSortId != null && !HasCol(order, _pluginSortId)) _pluginSortId = null; }
 
             SaveColumns();
-            Refill();
+            int sel = _list.SelectedIndex;
+            int scroll = _list.ScrollOffset;
+            int scrollX = _list.ScrollOffsetX;
+            Refill(false);
+            _list.SelectIndex(sel);
+            _list.ScrollOffset = scroll;
+            _list.ScrollOffsetX = scrollX;
         }
 
         void ResetColumns()
@@ -2062,9 +2191,11 @@ namespace AbletonManager
             // перестановка колонки стоила бы выбранного проекта и места в списке.
             int sel = _list.SelectedIndex;
             int scroll = _list.ScrollOffset;
+            int scrollX = _list.ScrollOffsetX;
             Refill(false);                        // строки те же — влетать снизу им незачем
             _list.SelectIndex(sel);
             _list.ScrollOffset = scroll;
+            _list.ScrollOffsetX = scrollX;
         }
 
         static bool HasPlugin(SetEntry s, string name)
@@ -2140,8 +2271,7 @@ namespace AbletonManager
                 _mode.SelectedIndex = ModeSets;
                 _search.Box.Text = "";
                 Refill();
-                Status("Filtered by plugin: " + _pluginFilter,
-                       "Отобраны сеты с плагином: " + _pluginFilter);
+                Status("Filtered by plugin: " + _pluginFilter);
                 return;
             }
             OpenSelected();
@@ -2182,6 +2312,78 @@ namespace AbletonManager
                 PluginStat st = r.Tag as PluginStat;
                 return st != null && string.Equals(st.Name, pluginName, StringComparison.OrdinalIgnoreCase);
             });
+        }
+
+        [DllImport("user32.dll")]
+        static extern bool SetForegroundWindow(IntPtr hWnd);
+
+        public void SelectSetByPath(string path)
+        {
+            if (string.IsNullOrEmpty(path)) return;
+            if (InvokeRequired)
+            {
+                try { BeginInvoke((MethodInvoker)delegate { SelectSetByPath(path); }); } catch { }
+                return;
+            }
+
+            if (WindowState == FormWindowState.Minimized)
+                WindowState = FormWindowState.Normal;
+
+            _pluginFilter = "";
+            _search.Box.Text = "";
+            if (!_filter.IsEmpty)
+            {
+                _filter.Clear();
+                UpdateFiltersButton();
+            }
+
+            bool modeChanged = _mode.SelectedIndex != ModeSets;
+            bool viewChanged = _viewToggle.SelectedIndex != ViewList;
+
+            _mode.SelectedIndex = ModeSets;
+            _viewToggle.SelectedIndex = ViewList;
+
+            if (modeChanged || viewChanged)
+                Refill();
+
+            SetEntry matched = null;
+            _list.SelectRow(delegate (RowData r)
+            {
+                SetEntry s = r.Tag as SetEntry;
+                if (s == null) return false;
+                if (string.Equals(s.Path, path, StringComparison.OrdinalIgnoreCase))
+                {
+                    matched = s;
+                    return true;
+                }
+                if (!string.IsNullOrEmpty(s.ProjectDir) &&
+                    (string.Equals(s.ProjectDir, path, StringComparison.OrdinalIgnoreCase) ||
+                     path.StartsWith(s.ProjectDir, StringComparison.OrdinalIgnoreCase)))
+                {
+                    matched = s;
+                    return true;
+                }
+                return false;
+            });
+
+            SetEntry specific = null;
+            foreach (SetEntry s in _index.Sets)
+            {
+                if (string.Equals(s.Path, path, StringComparison.OrdinalIgnoreCase))
+                {
+                    specific = s;
+                    break;
+                }
+            }
+
+            if (specific != null)
+                _detail.Show(specific);
+            else if (matched != null && _list.Selected == null)
+                _detail.Show(matched);
+
+            BringToFront();
+            Activate();
+            try { SetForegroundWindow(Handle); } catch { }
         }
 
         // ------------------------------------------------------------ действия
@@ -2267,7 +2469,7 @@ namespace AbletonManager
             if (s == null) return;
             if (!File.Exists(s.Path))
             {
-                Status("File is gone: " + s.Path, "Файла больше нет: " + s.Path);
+                Status("File is gone: " + s.Path);
                 return;
             }
             try
@@ -2276,9 +2478,9 @@ namespace AbletonManager
                 // Live поднимается не сразу — то же самое «кнопка как будто не сработала»,
                 // что и у запуска пустой Live, только тут ещё и не сразу ясно, ТОТ ли
                 // именно сет открывается: имя сохраняет и в заголовке двойных строк.
-                Notify("Opening “" + s.Name + ".als”…", "Открываю «" + s.Name + ".als»…");
+                Notify("Opening “" + s.Name + ".als”…");
             }
-            catch (Exception ex) { Status("Could not open: " + ex.Message, "Не удалось открыть: " + ex.Message); }
+            catch (Exception ex) { Status("Could not open: " + ex.Message); }
         }
 
         /// <summary>Показать сет в проводнике — общее для списка и плиток главной.</summary>
@@ -2302,7 +2504,7 @@ namespace AbletonManager
             if (s == null) return;
             if (!File.Exists(s.Path))
             {
-                Status("File is gone: " + s.Path, "Файла больше нет: " + s.Path);
+                Status("File is gone: " + s.Path);
                 return;
             }
 
@@ -2310,8 +2512,7 @@ namespace AbletonManager
             {
                 d.ShowDialog(this);
                 if (d.Produced.Length > 0)
-                    Notify("Saved " + Path.GetFileName(d.Produced),
-                           "Сохранено: " + Path.GetFileName(d.Produced));
+                    Notify("Saved " + Path.GetFileName(d.Produced));
             }
         }
 
@@ -2325,8 +2526,7 @@ namespace AbletonManager
                 {
                     if (File.Exists(st.Installed.Path) || Directory.Exists(st.Installed.Path))
                         Process.Start("explorer.exe", "/select,\"" + st.Installed.Path + "\"");
-                    else Status("The plugin file is gone: " + st.Installed.Path,
-                                "Файла плагина больше нет: " + st.Installed.Path);
+                    else Status("The plugin file is gone: " + st.Installed.Path);
                 }
                 catch { }
                 return;
@@ -2339,10 +2539,18 @@ namespace AbletonManager
         {
             using (FiltersDialog d = new FiltersDialog(_filter, _index.Sets, _versions))
             {
-                if (d.ShowDialog(this) != DialogResult.OK) return;
+                // Фильтры применяются на лету: пока окно открыто, список и счётчик
+                // «N shown» за ним меняются на глазах, а кнопка снизу просто закрывает.
+                d.Changed += delegate
+                {
+                    _filter.CopyFrom(d.Result);
+                    UpdateFiltersButton();
+                    Refill(false);
+                };
+                d.ShowDialog(this);
                 _filter.CopyFrom(d.Result);
                 UpdateFiltersButton();
-                Refill();
+                Refill(false);
             }
         }
 
@@ -2351,10 +2559,18 @@ namespace AbletonManager
             List<PluginStat> all = _index.PluginUsage();
             using (PluginFiltersDialog d = new PluginFiltersDialog(_pluginFilterObj, all))
             {
-                if (d.ShowDialog(this) != DialogResult.OK) return;
+                // Фильтры применяются на лету: пока окно открыто, список плагинов
+                // за ним меняется на глазах, а кнопка снизу просто закрывает.
+                d.Changed += delegate
+                {
+                    _pluginFilterObj.CopyFrom(d.Result);
+                    UpdateFiltersButton();
+                    Refill(false);
+                };
+                d.ShowDialog(this);
                 _pluginFilterObj.CopyFrom(d.Result);
                 UpdateFiltersButton();
-                Refill();
+                Refill(false);
             }
         }
 
@@ -2413,7 +2629,7 @@ namespace AbletonManager
                 // логичнее понять как паузу, чем не сделать ничего.
                 if (player) { _player.PlayPause(); UpdatePlayerTransport(); }
                 else if (s != null)
-                    Status("No renders next to this set", "Рядом с этим сетом нет рендеров");
+                    Status("No renders next to this set");
                 return;
             }
 
@@ -2476,13 +2692,20 @@ namespace AbletonManager
             using (NotesDialog d = new NotesDialog(s))
             {
                 if (d.ShowDialog(this) != DialogResult.OK) return;
+                int scroll = _list.ScrollOffset;
+                int scrollX = _list.ScrollOffsetX;
                 Refill(false);
 
                 // Refill пересобирает список с нуля (SetRows всегда сбрасывает выделение —
                 // так и панель справа, и подсветка строки гаснут посреди правки её же
                 // тегов). Объект сета не меняется, поэтому просто выделяем его снова.
                 if (_viewToggle.SelectedIndex == ViewTiles) _home.Selected = s;
-                else _list.SelectRow(delegate (RowData r) { return ReferenceEquals(r.Tag, s); });
+                else
+                {
+                    _list.SelectRow(delegate (RowData r) { return ReferenceEquals(r.Tag, s); });
+                    _list.ScrollOffset = scroll;
+                    _list.ScrollOffsetX = scrollX;
+                }
             }
         }
 
@@ -2492,7 +2715,7 @@ namespace AbletonManager
             if (s == null) return;
             if (!File.Exists(s.Path))
             {
-                Status("File is gone: " + s.Path, "Файла больше нет: " + s.Path);
+                Status("File is gone: " + s.Path);
                 return;
             }
             using (PreviewDialog d = new PreviewDialog(s, _arrangements))
@@ -2548,35 +2771,35 @@ namespace AbletonManager
 
             ContextMenuStrip m = DarkMenu.Create();
 
-            ToolStripMenuItem open = new ToolStripMenuItem(L.S("Open in Live", "Открыть в Live"));
+            ToolStripMenuItem open = new ToolStripMenuItem("Open in Live");
             open.Click += delegate { OpenSet(s); };
             m.Items.Add(open);
 
             if (s.HasRenders)
             {
-                ToolStripMenuItem play = new ToolStripMenuItem(L.S("Play render", "Слушать рендер"));
+                ToolStripMenuItem play = new ToolStripMenuItem("Play render");
                 play.Click += delegate { OnRowPlay(idx); };
                 m.Items.Add(play);
             }
 
             ToolStripMenuItem pin = new ToolStripMenuItem(
-                HomeStore.IsPinned(s.Path) ? L.S("Unpin", "Открепить") : L.S("Pin project", "Закрепить"));
+                HomeStore.IsPinned(s.Path) ? "Unpin" : "Pin project");
             pin.Checked = HomeStore.IsPinned(s.Path);
             pin.Click += delegate { TogglePinAndRefresh(s); };
             m.Items.Add(pin);
 
             ToolStripMenuItem notes = new ToolStripMenuItem(
                 ProjectMeta.HasAnything(s.ProjectDir)
-                    ? L.S("Tags and notes…", "Теги и заметки…")
-                    : L.S("Add tags or a note…", "Добавить теги или заметку…"));
+                    ? "Tags and notes…"
+                    : "Add tags or a note…");
             notes.Click += delegate { EditNotes(s); };
             m.Items.Add(notes);
 
-            ToolStripMenuItem rescue = new ToolStripMenuItem(L.S("Rescue project…", "Восстановить проект…"));
+            ToolStripMenuItem rescue = new ToolStripMenuItem("Rescue project…");
             rescue.Click += delegate { RescueSet(s); };
             m.Items.Add(rescue);
 
-            ToolStripMenuItem reveal = new ToolStripMenuItem(L.S("Show in Explorer", "Показать в папке"));
+            ToolStripMenuItem reveal = new ToolStripMenuItem("Show in Explorer");
             reveal.Click += delegate { RevealSet(s); };
             m.Items.Add(reveal);
 
@@ -2595,6 +2818,7 @@ namespace AbletonManager
                 if (rs != null && rs.Path == s.Path) { r.Pinned = HomeStore.IsPinned(s.Path); break; }
             }
             _list.Invalidate();
+            if (_home.Visible) _home.RebuildTransition();
         }
 
         void ShowPlayer(SetEntry s, List<SetEntry> playlist)
@@ -2631,6 +2855,9 @@ namespace AbletonManager
                     _playerTimeLeftStr = _playerTimeRightStr = "";
                     _playerSeek.Progress = 0f;
                     _player = null;
+                    _playerVolPopup.Visible = false;
+                    _volPopupTimer.Stop();
+                    _playerSetLink.SetName = "";
                     _list.PlayingTag = _home.PlayingTag = null;
                     _list.Playing = _home.Playing = false;
                     _list.Invalidate();
@@ -2639,7 +2866,12 @@ namespace AbletonManager
                     Invalidate(true);
                 };
                 _playerTimer.Start();
+                _status = "";          // подпись «нет рендеров» относилась к прошлому сету
                 LayoutAll();           // показывает мини-транспорт теперь, когда плеер есть
+                // Раскладка сама по себе не перерисовывает фон формы, а на месте
+                // футера оставалась старая строка состояния — поверх неё вставали
+                // кнопки транспорта. Полная перерисовка ровно один раз, при открытии.
+                Invalidate(true);
             }
 
             if (playlist == null) playlist = new List<SetEntry>();
@@ -2689,6 +2921,23 @@ namespace AbletonManager
             return (total / 60) + ":" + (total % 60).ToString("00");
         }
 
+        void StartVolPopupCloseTimer()
+        {
+            _volPopupTimer.Stop();
+            _volPopupTimer.Start();
+        }
+
+        void UpdatePlayerVolumeIcon()
+        {
+            float vol = _player != null && !_player.IsDisposed ? _player.Volume : 0.5f;
+            Glyph g = vol <= 0.001f ? Glyph.Volume0 : vol <= 0.5f ? Glyph.VolumeLow : Glyph.VolumeHigh;
+            if (_playerVolBtn.Icon != g)
+            {
+                _playerVolBtn.Icon = g;
+                _playerVolBtn.Invalidate();
+            }
+        }
+
         void UpdatePlayerTransport()
         {
             bool playing = _player != null && !_player.IsDisposed && _player.IsPlaying;
@@ -2697,6 +2946,72 @@ namespace AbletonManager
 
             if (_list.Playing != playing) { _list.Playing = playing; _list.Invalidate(); }
             if (_home.Playing != playing) { _home.Playing = playing; _home.Invalidate(); }
+
+            UpdatePlayerVolumeIcon();
+            string sname = (_player != null && !_player.IsDisposed && _player.CurrentSet != null) ? _player.CurrentSet.Name : "";
+            if (_playerSetLink.SetName != sname)
+            {
+                _playerSetLink.SetName = sname;
+                LayoutAll();
+            }
+            if (!_rPlayerTrack.IsEmpty) Invalidate(_rPlayerTrack);
+        }
+
+        void NavigateToSet(SetEntry target)
+        {
+            if (target == null) return;
+            if (_mode.SelectedIndex != ModeSets)
+            {
+                _mode.SelectedIndex = ModeSets;
+            }
+            _lastSetPath = target.Path;
+
+            if (_viewToggle.SelectedIndex == ViewTiles)
+            {
+                bool found = false;
+                foreach (SetEntry s in _home.VisibleSets())
+                {
+                    if (ReferenceEquals(s, target) || string.Equals(s.Path, target.Path, StringComparison.OrdinalIgnoreCase))
+                    {
+                        found = true;
+                        break;
+                    }
+                }
+                if (!found && (_search.Text.Length > 0 || !_filter.IsEmpty))
+                {
+                    _search.Text = "";
+                    _filter.Clear();
+                    UpdateFiltersButton();
+                    Refill();
+                }
+                _home.Select(target);
+            }
+            else
+            {
+                bool found = false;
+                foreach (RowData r in _list.Rows)
+                {
+                    SetEntry s = r.Tag as SetEntry;
+                    if (s != null && (ReferenceEquals(s, target) || string.Equals(s.Path, target.Path, StringComparison.OrdinalIgnoreCase)))
+                    {
+                        found = true;
+                        break;
+                    }
+                }
+                if (!found && (_search.Text.Length > 0 || !_filter.IsEmpty))
+                {
+                    _search.Text = "";
+                    _filter.Clear();
+                    UpdateFiltersButton();
+                    Refill();
+                }
+                _list.SelectRow(delegate (RowData r)
+                {
+                    SetEntry s = r.Tag as SetEntry;
+                    return s != null && (ReferenceEquals(s, target) || string.Equals(s.Path, target.Path, StringComparison.OrdinalIgnoreCase));
+                });
+            }
+            OnSelectionChanged();
         }
 
         /// <summary>
@@ -2724,8 +3039,7 @@ namespace AbletonManager
             string exe = LiveEnvironment.FindExecutable();
             if (exe.Length == 0)
             {
-                Status("Could not find Ableton Live — is it installed?",
-                       "Не нашёл Ableton Live — она установлена?");
+                Status("Could not find Ableton Live — is it installed?");
                 return;
             }
             try
@@ -2734,9 +3048,79 @@ namespace AbletonManager
                 // Live поднимается долгие секунды и до первого своего окна не подаёт
                 // никаких признаков жизни — без этой строчки нажатие выглядит как
                 // «кнопка не сработала», и её жмут ещё раз.
-                Notify("Starting Live…", "Запускаю Live…");
+                Notify("Starting Live…");
             }
-            catch (Exception ex) { Status(ex.Message, ex.Message); }
+            catch (Exception ex) { Status(ex.Message); }
+        }
+
+        // ------------------------------------------------- папка перетаскиванием
+
+        /// <summary>Подсветка окна, пока над ним держат папку.</summary>
+        bool _dragOverWindow;
+
+        protected override void OnDragEnter(DragEventArgs e)
+        {
+            base.OnDragEnter(e);
+            if (!HasFolder(e.Data)) return;
+            e.Effect = DragDropEffects.Copy;
+            if (!_dragOverWindow) { _dragOverWindow = true; Invalidate(); }
+        }
+
+        protected override void OnDragLeave(EventArgs e)
+        {
+            base.OnDragLeave(e);
+            if (_dragOverWindow) { _dragOverWindow = false; Invalidate(); }
+        }
+
+        /// <summary>
+        /// Брошенная на окно папка становится новым корнем. Раньше корни добавлялись
+        /// только через отдельное окно «Folders…», хотя перетаскивание — первое, что
+        /// пробуют сделать с менеджером файлов.
+        /// </summary>
+        protected override void OnDragDrop(DragEventArgs e)
+        {
+            base.OnDragDrop(e);
+            _dragOverWindow = false;
+            Invalidate();
+
+            string[] paths = e.Data.GetData(DataFormats.FileDrop) as string[];
+            if (paths == null) return;
+
+            List<string> added = new List<string>();
+            foreach (string path in paths)
+            {
+                string folder = path;
+                if (File.Exists(path)) folder = Path.GetDirectoryName(path);
+                if (string.IsNullOrEmpty(folder) || !Directory.Exists(folder)) continue;
+                if (HasRoot(folder)) continue;
+                _settings.Roots.Add(folder);
+                _settings.DisabledRoots.Remove(folder);
+                added.Add(Path.GetFileName(folder.TrimEnd(Path.DirectorySeparatorChar)));
+            }
+            if (added.Count == 0) { Notify("Already watching that folder"); return; }
+
+            _settings.Save();
+            Settings.NotifyRootsChanged(this);
+            Notify(added.Count == 1 ? "Added " + added[0] : "Added " + added.Count + " folders");
+            StartScan(true);
+            Rewatch();
+        }
+
+        bool HasRoot(string folder)
+        {
+            foreach (string r in _settings.Roots)
+                if (string.Equals(r, folder, StringComparison.OrdinalIgnoreCase)) return true;
+            return false;
+        }
+
+        static bool HasFolder(IDataObject data)
+        {
+            if (data == null || !data.GetDataPresent(DataFormats.FileDrop)) return false;
+            string[] paths = data.GetData(DataFormats.FileDrop) as string[];
+            if (paths == null) return false;
+            foreach (string p in paths)
+                if (Directory.Exists(p) || File.Exists(p)) return true;
+            return false;
         }
 
         bool EditRoots()
@@ -2749,10 +3133,24 @@ namespace AbletonManager
                 _settings.DisabledRoots.Clear();
                 _settings.DisabledRoots.AddRange(d.DisabledRoots);
                 _settings.Save();
+                Settings.NotifyRootsChanged(this);
                 StartScan(true);
                 Rewatch();          // набор корней другой — переставляем наблюдение
                 return true;
             }
+        }
+
+        void OnGlobalRootsChanged(object source)
+        {
+            if (source == this || IsDisposed) return;
+            if (InvokeRequired)
+            {
+                try { BeginInvoke((MethodInvoker)delegate { OnGlobalRootsChanged(source); }); } catch { }
+                return;
+            }
+            _settings.ReloadRoots();
+            StartScan(true);
+            Rewatch();
         }
 
         // -------------------------------------------------------- автообновление
@@ -2791,8 +3189,7 @@ namespace AbletonManager
             if (_scanning) return;
             if (_settings.Roots.Count == 0)
             {
-                Status("No folders selected yet — press “Folders…”.",
-                       "Папки ещё не выбраны — нажми «Папки…».");
+                Status("No folders selected yet — press “Folders…”.");
                 return;
             }
 
@@ -2801,7 +3198,7 @@ namespace AbletonManager
             _manualScan = force;
             _scanDone = 0; _scanTotal = 0;
             _cancel = new CancellationTokenSource();
-            Status("Scanning…", "Сканирую…");
+            Status("Scanning…");
             Invalidate();
 
             CancellationToken token = _cancel.Token;
@@ -2836,7 +3233,7 @@ namespace AbletonManager
                         // не пишем: сколько сетов показано, и так стоит наверху, а потери
                         // видны цветными отметками в самих строках. Строка внизу остаётся
                         // только под то, о чём иначе никак не узнать, — ошибки действий.
-                        Status("", "");
+                        Status("");
 
                         // Пока сканировали, на диске успело измениться ещё что-то —
                         // проходим ещё раз, иначе те правки ждали бы следующего повода.
@@ -2860,7 +3257,17 @@ namespace AbletonManager
             _versions.Sort(delegate (string a, string b) { return CompareVersion(b, a); });   // новые сверху
         }
 
-        void Status(string en, string ru) { _statusEn = en; _statusRu = ru; Invalidate(); }
+        void Status(string msg)
+        {
+            // Появление и исчезновение строки состояния меняет высоту содержимого
+            // (нижняя полоса теперь резервируется только под то, что в ней есть),
+            // поэтому раскладку пересчитываем — но лишь когда строка реально
+            // появилась или пропала, а не на каждое её обновление.
+            bool had = _status.Length > 0;
+            _status = msg;
+            if (had != (_status.Length > 0)) LayoutAll();
+            Invalidate();
+        }
 
         protected override void OnFormClosing(FormClosingEventArgs e)
         {
@@ -2869,6 +3276,7 @@ namespace AbletonManager
                 try { UnregisterHotKey(Handle, HotkeyMinimize); } catch { }
                 _minimizeHotkey = false;
             }
+            Settings.RootsChanged -= OnGlobalRootsChanged;
             if (_cancel != null) { try { _cancel.Cancel(); } catch { } }
             if (_watch != null) { try { _watch.Dispose(); } catch { } _watch = null; }
             if (_player != null && !_player.IsDisposed) { try { _player.Close(); } catch { } }

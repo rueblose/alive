@@ -8,7 +8,6 @@ namespace AbletonManager
         public bool StatusInstalled;
         public bool StatusOtherFormat;
         public bool StatusMissing;
-        public bool StatusUnused;
 
         public HashSet<string> Formats = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         public HashSet<string> Vendors = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -22,7 +21,7 @@ namespace AbletonManager
             get
             {
                 int count = 0;
-                if (StatusInstalled || StatusOtherFormat || StatusMissing || StatusUnused) count++;
+                if (StatusInstalled || StatusOtherFormat || StatusMissing) count++;
                 if (Formats.Count > 0) count++;
                 if (Vendors.Count > 0) count++;
                 if (Categories.Count > 0) count++;
@@ -35,7 +34,7 @@ namespace AbletonManager
 
         public void Clear()
         {
-            StatusInstalled = StatusOtherFormat = StatusMissing = StatusUnused = false;
+            StatusInstalled = StatusOtherFormat = StatusMissing = false;
             Formats.Clear();
             Vendors.Clear();
             Categories.Clear();
@@ -48,7 +47,6 @@ namespace AbletonManager
             StatusInstalled = src.StatusInstalled;
             StatusOtherFormat = src.StatusOtherFormat;
             StatusMissing = src.StatusMissing;
-            StatusUnused = src.StatusUnused;
 
             Formats = new HashSet<string>(src.Formats, StringComparer.OrdinalIgnoreCase);
             Vendors = new HashSet<string>(src.Vendors, StringComparer.OrdinalIgnoreCase);
@@ -58,7 +56,7 @@ namespace AbletonManager
             SetsMax = src.SetsMax;
         }
 
-        public bool Matches(PluginStat st, bool ignoreStatus = false, bool ignoreUnused = false, bool ignoreFormats = false, bool ignoreVendors = false, bool ignoreCategories = false)
+        public bool Matches(PluginStat st, bool ignoreStatus = false, bool ignoreFormats = false, bool ignoreVendors = false, bool ignoreCategories = false)
         {
             if (st == null) return false;
 
@@ -71,9 +69,6 @@ namespace AbletonManager
                 if (StatusMissing && st.Match == MatchKind.Missing) statusPass = true;
                 if (!statusPass) return false;
             }
-
-            // Не используются (И)
-            if (!ignoreUnused && StatusUnused && !st.IsUnused) return false;
 
             // Формат
             if (!ignoreFormats && Formats.Count > 0)

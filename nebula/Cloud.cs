@@ -90,8 +90,9 @@ namespace AbletonManager.Nebula
         // Камера. Углы в радианах, дистанция в тех же единицах, что и куб [-1,1].
         float _yaw = 0.72f, _pitch = 0.34f, _zoom = 1f;
         float _panX, _panY;
+        int _lastEdgeX = -1, _lastEdgeY = -1, _lastEdgeZ = -1;
         const float CamDist = 3.4f;
-        const float TopPitch = 1.55f;      // предел наклона и у Top-пресета, и у ручного тяни — совпадают, чтобы не дёргало при первой же ручной подстройке после пресета
+        const float TopPitch = (float)(Math.PI / 2); // предел наклона и у Top-пресета, и у ручного тяни — ровно 90 градусов (PI/2) без перекоса
 
         // Ортографический пресет отключает перспективу: k = 1 всегда, без деления по
         // глубине (см. Project) — так «Front/Side/Top» дают настоящую параллельную
@@ -104,7 +105,7 @@ namespace AbletonManager.Nebula
 
         // 0 — точка почти сплошной диск с тонкой сглаженной кромкой; 1 — мягкое
         // свечение во весь радиус. См. Splat().
-        float _softness = 0.42f;
+        float _softness = 0.04f;
         public float Softness
         {
             get { return _softness; }
@@ -123,7 +124,7 @@ namespace AbletonManager.Nebula
         // данных», просто в пикселях, а не в доле). Значения не пересчитывают геометрию —
         // только то, каким радиусом Node.Size разворачивается в пиксели при отрисовке
         // (DrawPoints), поэтому смена ползунка не запускает Rebuild.
-        float _minR = 2f, _maxR = 16f;
+        float _minR = 1f, _maxR = 16f;
         public float MinPointRadius
         {
             get { return _minR; }
@@ -150,7 +151,7 @@ namespace AbletonManager.Nebula
         // То же самое для канала Fade, только в альфе (0..1), а не в пикселях — и здесь
         // значения ЗАДЕЙСТВОВАНЫ уже в Rebuild (не в DrawPoints, как у размера): альфа не
         // зависит от DPI, откладывать её в пиксели незачем.
-        float _minA = 0.16f, _maxA = 1f;
+        float _minA = 0.08f, _maxA = 1f;
         public float MinAlpha
         {
             get { return _minA; }
@@ -427,6 +428,7 @@ namespace AbletonManager.Nebula
                 default: _yaw = 0.72f; _pitch = 0.34f; _ortho = false; break;
             }
             _zoom = 1f; _panX = _panY = 0;
+            _lastEdgeX = _lastEdgeY = _lastEdgeZ = -1;
             Invalidate();
         }
 
@@ -717,59 +719,165 @@ namespace AbletonManager.Nebula
         {
             if (a.M == null) return;
 
-            float bestD = -1;
-            float ax = 0, ay = 0, bx = 0, by = 0;
+            // Для X (dim == 0) и Z (dim == 2) оси всегда привязаны к полу куба (y = -1),
+            // чтобы подписи горизонтальных шкал всегда были снизу куба и никогда не лезли на потолок.
+            // Для Y (dim == 1) выбирается один из 4 вертикальных столбов (крайний левый).
+            const float yFloor = -1f;
 
-            for (int i = 0; i < 4; i++)
+            int count = dim == 1 ? 4 : 2;
+            int bestIdx = 0;
+            float bestScore = -float.MaxValue;
+
+            float bestAx = 0, bestAy = 0, bestBx = 0, bestBy = 0, bestLen = 0;
+            float lastAx = 0, lastAy = 0, lastBx = 0, lastBy = 0, lastLen = 0;
+            float lastScore = -float.MaxValue;
+
+            int lastIdx = dim == 0 ? _lastEdgeX : (dim == 1 ? _lastEdgeY : _lastEdgeZ);
+
+            for (int i = 0; i < count; i++)
             {
-                float u = (i & 1) == 0 ? -1f : 1f;
-                float v = (i & 2) == 0 ? -1f : 1f;
-
                 float x1, y1, z1, x2, y2, z2;
-                if (dim == 0) { x1 = -1; x2 = 1; y1 = y2 = u; z1 = z2 = v; }
-                else if (dim == 1) { y1 = -1; y2 = 1; x1 = x2 = u; z1 = z2 = v; }
-                else { z1 = -1; z2 = 1; x1 = x2 = u; y1 = y2 = v; }
+                GetCandidate(dim, i, yFloor, out x1, out y1, out z1, out x2, out y2, out z2);
 
-                float p1x, p1y, p2x, p2y, d1, d2;
+                float p1x, p1y, d1, p2x, p2y, d2;
                 Project(x1, y1, z1, cx, cy, scale, cosY, sinY, cosP, sinP, out p1x, out p1y, out d1);
                 Project(x2, y2, z2, cx, cy, scale, cosY, sinY, cosP, sinP, out p2x, out p2y, out d2);
 
-                float mx = (p1x + p2x) / 2f - cx, my = (p1y + p2y) / 2f - cy;
-                float dist = mx * mx + my * my;
-                // Чуть предпочитаем нижние рёбра: подпись под сценой привычнее.
-                if (my > 0) dist *= 1.35f;
-                if (dist > bestD)
+                float dx = p2x - p1x, dy = p2y - p1y;
+                float len = (float)Math.Sqrt(dx * dx + dy * dy);
+                if (len < 1f) continue;
+
+                float mx = (p1x + p2x) * 0.5f - cx;
+                float my = (p1y + p2y) * 0.5f - cy;
+
+                // Для горизонтальных ребер важнее быть снизу экрана (+my).
+                // Для вертикальных ребер важнее быть слева экрана (-mx).
+                // Плавная непрерывная оценка без резких скачков:
+                float score = (Math.Abs(dx) * my - Math.Abs(dy) * mx) / len;
+
+                if (score > bestScore)
                 {
-                    bestD = dist;
-                    ax = p1x; ay = p1y; bx = p2x; by = p2y;
+                    bestScore = score;
+                    bestIdx = i;
+                    bestAx = p1x; bestAy = p1y; bestBx = p2x; bestBy = p2y; bestLen = len;
+                }
+
+                if (i == lastIdx)
+                {
+                    lastScore = score;
+                    lastAx = p1x; lastAy = p1y; lastBx = p2x; lastBy = p2y; lastLen = len;
                 }
             }
 
-            // Концы у трёх осей сходятся в одном углу куба, и подписи там налезали одна
-            // на другую. Уводим каждую наружу вдоль СВОЕГО ребра — тогда они расходятся
-            // по трём разным направлениям, как и сами оси.
-            float dx = bx - ax, dy = by - ay;
-            float len = (float)Math.Sqrt(dx * dx + dy * dy);
-            if (len < 1f) return;
-            float nx = dx / len, ny = dy / len;
-            float off = ScF(24f);
+            if (bestScore <= -float.MaxValue / 2f) return;
 
-            // На выключенном канале шкала пуста (см. Axis.Clear) — краевые подписи
-            // просто не рисуем, а не показываем пустые прямоугольники.
-            if (a.On)
+            // Гистерезис: не переключаем ребро, пока новый кандидат не опередит текущий
+            // с уверенным отрывом (16 px). Это на 100% исключает дребезг и мелькание при вращении (spin).
+            float ax, ay, bx, by, lenChosen;
+            int chosenIdx;
+
+            if (lastIdx >= 0 && lastLen >= 1f && bestScore <= lastScore + ScF(16f))
             {
-                Label(g, a.LoText, Theme.FBadge, Theme.TextDim, ax - nx * off, ay - ny * off);
-                Label(g, a.HiText, Theme.FBadge, Theme.TextDim, bx + nx * off, by + ny * off);
+                chosenIdx = lastIdx;
+                ax = lastAx; ay = lastAy; bx = lastBx; by = lastBy; lenChosen = lastLen;
+            }
+            else
+            {
+                chosenIdx = bestIdx;
+                ax = bestAx; ay = bestAy; bx = bestBx; by = bestBy; lenChosen = bestLen;
             }
 
-            // Название — у середины ребра, отодвинуто по нормали в сторону от центра
-            // сцены, чтобы не лежать на самих точках.
+            if (dim == 0) _lastEdgeX = chosenIdx;
+            else if (dim == 1) _lastEdgeY = chosenIdx;
+            else _lastEdgeZ = chosenIdx;
+
+            float nx = (bx - ax) / lenChosen, ny = (by - ay) / lenChosen;
+
+            // Вектор внешней нормали к ребру (в сторону от центра сцены):
+            // Для нижней оси: px = 0, py = 1 (строго вниз) -> подписи снизу оси.
+            // Для левой оси: px = -1, py = 0 (строго влево) -> подписи слева от оси.
             float mx2 = (ax + bx) / 2f, my2 = (ay + by) / 2f;
             float px = -ny, py = nx;
             if ((mx2 - cx) * px + (my2 - cy) * py < 0) { px = -px; py = -py; }
 
             string title = (dim == 0 ? "X · " : dim == 1 ? "Y · " : "Z · ") + (a.On ? a.M.Title : "Off");
-            Label(g, title, Theme.FLabel, a.On ? Theme.Text : Theme.TextDim, mx2 + px * ScF(20f), my2 + py * ScF(20f));
+            Size szTitle = TextRenderer.MeasureText(title, Theme.FLabel);
+            float gap = ScF(6f);
+
+            float cxTi = mx2 + px * (gap + HalfSpan(szTitle, px, py));
+            float cyTi = my2 + py * (gap + HalfSpan(szTitle, px, py));
+
+            if (a.On)
+            {
+                Size szLo = TextRenderer.MeasureText(a.LoText, Theme.FBadge);
+                Size szHi = TextRenderer.MeasureText(a.HiText, Theme.FBadge);
+
+                // LoText у точки a (минимум): отодвигаем наружу по нормали p на (gap + Rp)
+                // и смещаем внутрь ребра на Rn, чтобы подпись начиналась от угла, а не вылетала наружу
+                float cxLo = ax + px * (gap + HalfSpan(szLo, px, py)) + nx * HalfSpan(szLo, nx, ny);
+                float cyLo = ay + py * (gap + HalfSpan(szLo, px, py)) + ny * HalfSpan(szLo, nx, ny);
+
+                // HiText у точки b (максимум): отодвигаем наружу по нормали p на (gap + Rp)
+                // и смещаем внутрь ребра на -Rn, чтобы подпись заканчивалась у угла
+                float cxHi = bx + px * (gap + HalfSpan(szHi, px, py)) - nx * HalfSpan(szHi, nx, ny);
+                float cyHi = by + py * (gap + HalfSpan(szHi, px, py)) - ny * HalfSpan(szHi, nx, ny);
+
+                // Если ребро преимущественно горизонтальное (снизу/сверху), проверяем,
+                // не наползает ли Title на LoText или HiText:
+                if (Math.Abs(px) < 0.5f)
+                {
+                    float leftLo = cxLo - szLo.Width / 2f, rightLo = cxLo + szLo.Width / 2f;
+                    float leftHi = cxHi - szHi.Width / 2f, rightHi = cxHi + szHi.Width / 2f;
+                    float minEdgeX = Math.Min(rightLo, rightHi), maxEdgeX = Math.Max(leftLo, leftHi);
+                    float leftTi = cxTi - szTitle.Width / 2f, rightTi = cxTi + szTitle.Width / 2f;
+
+                    if (leftTi < minEdgeX + ScF(8f) || rightTi > maxEdgeX - ScF(8f))
+                        cyTi += py * (szTitle.Height + ScF(2f));
+                }
+                // Аналогично для преимущественно вертикального ребра (слева/справа):
+                else if (Math.Abs(py) < 0.5f)
+                {
+                    float topLo = cyLo - szLo.Height / 2f, bottomLo = cyLo + szLo.Height / 2f;
+                    float topHi = cyHi - szHi.Height / 2f, bottomHi = cyHi + szHi.Height / 2f;
+                    float minEdgeY = Math.Min(bottomLo, bottomHi), maxEdgeY = Math.Max(topLo, topHi);
+                    float topTi = cyTi - szTitle.Height / 2f, bottomTi = cyTi + szTitle.Height / 2f;
+
+                    if (topTi < minEdgeY + ScF(8f) || bottomTi > maxEdgeY - ScF(8f))
+                        cxTi += px * (szTitle.Width + ScF(4f));
+                }
+
+                Label(g, a.LoText, Theme.FBadge, Theme.TextDim, cxLo, cyLo);
+                Label(g, a.HiText, Theme.FBadge, Theme.TextDim, cxHi, cyHi);
+            }
+
+            Label(g, title, Theme.FLabel, a.On ? Theme.Text : Theme.TextDim, cxTi, cyTi);
+        }
+
+        static float HalfSpan(Size sz, float vx, float vy)
+        {
+            return (sz.Width * Math.Abs(vx) + sz.Height * Math.Abs(vy)) * 0.5f;
+        }
+
+        static void GetCandidate(int dim, int i, float yFloor,
+                                 out float x1, out float y1, out float z1,
+                                 out float x2, out float y2, out float z2)
+        {
+            if (dim == 0) // X
+            {
+                float z = i == 0 ? -1f : 1f;
+                x1 = -1f; x2 = 1f; y1 = y2 = yFloor; z1 = z2 = z;
+            }
+            else if (dim == 2) // Z
+            {
+                float x = i == 0 ? -1f : 1f;
+                x1 = x2 = x; y1 = y2 = yFloor; z1 = -1f; z2 = 1f;
+            }
+            else // Y (столбы)
+            {
+                float x = (i == 1 || i == 2) ? 1f : -1f;
+                float z = (i == 2 || i == 3) ? 1f : -1f;
+                x1 = x2 = x; y1 = -1f; y2 = 1f; z1 = z2 = z;
+            }
         }
 
         /// <summary>Надпись по центру точки, вжатая в границы облака: у краёв сцены

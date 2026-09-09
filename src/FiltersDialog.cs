@@ -21,6 +21,8 @@ namespace AbletonManager
         readonly TagField _scales = new TagField();
         readonly FieldBox _tracksMin = new FieldBox();
         readonly FieldBox _tracksMax = new FieldBox();
+        readonly FieldBox _pluginsMin = new FieldBox();
+        readonly FieldBox _pluginsMax = new FieldBox();
         readonly PillToggle _pluginsMissing = new PillToggle();
         readonly PillToggle _pluginsAll = new PillToggle();
 
@@ -36,6 +38,13 @@ namespace AbletonManager
         readonly GlassButton _reset = new GlassButton();
         readonly GlassButton _apply = new GlassButton();
 
+        /// <summary>
+        /// Условия применяются на лету: окно закрывает список, который фильтрует, и без
+        /// живого отклика набирать фильтры приходилось вслепую. Кнопка снизу теперь
+        /// просто «Ok» — закрыть, а не «применить».
+        /// </summary>
+        public event Action Changed;
+
         readonly List<Rectangle> _labels = new List<Rectangle>();
         readonly List<string> _labelTexts = new List<string>();
         bool _laying;
@@ -48,33 +57,37 @@ namespace AbletonManager
         {
             _sets = sets;
             _filter.CopyFrom(current);
-            Caption = L.S("Filters", "Фильтры");
+            Caption = "Filters";
             ClientSize = new Size(Sc(760), Sc(568));
 
             _from.Box.Text = SetFilter.FormatDate(_filter.From);
             _to.Box.Text = SetFilter.FormatDate(_filter.To);
             _tracksMin.Box.Text = SetFilter.FormatCount(_filter.TracksMin);
             _tracksMax.Box.Text = SetFilter.FormatCount(_filter.TracksMax);
+            _pluginsMin.Box.Text = SetFilter.FormatCount(_filter.PluginsMin);
+            _pluginsMax.Box.Text = SetFilter.FormatCount(_filter.PluginsMax);
 
-            foreach (FieldBox f in new FieldBox[] { _from, _to, _tracksMin, _tracksMax })
+            foreach (FieldBox f in new FieldBox[] { _from, _to, _tracksMin, _tracksMax, _pluginsMin, _pluginsMax })
             {
                 f.Box.TextChanged += delegate { Collect(); };
                 Controls.Add(f);
             }
-            Cue(_from, L.S("from  2026-01", "с  2026-01"));
-            Cue(_to, L.S("to  2026-08-07", "по  2026-08-07"));
-            Cue(_tracksMin, L.S("min", "от"));
-            Cue(_tracksMax, L.S("max", "до"));
+            Cue(_from, "from  2026-01");
+            Cue(_to, "to  2026-08-07");
+            Cue(_tracksMin, "min");
+            Cue(_tracksMax, "max");
+            Cue(_pluginsMin, "min");
+            Cue(_pluginsMax, "max");
 
             _versions.SetOptions(versions);
-            _versions.Placeholder = L.S("any version", "любая версия");
+            _versions.Placeholder = "any version";
             _versions.SetSelected(IndexesOf(versions, _filter.Versions));
 
             BuildKeyOptions();
-            _roots.Placeholder = L.S("any root", "любая нота");
+            _roots.Placeholder = "any root";
             _roots.SetSelected(IndexesForValues(_rootValues, _filter.KeyRoots));
 
-            _scales.Placeholder = L.S("any scale", "любой лад");
+            _scales.Placeholder = "any scale";
             _scales.SetSelected(IndexesForValues(_scaleValues, _filter.KeyScales));
 
             foreach (TagField t in new TagField[] { _versions, _roots, _scales })
@@ -84,7 +97,7 @@ namespace AbletonManager
             }
 
             // Две взаимоисключающие галки: «есть дыры» и «всё на месте».
-            _pluginsMissing.Text = L.S("some not installed", "есть неустановленные");
+            _pluginsMissing.Text = "some not installed";
             _pluginsMissing.Checked = _filter.PluginsMissingOnly;
             _pluginsMissing.FitToText();
             _pluginsMissing.CheckedChanged += delegate
@@ -94,7 +107,7 @@ namespace AbletonManager
             };
             Controls.Add(_pluginsMissing);
 
-            _pluginsAll.Text = L.S("all installed", "все установлены");
+            _pluginsAll.Text = "all installed";
             _pluginsAll.Checked = _filter.PluginsAllInstalled;
             _pluginsAll.FitToText();
             _pluginsAll.CheckedChanged += delegate
@@ -104,9 +117,9 @@ namespace AbletonManager
             };
             Controls.Add(_pluginsAll);
 
-            _complete.Text = L.S("complete", "всё на месте");
-            _missing.Text = L.S("missing files", "с потерями");
-            _unreadable.Text = L.S("unreadable", "не читается");
+            _complete.Text = "complete";
+            _missing.Text = "missing files";
+            _unreadable.Text = "unreadable";
             _complete.Checked = _filter.FilesComplete;
             _missing.Checked = _filter.FilesMissing;
             _unreadable.Checked = _filter.FilesUnreadable;
@@ -117,8 +130,8 @@ namespace AbletonManager
                 Controls.Add(p);
             }
 
-            _previewHasRenders.Text = L.S("has renders", "есть рендеры");
-            _previewNoRenders.Text = L.S("no renders", "нет рендеров");
+            _previewHasRenders.Text = "has renders";
+            _previewNoRenders.Text = "no renders";
             _previewHasRenders.Checked = _filter.PreviewHasRenders;
             _previewNoRenders.Checked = _filter.PreviewNoRenders;
             foreach (PillToggle p in new PillToggle[] { _previewHasRenders, _previewNoRenders })
@@ -128,16 +141,21 @@ namespace AbletonManager
                 Controls.Add(p);
             }
 
-            _reset.Text = L.S("Reset", "Сбросить");
+            _reset.Text = "Reset";
             _reset.Click += delegate { ResetAll(); };
             _reset.FitToText(18);
             Controls.Add(_reset);
 
-            _apply.Text = L.S("Apply", "Применить");
+            _apply.Text = "Ok";
             _apply.Primary = true;
             _apply.Click += delegate { DialogResult = DialogResult.OK; Close(); };
-            _apply.FitToText(28);
+            _apply.FitToText(18);
             Controls.Add(_apply);
+
+            // Ровно одна ширина на обе кнопки: «Ok» короче «Reset», и по своему тексту
+            // выходил заметно уже — пара читалась как случайная, а не как пара.
+            int pairW = Math.Max(_reset.Width, _apply.Width);
+            _reset.Width = _apply.Width = pairW;
 
             Collect();
         }
@@ -185,8 +203,8 @@ namespace AbletonManager
 
             List<string> rootLabels = new List<string>();
             _rootValues.Clear();
-            if (anyKey) { rootLabels.Add(L.S("(any key)", "(любая тональность)")); _rootValues.Add(-2); }
-            if (noKey) { rootLabels.Add(L.S("(no key)", "(без тональности)")); _rootValues.Add(-1); }
+            if (anyKey) { rootLabels.Add("(any key)"); _rootValues.Add(-2); }
+            if (noKey) { rootLabels.Add("(no key)"); _rootValues.Add(-1); }
             for (int r = 0; r < 12; r++)
                 if (rootSeen[r]) { rootLabels.Add(Scales.RootChoices[r]); _rootValues.Add(r); }
             _roots.SetOptions(rootLabels);
@@ -215,6 +233,8 @@ namespace AbletonManager
 
             _filter.TracksMin = SetFilter.ParseCount(_tracksMin.Box.Text);
             _filter.TracksMax = SetFilter.ParseCount(_tracksMax.Box.Text);
+            _filter.PluginsMin = SetFilter.ParseCount(_pluginsMin.Box.Text);
+            _filter.PluginsMax = SetFilter.ParseCount(_pluginsMax.Box.Text);
             _filter.PluginsMissingOnly = _pluginsMissing.Checked;
             _filter.PluginsAllInstalled = _pluginsAll.Checked;
 
@@ -231,6 +251,7 @@ namespace AbletonManager
 
             UpdateFacets();
             Invalidate();
+            if (Changed != null) Changed();
         }
 
         void UpdateFacets()
@@ -333,6 +354,7 @@ namespace AbletonManager
         {
             _from.Box.Text = ""; _to.Box.Text = "";
             _tracksMin.Box.Text = ""; _tracksMax.Box.Text = "";
+            _pluginsMin.Box.Text = ""; _pluginsMax.Box.Text = "";
             _pluginsMissing.Checked = false;
             _pluginsAll.Checked = false;
             _versions.SetSelected(new int[0]);
@@ -361,7 +383,7 @@ namespace AbletonManager
                 _labels.Clear(); _labelTexts.Clear();
 
                 int pad = Sc(Theme.Pad);
-                int labelW = Sc(140);
+                int labelW = Sc(170);   // «Plugin count» в 140 не помещался и обрезался
                 int left = pad + labelW;
                 int right = ClientSize.Width - pad;
                 int fieldW = right - left;
@@ -371,36 +393,42 @@ namespace AbletonManager
 
                 // дата
                 int half = (fieldW - Sc(10)) / 2;
-                Label(L.S("Modified", "Изменён"), pad, y, labelW);
+                Label("Modified", pad, y, labelW);
                 _from.SetBounds(left, y, half, ch);
                 _to.SetBounds(left + half + Sc(10), y, half, ch);
                 y += ch + rowGap;
 
                 // версии
-                Label(L.S("Live version", "Версия Live"), pad, y, labelW);
+                Label("Live version", pad, y, labelW);
                 y = TagRow(_versions, left, y, fieldW) + rowGap;
 
                 // тональность
-                Label(L.S("Key root", "Нота"), pad, y, labelW);
+                Label("Key root", pad, y, labelW);
                 y = TagRow(_roots, left, y, fieldW) + rowGap;
 
-                Label(L.S("Scale", "Лад"), pad, y, labelW);
+                Label("Scale", pad, y, labelW);
                 y = TagRow(_scales, left, y, fieldW) + rowGap;
 
-                // счётчики
-                int small = Sc(100);
-                Label(L.S("Tracks", "Треки"), pad, y, labelW);
-                _tracksMin.SetBounds(left, y, small, ch);
-                _tracksMax.SetBounds(left + small + Sc(10), y, small, ch);
+                // Счётчики — половинками во всю ширину, как «from/to» выше: раньше пара
+                // коротких полей кончалась на своей вертикали, и в одном столбце было
+                // четыре разных правых края.
+                Label("Tracks", pad, y, labelW);
+                _tracksMin.SetBounds(left, y, half, ch);
+                _tracksMax.SetBounds(left + half + Sc(10), y, half, ch);
                 y += ch + rowGap;
 
-                Label(L.S("Plugins", "Плагины"), pad, y, labelW);
+                Label("Plugin count", pad, y, labelW);
+                _pluginsMin.SetBounds(left, y, half, ch);
+                _pluginsMax.SetBounds(left + half + Sc(10), y, half, ch);
+                y += ch + rowGap;
+
+                Label("Plugins", pad, y, labelW);
                 _pluginsAll.Location = new Point(left, y);
                 _pluginsMissing.Location = new Point(_pluginsAll.Right + Sc(8), y);
                 y += ch + rowGap;
 
                 // состояние файлов
-                Label(L.S("Files", "Файлы"), pad, y, labelW);
+                Label("Files", pad, y, labelW);
                 int x = left;
                 foreach (PillToggle p in new PillToggle[] { _complete, _missing, _unreadable })
                 {
@@ -410,7 +438,7 @@ namespace AbletonManager
                 y += ch + rowGap;
 
                 // превью
-                Label(L.S("Preview", "Превью"), pad, y, labelW);
+                Label("Preview", pad, y, labelW);
                 int px = left;
                 foreach (PillToggle p in new PillToggle[] { _previewHasRenders, _previewNoRenders })
                 {
@@ -454,7 +482,7 @@ namespace AbletonManager
             for (int i = 0; i < _labels.Count; i++)
                 Chrome.DrawText(g, _labelTexts[i], Theme.FBody, _labels[i], Theme.TextDim, Chrome.Left);
 
-            string count = _matches + L.S(" sets match", " сетов подходит");
+            string count = _matches + " sets match";
             Chrome.DrawText(g, count, Theme.FBody,
                 new Rectangle(Sc(Theme.Pad), _apply.Top, Math.Max(0, _reset.Left - Sc(40)), _apply.Height),
                 _matches == 0 ? Theme.Red : Theme.TextDim, Chrome.Left);

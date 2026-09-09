@@ -59,10 +59,51 @@ namespace AbletonManager
             if (Visible) { if (UseGlass) Glass.Apply(this); else Glass.ApplyChrome(this); }
         }
 
+        // Появление окна: 160 мс подъёма на Sc(10) с затуханием прозрачности. Раньше
+        // диалог возникал мгновенно — единственное место, где интерфейс дёргался.
+        // Масштабирования нет намеренно: менять Size — значит пересчитывать раскладку
+        // детей на каждом кадре, а это уже не анимация, а мельтешение.
+        System.Windows.Forms.Timer _enter;
+        int _enterStart, _enterTop;
+
         protected override void OnShown(EventArgs e)
         {
             base.OnShown(e);
             Invalidate(true);
+            StartEnterAnimation();
+        }
+
+        void StartEnterAnimation()
+        {
+            if (_enter != null) return;
+
+            _enterTop = Top;
+            int lift = Sc(10);
+            Top = _enterTop + lift;
+            Opacity = 0.0;
+            _enterStart = Environment.TickCount;
+
+            _enter = new System.Windows.Forms.Timer();
+            _enter.Interval = 15;
+            _enter.Tick += delegate
+            {
+                if (IsDisposed) { _enter.Stop(); return; }
+
+                float t = (Environment.TickCount - _enterStart) / 160f;
+                if (t >= 1f)
+                {
+                    Opacity = 1.0;
+                    Top = _enterTop;
+                    _enter.Stop();
+                    _enter.Dispose();
+                    _enter = null;
+                    return;
+                }
+                float k = 1f - (float)Math.Pow(1f - t, 3);   // ease-out
+                Opacity = k;
+                Top = _enterTop + (int)Math.Round(lift * (1f - k));
+            };
+            _enter.Start();
         }
 
         protected override void OnResize(EventArgs e)
@@ -126,7 +167,9 @@ namespace AbletonManager
             Chrome.DrawText(g, Caption, Theme.FTitle,
                            new Rectangle(Card.Left + Sc(Theme.Pad), Card.Top + Sc(24),
                                          Card.Width - Sc(90), Sc(28)),
-                           Theme.Text, Chrome.Left | TextFormatFlags.NoClipping);
+                           Theme.Text, TextFormatFlags.Left | TextFormatFlags.VerticalCenter |
+                                       TextFormatFlags.SingleLine | TextFormatFlags.NoPrefix |
+                                       TextFormatFlags.NoPadding | TextFormatFlags.NoClipping);
         }
 
         protected override void WndProc(ref Message m)

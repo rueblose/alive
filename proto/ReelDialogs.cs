@@ -22,19 +22,19 @@ namespace Reel
 
         public SnapshotDialog(string setName, string initial)
         {
-            Caption = L.S("Snapshot", "Снимок");
+            Caption = "Snapshot";
             ClientSize = new Size(Sc(520), Sc(210));
 
-            _text.Cue = L.S("swapped the drop drums, kept the old bass", "");
+            _text.Cue = "swapped the drop drums, kept the old bass";
             _text.Box.Text = initial ?? "";
             Controls.Add(_text);
 
-            _cancel.Text = L.S("Cancel", "Отмена");
+            _cancel.Text = "Cancel";
             _cancel.FitToText(16);
             _cancel.Click += delegate { DialogResult = DialogResult.Cancel; Close(); };
             Controls.Add(_cancel);
 
-            _save.Text = L.S("Save", "Сохранить");
+            _save.Text = "Save";
             _save.Primary = true;
             _save.FitToText(20);
             _save.Click += delegate { DialogResult = DialogResult.OK; Close(); };
@@ -90,9 +90,9 @@ namespace Reel
             Graphics g = e.Graphics;
             Theme.Smooth(g);
 
-            Chrome.DrawText(g, L.S("What changed in ", "") + _set, Theme.FLabel, _label,
+            Chrome.DrawText(g, "What changed in " + _set, Theme.FLabel, _label,
                             Theme.TextDim, Chrome.Left | TextFormatFlags.NoClipping);
-            Chrome.DrawText(g, L.S("Enter to save", "Enter — сохранить"), Theme.FBadge, _hint,
+            Chrome.DrawText(g, "Enter to save", Theme.FBadge, _hint,
                             Theme.TextDim, Chrome.Left | TextFormatFlags.VerticalCenter);
         }
     }

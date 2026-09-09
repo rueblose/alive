@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Drawing;
 using System.Globalization;
 using System.IO;
@@ -36,9 +37,20 @@ namespace AbletonManager
         readonly GlassButton _vst3Browse = new GlassButton();
         readonly GlassButton _rescan = new GlassButton();
 
-        readonly GlassButton _options = new GlassButton();
         readonly GlassButton _shortcuts = new GlassButton();
-        readonly GlassButton _close = new GlassButton();
+        readonly GlassButton _openCache = new GlassButton();
+        readonly GlassButton _restart = new GlassButton();
+
+        /// <summary>Тумблер прозрачности трогали — предлагаем перезапуск. Раньше об
+        /// этом спрашивал системный MessageBox: чужой стиль поверх стеклянного окна, да
+        /// ещё и обязательный ответ на случайное нажатие.</summary>
+        bool _restartPending;
+
+        /// <summary>Разойдётся ли картинка с настройкой, если не перезапускаться. От
+        /// этого зависит только пояснение под строкой: сама строка остаётся, пока
+        /// тумблер в этом сеансе трогали, — иначе, вернув тумблер обратно, человек
+        /// оставался без способа применить хоть что-нибудь.</summary>
+        bool _restartChanges;
 
         /// <summary>Пересобрать каталог: настройки плагинов поменялись.</summary>
         public bool RescanWanted;
@@ -46,15 +58,12 @@ namespace AbletonManager
         /// <summary>Показать горячие клавиши после закрытия окна.</summary>
         public bool ShortcutsWanted;
 
-        /// <summary>Открыть редактор Options.txt после закрытия окна.</summary>
-        public bool OptionsWanted;
-
         readonly List<string> _installs = new List<string>();
 
         public SettingsDialog(Settings s)
         {
             _s = s;
-            Caption = L.S("Settings", "Настройки");
+            Caption = "Settings";
             ClientSize = new Size(Sc(700), Sc(660));
 
             _smooth.Checked = _s.SmoothScroll;
@@ -69,7 +78,7 @@ namespace AbletonManager
             _compat.CheckedChanged += delegate { ToggleCompat(); };
             State(_compat);
 
-            _source.SetItems(L.S("Live's database", "База Live"), L.S("Scan folders", "Обход папок"));
+            _source.SetItems("Live's database", "Scan folders");
             _source.SelectedIndex = _s.PluginsFromFolders ? 1 : 0;
             _source.SelectedChanged += delegate
             {
@@ -85,7 +94,7 @@ namespace AbletonManager
             // provisорный (PluginInventory.Installs() не разбирает содержимое — см. её
             // комментарий); настоящий, посчитанный полным разбором, подставляет
             // RefreshInstallsAsync ниже, как только досчитает.
-            _installs.Add(L.S("All installs", "Все установки"));
+            _installs.Add("All installs");
             _installs.AddRange(PluginInventory.Installs());
             int at = _installs.IndexOf(_s.PluginSource);
             _install.SetItems(_installs, at > 0 ? at : 0);
@@ -104,35 +113,50 @@ namespace AbletonManager
 
             Browse(_vst2Browse, delegate
             {
-                string p = Pick(L.S("VST2 plug-in folder", "Папка VST2"), _s.Vst2CustomPath);
+                string p = Pick("VST2 plug-in folder", _s.Vst2CustomPath);
                 if (p != null) { _s.Vst2CustomPath = p; _s.Vst2CustomOn = true; _vst2On.Checked = true; }
             });
             Browse(_vst3Browse, delegate
             {
-                string p = Pick(L.S("VST3 plug-in folder", "Папка VST3"), _s.Vst3CustomPath);
+                string p = Pick("VST3 plug-in folder", _s.Vst3CustomPath);
                 if (p != null) { _s.Vst3CustomPath = p; _s.Vst3CustomOn = true; _vst3On.Checked = true; }
             });
 
-            _rescan.Text = L.S("Rescan", "Пересканировать");
+            _rescan.Text = "Rescan";
             _rescan.FitToText(16);
             _rescan.Click += delegate { RescanWanted = true; Close(); };
             Controls.Add(_rescan);
 
-            _options.Text = L.S("Options.txt…", "Options.txt…");
-            _options.FitToText(16);
-            _options.Click += delegate { OptionsWanted = true; Close(); };
-            Controls.Add(_options);
-
-            _shortcuts.Text = L.S("Shortcuts…", "Горячие клавиши…");
+            _shortcuts.Text = "Shortcuts…";
             _shortcuts.FitToText(16);
             _shortcuts.Click += delegate { ShortcutsWanted = true; Close(); };
             Controls.Add(_shortcuts);
 
-            _close.Text = L.S("Close", "Закрыть");
-            _close.Primary = true;
-            _close.FitToText(20);
-            _close.Click += delegate { Close(); };
-            Controls.Add(_close);
+            _restart.Text = "Restart now";
+            _restart.Primary = true;
+            _restart.Visible = false;
+            _restart.Click += delegate { _s.Save(); Application.Restart(); };
+            Controls.Add(_restart);
+
+            _openCache.Text = "Open folder";
+            _openCache.FitToText(16);
+            _openCache.Click += delegate
+            {
+                try
+                {
+                    if (!Directory.Exists(Settings.Dir)) Directory.CreateDirectory(Settings.Dir);
+                    Process.Start("explorer.exe", "\"" + Settings.Dir + "\"");
+                }
+                catch { }
+            };
+            Controls.Add(_openCache);
+
+            // Одна ширина на все кнопки правого столбца: три разные ширины давали
+            // три разных левых края в одной колонке, и правый столбец рассыпался.
+            GlassButton[] rightButtons = new GlassButton[] { _shortcuts, _openCache, _rescan, _restart };
+            int buttonW = Sc(128);
+            foreach (GlassButton b in rightButtons) buttonW = Math.Max(buttonW, b.Width);
+            foreach (GlassButton b in rightButtons) b.Width = buttonW;
 
             DescribeInventoryAsync();
             RefreshInstallsAsync();
@@ -147,35 +171,26 @@ namespace AbletonManager
         }
 
         /// <summary>
-        /// Переключатель пишет словом, что сейчас, — «On» или «Off», как в самой Live в
-        /// Preferences. Ширина фиксированная по длинному из двух слов: иначе кнопка
-        /// дёргалась бы шириной на каждое нажатие.
+        /// Переключатель в стиле Apple: чисто геометрический (акцентное ложе + гладкая белая ручка).
         /// </summary>
         void State(PillToggle t)
         {
-            t.Width = Math.Max(TextRenderer.MeasureText(L.S("On", "Вкл"), t.Font).Width,
-                               TextRenderer.MeasureText(L.S("Off", "Выкл"), t.Font).Width) + Sc(32);
-            t.Text = t.Checked ? L.S("On", "Вкл") : L.S("Off", "Выкл");
-            t.CheckedChanged += delegate { t.Text = t.Checked ? L.S("On", "Вкл") : L.S("Off", "Выкл"); };
+            t.IsSwitch = true;
+            t.Size = new Size(Sc(42), Sc(24));
             Controls.Add(t);
         }
 
         void Browse(GlassButton b, MethodInvoker click)
         {
-            b.Text = L.S("Browse", "Обзор");
+            b.Text = "Browse";
             b.FitToText(16);
             b.Click += delegate { click(); RescanWanted = true; Relayout(); DescribeInventoryAsync(); };
             Controls.Add(b);
         }
 
-        static string Pick(string title, string current)
+        string Pick(string title, string current)
         {
-            using (FolderBrowserDialog d = new FolderBrowserDialog())
-            {
-                d.Description = title;
-                if (!string.IsNullOrEmpty(current) && Directory.Exists(current)) d.SelectedPath = current;
-                return d.ShowDialog() == DialogResult.OK ? d.SelectedPath : null;
-            }
+            return ModernFolderPicker.PickFolder(Handle, title, current);
         }
 
         /// <summary>
@@ -188,15 +203,16 @@ namespace AbletonManager
             _s.DisableGlass = _compat.Checked;
             _s.Save();
 
-            string q = _compat.Checked
-                ? L.S("Windows 10 compatible mode is on — transparency off. Restart now to apply?",
-                      "Режим совместимости с Windows 10 включён — прозрачность выключена. Перезапустить сейчас?")
-                : L.S("Transparency is back on. Restart now to apply?",
-                      "Прозрачность включена обратно. Перезапустить сейчас?");
-
-            if (MessageBox.Show(this, q, "Alive", MessageBoxButtons.YesNo, MessageBoxIcon.Question)
-                == DialogResult.Yes)
-                Application.Restart();
+            // Предложение перезапуститься живёт строкой в этом же окне: случайно
+            // щёлкнутый тумблер не должен требовать ответа в чужом диалоге.
+            //
+            // Строка появляется от любого щелчка и больше не прячется: раньше она
+            // считалась по «настройка разошлась с текущим окном» и в обратную сторону
+            // исчезала — тумблер вернули на место, и перезапуститься стало нечем,
+            // хотя окно так и осталось нарисованным по-старому.
+            _restartPending = Glass.Supported();
+            _restartChanges = _s.DisableGlass == Glass.Enabled;
+            Relayout();
         }
 
         // ------------------------------------------------------------------ состояние
@@ -212,7 +228,7 @@ namespace AbletonManager
         /// </summary>
         void DescribeInventoryAsync()
         {
-            _inventory = L.S("Reading…", "Читаю…");
+            _inventory = "Reading…";
             Invalidate();
 
             int mine = ++_job;
@@ -225,11 +241,11 @@ namespace AbletonManager
                 string where = inv.Sources.Count == 1
                     ? inv.Sources[0]
                     : inv.Sources.Count > 1
-                      ? inv.Sources.Count + L.S(" installs of Live", " установок Live")
+                      ? inv.Sources.Count + " installs of Live"
                       : "";
                 string text = inv.All.Count == 0
-                    ? (inv.Error ?? L.S("nothing found", "ничего не нашлось"))
-                    : inv.All.Count + L.S(" plug-ins", " плагинов")
+                    ? (inv.Error ?? "nothing found")
+                    : inv.All.Count + " plug-ins"
                       + (where.Length > 0 ? "   ·   " + where : "");
                 try
                 {
@@ -291,7 +307,7 @@ namespace AbletonManager
         {
             string current = _install.SelectedItem;
             _installs.Clear();
-            _installs.Add(L.S("All installs", "Все установки"));
+            _installs.Add("All installs");
             _installs.AddRange(names);
 
             int at = _installs.IndexOf(current);
@@ -318,6 +334,7 @@ namespace AbletonManager
             public string Title = "", Detail = "";
             public Rectangle Rect;
             public bool Section;
+            public bool Separator;
         }
 
         void Relayout() { OnResize(EventArgs.Empty); Invalidate(true); }
@@ -325,7 +342,6 @@ namespace AbletonManager
         protected override void OnResize(EventArgs e)
         {
             base.OnResize(e);
-            if (_close == null) return;
 
             _rows.Clear();
 
@@ -334,30 +350,42 @@ namespace AbletonManager
             int right = Card.Right - pad;
             int w = right - x;
             int h = Sc(Theme.ControlH);
-            int y = Card.Top + Sc(66);
+            int y = Card.Top + Sc(92);
 
-            Section(x, ref y, w, L.S("WINDOW", "ОКНО"));
+            Section(x, ref y, w, "General");
+            Line(x, ref y, w, h, _shortcuts, "Keyboard shortcuts", "");
+            Line(x, ref y, w, h, _openCache,
+                 "Temporary files",
+                 Settings.Dir);
+
+            Separator(x, ref y, w);
+            Section(x, ref y, w, "Appearance");
             Line(x, ref y, w, h, _smooth,
-                 L.S("Smooth scrolling", "Плавная прокрутка"),
-                 L.S("Smooth animation in lists and panels.",
-                     "Анимация прокрутки в списках и панелях."));
+                 "Smooth scrolling",
+                 "");
             Line(x, ref y, w, h, _compat,
-                 L.S("Disable transparency", "Отключить прозрачность"),
-                 L.S("Turns off glass effect if window dragging lags. Applies after restart.",
-                     "Убирает прозрачность, если окно перемещается с задержкой. Требует перезапуска."));
+                 "Disable transparency (Win10 Compatible)",
+                 "Turns off glass effect if window dragging lags. Applies after restart.");
 
-            Section(x, ref y, w, L.S("PLUG-INS", "ПЛАГИНЫ"));
+            _restart.Visible = _restartPending;
+            if (_restartPending)
+                Line(x, ref y, w, h, _restart,
+                     "Restart to apply",
+                     _restartChanges
+                     ? "Transparency changes only take effect on a fresh start."
+                     : "The switch is back where it started — restart only if you want to be sure.");
+
+            Separator(x, ref y, w);
+            Section(x, ref y, w, "Plug-ins");
             Line(x, ref y, w, h, _source,
-                 L.S("Plug-in source", "Источник плагинов"),
+                 "Plug-in source",
                  Folders
-                 ? L.S("Direct folder scan (VST2 / VST3 files).",
-                       "Прямой поиск файлов в папках VST2 / VST3.")
-                 : L.S("Uses internal database from installed Live versions.",
-                       "Использовать базу данных плагинов Ableton Live."));
+                 ? "Direct folder scan (VST2 / VST3 files)."
+                 : "Uses internal database from installed Live versions.");
 
             _install.Visible = !Folders;
             if (!Folders)
-                Line(x, ref y, w, h, _install, L.S("Live install", "Версия Live"), "");
+                Line(x, ref y, w, h, _install, "Live install", "");
 
             foreach (Control c in new Control[] { _vst2On, _vst2Browse, _vst3SysOn, _vst3On, _vst3Browse })
                 c.Visible = Folders;
@@ -365,47 +393,36 @@ namespace AbletonManager
             if (Folders)
             {
                 Line(x, ref y, w, h, _vst2On,
-                     L.S("Custom VST2 folder", "Папка VST2"), "");
+                     "Custom VST2 folder", "");
                 Line(x, ref y, w, h, _vst2Browse,
-                     L.S("VST2 folder path", "Путь к папке VST2"),
-                     _s.Vst2CustomPath.Length > 0 ? _s.Vst2CustomPath : L.S("not set", "не задана"));
+                     "VST2 folder path",
+                     _s.Vst2CustomPath.Length > 0 ? _s.Vst2CustomPath : "not set");
 
                 Line(x, ref y, w, h, _vst3SysOn,
-                     L.S("System VST3 folders", "Системные папки VST3"), "");
+                     "System VST3 folders", "");
                 Line(x, ref y, w, h, _vst3On,
-                     L.S("Custom VST3 folder", "Своя папка VST3"), "");
+                     "Custom VST3 folder", "");
                 Line(x, ref y, w, h, _vst3Browse,
-                     L.S("VST3 folder path", "Путь к папке VST3"),
-                     _s.Vst3CustomPath.Length > 0 ? _s.Vst3CustomPath : L.S("not set", "не задана"));
+                     "VST3 folder path",
+                     _s.Vst3CustomPath.Length > 0 ? _s.Vst3CustomPath : "not set");
             }
 
-            Line(x, ref y, w, h, _rescan, L.S("Installed right now", "Сейчас установлено"), "");
-            _statusRect = new Rectangle(x, y, w - _rescan.Width - Sc(16), Sc(20));
-            y += Sc(26);
+            Line(x, ref y, w, h, _rescan, "Installed right now", "");
+            _statusRect = new Rectangle(x, y - Sc(6), w - _rescan.Width - Sc(16), Sc(28));
+            y += Sc(32);
 
-            Section(x, ref y, w, L.S("TOOLS", "ИНСТРУМЕНТЫ"));
-            Line(x, ref y, w, h, _options,
-                 L.S("Live's Options.txt", "Options.txt для Live"),
-                 L.S("Hidden and experimental Live parameters.",
-                     "Скрытые и экспериментальные настройки Live."));
-            Line(x, ref y, w, h, _shortcuts, L.S("Keyboard shortcuts", "Горячие клавиши"), "");
-
-            FitHeight(y + Sc(18) + _close.Height + pad);
-            _close.Location = new Point(right - _close.Width, Card.Bottom - pad - _close.Height);
+            FitHeight(y + Sc(16) + pad);
             Invalidate();
         }
 
         bool _sizing;
 
         /// <summary>
-        /// Подогнать высоту окна под содержимое. Строк тут не поровну: переключение на
-        /// обход папок добавляет четыре ряда с путями, и окно постоянной высоты в одном
-        /// режиме наполовину пустое, а в другом накрывает кнопку Close последней
-        /// строкой (ровно это и было видно на первом снимке).
+        /// Подогнать высоту окна под содержимое.
         /// </summary>
         void FitHeight(int need)
         {
-            if (_sizing || _close == null) return;
+            if (_sizing) return;
             int max = Screen.FromControl(this).WorkingArea.Height - Sc(80);
             need = Math.Min(need, max);
             if (Math.Abs(ClientSize.Height - need) <= Sc(2)) return;
@@ -417,42 +434,55 @@ namespace AbletonManager
 
         Rectangle _statusRect;
 
-        /// <summary>
-        /// Сколько места займёт пояснение. Меряем настоящим переносом, а не «двумя
-        /// строками»: пояснения разной длины, и от фиксированной высоты у длинных
-        /// срезало последнюю строку — ровно это и было видно на первом снимке окна.
-        /// </summary>
-        int DetailHeight(string detail, int width)
+        int DetailHeight(string text, int width)
         {
-            if (detail.Length == 0 || width <= 0) return 0;
-            return TextRenderer.MeasureText(detail, Theme.FSmall, new Size(width, 0), Chrome.Wrap).Height + Sc(2);
+            if (string.IsNullOrEmpty(text)) return 0;
+            const TextFormatFlags wrapFlags = TextFormatFlags.Left | TextFormatFlags.Top |
+                                              TextFormatFlags.WordBreak | TextFormatFlags.NoPrefix |
+                                              TextFormatFlags.NoPadding;
+            return TextRenderer.MeasureText(text, Theme.FSmall, new Size(width, 1000), wrapFlags).Height;
         }
 
         void Section(int x, ref int y, int w, string title)
         {
-            if (_rows.Count > 0) y += Sc(14);
             Row r = new Row();
-            r.Section = true;
             r.Title = title;
-            r.Rect = new Rectangle(x, y, w, Sc(22));
+            r.Section = true;
+            r.Rect = new Rectangle(x, y, w, Sc(20));
             _rows.Add(r);
-            y += Sc(30);
+            y += Sc(28);
+        }
+
+        void Separator(int x, ref int y, int w)
+        {
+            y += Sc(16);
+            Row r = new Row();
+            r.Separator = true;
+            r.Rect = new Rectangle(x, y, w, Sc(1));
+            _rows.Add(r);
+            y += Sc(16);
         }
 
         /// <summary>Строка настройки: подпись слева, контрол прижат к правому краю.</summary>
         void Line(int x, ref int y, int w, int h, Control c, string title, string detail)
         {
-            c.SetBounds(x + w - c.Width, y, c.Width, c is Segmented ? c.Height : h);
+            int ch = (c is Segmented || (c is PillToggle && ((PillToggle)c).IsSwitch)) ? c.Height : h;
+            int cy = y + (h - ch) / 2;
+            c.SetBounds(x + w - c.Width, cy, c.Width, ch);
 
             Row r = new Row();
             r.Title = title;
             r.Detail = detail;
-            r.Rect = new Rectangle(x, y, w - c.Width - Sc(16), Math.Max(h, c.Height));
+            r.Rect = new Rectangle(x, y, w - c.Width - Sc(16), h);
             _rows.Add(r);
 
-            y += r.Rect.Height + Sc(4);
-            y += DetailHeight(detail, r.Rect.Width);
-            y += Sc(6);
+            y += r.Rect.Height;
+            if (detail.Length > 0)
+            {
+                y += Sc(4);
+                y += DetailHeight(detail, r.Rect.Width);
+            }
+            y += Sc(20);
         }
 
         protected override void OnPaint(PaintEventArgs e)
@@ -461,24 +491,37 @@ namespace AbletonManager
             Graphics g = e.Graphics;
             Theme.Smooth(g);
 
+            const TextFormatFlags leftFlags = TextFormatFlags.Left | TextFormatFlags.VerticalCenter |
+                                              TextFormatFlags.SingleLine | TextFormatFlags.NoPrefix |
+                                              TextFormatFlags.NoPadding | TextFormatFlags.NoClipping;
+            const TextFormatFlags wrapFlags = TextFormatFlags.Left | TextFormatFlags.Top |
+                                              TextFormatFlags.WordBreak | TextFormatFlags.NoPrefix |
+                                              TextFormatFlags.NoPadding | TextFormatFlags.NoClipping;
+
             foreach (Row r in _rows)
             {
-                if (r.Section)
+                if (r.Separator)
                 {
-                    Chrome.DrawText(g, r.Title, Theme.FLabel, r.Rect, Theme.TextDim,
-                                    Chrome.Left | TextFormatFlags.NoClipping);
+                    using (Pen pen = new Pen(Color.FromArgb(0x28, 0xFF, 0xFF, 0xFF), 1f))
+                        g.DrawLine(pen, r.Rect.X, r.Rect.Y, r.Rect.Right, r.Rect.Y);
                     continue;
                 }
 
-                Chrome.DrawText(g, r.Title, Theme.FBody, r.Rect, Theme.Text, Chrome.Left);
+                if (r.Section)
+                {
+                    Chrome.DrawText(g, r.Title, Theme.FLabel, r.Rect, Theme.TextDim, leftFlags);
+                    continue;
+                }
+
+                Chrome.DrawText(g, r.Title, Theme.FBody, r.Rect, Theme.Text, leftFlags);
                 if (r.Detail.Length == 0) continue;
 
-                Rectangle d = new Rectangle(r.Rect.X, r.Rect.Bottom + Sc(2),
-                                            r.Rect.Width, DetailHeight(r.Detail, r.Rect.Width));
-                Chrome.DrawText(g, r.Detail, Theme.FSmall, d, Theme.TextDim, Chrome.Wrap);
+                Rectangle d = new Rectangle(r.Rect.X, r.Rect.Bottom + Sc(4),
+                                            r.Rect.Width, DetailHeight(r.Detail, r.Rect.Width) + Sc(8));
+                Chrome.DrawText(g, r.Detail, Theme.FSmall, d, Theme.TextDim, wrapFlags);
             }
 
-            Chrome.DrawText(g, _inventory, Theme.FSmall, _statusRect, Theme.TextDim, Chrome.Left);
+            Chrome.DrawText(g, _inventory, Theme.FSmall, _statusRect, Theme.TextDim, leftFlags);
         }
     }
 }

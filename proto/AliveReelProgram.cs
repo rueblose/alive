@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Drawing;
 using System.Globalization;
 using System.IO;
@@ -140,10 +140,8 @@ namespace Reel
         /// </summary>
         static void AttachStat(Form main)
         {
-            GlassButton stat = new GlassButton();
-            stat.Text = L.S("Stat", "Статистика");
-            stat.Font = Theme.FButton;
-            stat.FitToText(16);
+            IconButton stat = new IconButton();
+            stat.Icon = Glyph.Nebula;
             stat.Click += delegate { OpenStat(main); };
             main.Controls.Add(stat);
             stat.BringToFront();
@@ -152,11 +150,11 @@ namespace Reel
             {
                 float k = main.DeviceDpi / 96f;
                 int pad = (int)Math.Round(Theme.Pad * k);
-                int h = (int)Math.Round(Theme.ControlH * k);
-                int gap = (int)Math.Round(16 * k);
-                int panelX = main.ClientSize.Width - pad - (int)Math.Round(Theme.PanelW * k);
+                int icon = (int)Math.Round(Theme.IconSize * k);
+                int panelW = (int)Math.Round(Theme.PanelW * k);
+                int panelX = main.ClientSize.Width - pad - panelW;
 
-                stat.SetBounds(panelX - gap - stat.Width, pad, stat.Width, h);
+                stat.SetBounds(panelX, pad, icon, icon);
                 stat.BringToFront();
             };
 
@@ -175,9 +173,25 @@ namespace Reel
                 return;
             }
 
-            _stat = new AbletonManager.Nebula.NebulaForm();
+            AbletonManager.Nebula.NebulaForm nf = new AbletonManager.Nebula.NebulaForm();
+            string selPath = SelectedSet(owner);
+            if (!string.IsNullOrEmpty(selPath))
+                nf.InitialPath = selPath;
+
+            nf.ShowInListRequested += delegate (string path)
+            {
+                MainForm mf = owner as MainForm;
+                if (mf != null && !string.IsNullOrEmpty(path))
+                {
+                    mf.SelectSetByPath(path);
+                }
+            };
+
+            _stat = nf;
             _stat.FormClosed += delegate { _stat = null; };
-            _stat.Show(owner);
+            if (owner != null)
+                owner.FormClosed += delegate { if (_stat != null && !_stat.IsDisposed) _stat.Close(); };
+            _stat.Show();
         }
 
         internal static void OpenHistory(Form owner, string path)

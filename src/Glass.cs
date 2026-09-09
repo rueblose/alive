@@ -84,7 +84,10 @@ namespace AbletonManager
         /// </summary>
         public static int AccentTint = unchecked((int)0xf01D1B1B);
 
-        static bool Supported()
+        /// <summary>Умеет ли система акрил вообще — в отличие от Enabled, это про ОС,
+        /// а не про выбор пользователя. Нужно окну настроек: там, где стекла нет и быть
+        /// не может, предлагать перезапуск ради него бессмысленно.</summary>
+        public static bool Supported()
         {
             // Манифест объявляет поддержку Windows 10, поэтому номер сборки здесь честный.
             Version v = Environment.OSVersion.Version;

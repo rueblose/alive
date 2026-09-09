@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.Drawing.Drawing2D;
@@ -26,30 +26,30 @@ namespace AbletonManager
 
         public RootsDialog(IEnumerable<string> current, IEnumerable<string> disabledRoots)
         {
-            Caption = L.S("Where to look for projects", "Где искать проекты");
+            Caption = "Where to look for projects";
             ClientSize = new Size(820, 470);
 
             foreach (string r in current) if (!_roots.Contains(r)) _roots.Add(r);
             if (disabledRoots != null) foreach (string r in disabledRoots) _disabled.Add(r);
 
-            _list.SetColumns(new Column(L.S("Folder", "Папка"), 0),
-                             new Column(L.S("sets", "сетов"), 150) { Right = true });
+            _list.SetColumns(new Column("Folder", 0),
+                             new Column("sets", 150) { Right = true });
             _list.ShowCheckboxes = true;
             _list.RowCheckedChanged += OnRowCheckedChanged;
             Controls.Add(_list);
 
-            _remove.Text = L.S("Remove", "Убрать");
+            _remove.Text = "Remove";
             _remove.FitToText(16);
             _remove.Click += delegate { RemoveSelected(); };
             Controls.Add(_remove);
 
-            _ok.Text = L.S("Scan", "Сканировать");
+            _ok.Text = "Scan";
             _ok.Primary = true;
             _ok.FitToText(20);
             _ok.Click += delegate { DialogResult = DialogResult.OK; Close(); };
             Controls.Add(_ok);
 
-            _cancel.Text = L.S("Cancel", "Отмена");
+            _cancel.Text = "Cancel";
             _cancel.FitToText(16);
             _cancel.Click += delegate { DialogResult = DialogResult.Cancel; Close(); };
             Controls.Add(_cancel);
@@ -97,7 +97,7 @@ namespace AbletonManager
                 {
                     int n;
                     if (_counts.TryGetValue(CountKey(r), out n))
-                        cell = n < 0 ? L.S("no access", "нет доступа") : n.ToString();
+                        cell = n < 0 ? "no access" : n.ToString();
                     else { cell = "…"; pending.Add(r); }
                 }
 
@@ -107,7 +107,7 @@ namespace AbletonManager
                 row.Tag = r;
                 row.Checked = !_disabled.Contains(r);
                 if (missing)
-                    row.Marks.Add(new CellMark(1, Theme.Red, L.S("not found", "нет такой папки")));
+                    row.Marks.Add(new CellMark(1, Theme.Red, "not found"));
                 rows.Add(row);
             }
 
@@ -161,7 +161,7 @@ namespace AbletonManager
                 string path = r.Tag as string;
                 if (path == null || !string.Equals(path, root, StringComparison.OrdinalIgnoreCase)) continue;
                 if (r.Cells.Length > 1)
-                    r.Cells[1] = n < 0 ? L.S("no access", "нет доступа") : n.ToString();
+                    r.Cells[1] = n < 0 ? "no access" : n.ToString();
                 break;
             }
             _list.Invalidate();
@@ -203,7 +203,7 @@ namespace AbletonManager
 
         void AddFolder()
         {
-            string path = ModernFolderPicker.PickFolder(Handle, L.S("Pick a folder with Ableton projects", "Выбери папку с проектами Ableton"));
+            string path = ModernFolderPicker.PickFolder(Handle, "Pick a folder with Ableton projects");
             if (string.IsNullOrEmpty(path)) return;
             if (!_roots.Contains(path))
             {
@@ -344,8 +344,8 @@ namespace AbletonManager
                 }
 
                 string hint = _isDragOver
-                    ? L.S("Release to add folders", "Отпусти мышь, чтобы добавить папки")
-                    : L.S("Drag and drop folders here or click to browse…", "Перетащи сюда папки с проектами или нажми, чтобы выбрать…");
+                    ? "Release to add folders"
+                    : "Drag and drop folders here or click to browse…";
 
                 Font font = Theme.FSmall;
                 Size sz = TextRenderer.MeasureText(hint, font);
@@ -427,7 +427,19 @@ namespace AbletonManager
         private const uint FOS_PICKFOLDERS = 0x00000020;
         private const uint FOS_FORCEFILESYSTEM = 0x00000040;
 
+        [DllImport("shell32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+        private static extern int SHCreateItemFromParsingName(
+            [MarshalAs(UnmanagedType.LPWStr)] string pszPath,
+            IntPtr pbc,
+            ref Guid riid,
+            out IShellItem ppv);
+
         public static string PickFolder(IntPtr ownerHandle, string title)
+        {
+            return PickFolder(ownerHandle, title, null);
+        }
+
+        public static string PickFolder(IntPtr ownerHandle, string title, string initialFolder)
         {
             try
             {
@@ -438,6 +450,20 @@ namespace AbletonManager
                 dialog.SetOptions(options);
                 if (!string.IsNullOrEmpty(title))
                     dialog.SetTitle(title);
+
+                if (!string.IsNullOrEmpty(initialFolder) && Directory.Exists(initialFolder))
+                {
+                    try
+                    {
+                        Guid riid = new Guid("43826d1e-e718-42ee-bc55-a1e261c37bfe");
+                        IShellItem folderItem;
+                        if (SHCreateItemFromParsingName(initialFolder, IntPtr.Zero, ref riid, out folderItem) == 0 && folderItem != null)
+                        {
+                            dialog.SetFolder(folderItem);
+                        }
+                    }
+                    catch { }
+                }
 
                 int hr = dialog.Show(ownerHandle);
                 if (hr == 0) // S_OK
@@ -458,6 +484,8 @@ namespace AbletonManager
                 using (FolderBrowserDialog dlg = new FolderBrowserDialog())
                 {
                     dlg.Description = title;
+                    if (!string.IsNullOrEmpty(initialFolder) && Directory.Exists(initialFolder))
+                        dlg.SelectedPath = initialFolder;
                     if (dlg.ShowDialog() == DialogResult.OK)
                         return dlg.SelectedPath;
                 }

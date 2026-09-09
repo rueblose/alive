@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
 using System.Drawing;
+using System.Drawing.Drawing2D;
+using System.Drawing.Imaging;
 using System.Threading;
 using System.Windows.Forms;
 using Timer = System.Windows.Forms.Timer;
@@ -84,7 +86,7 @@ namespace AbletonManager
         /// <summary>true во время анимации прокрутки — OnPaint использует упрощённый
         /// рендер (PaintGlassSurfaceFast, NearestNeighbor, пропускает декоративные
         /// элементы вроде обводок и бликов).</summary>
-        bool _scrolling;
+        bool _scrolling { get { return _scroller != null && _scroller.IsActive; } }
 
         // Очередь превью ведём сами: загрузчик отдаёт ответы всем подписчикам разом и
         // не знает, что из этого нужно именно нам. В работе держим несколько штук —
@@ -108,6 +110,14 @@ namespace AbletonManager
             public bool HasPlay;
             public bool IsNewProject;     // первая карточка в Recent — «New Live Set»
             public string Subtitle;
+
+            public float AnimX;
+            public float AnimY;
+            public float TargetX;
+            public float TargetY;
+            public float Alpha = 1f;
+            public float TargetAlpha = 1f;
+            public bool Leaving;
         }
 
         sealed class Header
@@ -116,21 +126,69 @@ namespace AbletonManager
             public string Note;
             public Rectangle Bounds;
             public int NoteShift;
+
+            public float AnimY;
+            public float TargetY;
+            public float Alpha = 1f;
+            public float TargetAlpha = 1f;
+            public bool Leaving;
         }
 
         readonly List<Tile> _tiles = new List<Tile>();
+        readonly List<Tile> _leavingTiles = new List<Tile>();
         readonly List<Header> _heads = new List<Header>();
+        readonly List<Header> _leavingHeads = new List<Header>();
+        bool _layoutTransitioning;
         Rectangle _allBar;                 // полоса «All projects» в самом низу
+        float _allBarAnimY, _allBarTargetY;
 
         int _scroll, _contentHeight;
         float _scrollTarget, _scrollCurrent;
-        Timer _scrollTimer;
+        readonly SmoothScroller _scroller;
         bool _draggingBar;
         int _dragOffset;
         int _hot = -1;
         bool _playHot, _pinHot, _allHot;
         bool _showAllRecent = true;
         SetEntry _selected;
+
+        static readonly string[] Splashes = new string[]
+        {
+            "this one will finished",
+            "how u name it?",
+            "more OTT this time",
+            "also try FL Studio!",
+            "certified 8-bar loop",
+            "another Untitled.als",
+            "try \"dice\" instead",
+            "Fmin again, isn't it?",
+            "hardest part is naming it",
+            "who needs sleep anyway?",
+            "tip: automate everything",
+            "+1 step to unemployment",
+            "drop first, intro never",
+            "u already replaced by AI",
+            "today we finish a track",
+            "nitepunk pls dm",
+            "AD place for sale!",
+            "dev Telegram: @RueBlose",
+            "trust your ears, not meters",
+            "fresh project, same chords",
+            "you finished the old ones?",
+            "give me flowjob",
+            "газ",
+            "i hate midtempo",
+            "LUFSMAXXING+MOOGING",
+            "no red meter = bad mix"
+        };
+        static readonly Random _splashRnd = new Random();
+        int _splashIndex = _splashRnd.Next(Splashes.Length);
+
+        void PickNextSplash()
+        {
+            if (Splashes.Length <= 1) return;
+            _splashIndex = (_splashIndex + _splashRnd.Next(1, Splashes.Length)) % Splashes.Length;
+        }
 
         Rectangle BarRect()
         {
@@ -141,6 +199,8 @@ namespace AbletonManager
             int y = Sc(5) + (int)((track - h) * (_scroll / (float)max));
             return new Rectangle(Width - Sc(8), y, Sc(4), h);
         }
+
+        ScrollFade _barFade;
 
         float[] _tileHoverFactors;
         float[] _tileEntrance;
@@ -180,12 +240,88 @@ namespace AbletonManager
                 }
             }
 
+            if (_layoutTransitioning)
+            {
+                float speed = 0.28f;
+                bool anyMoved = false;
+
+                for (int i = 0; i < _tiles.Count; i++)
+                {
+                    Tile t = _tiles[i];
+                    float dx = t.TargetX - t.AnimX;
+                    float dy = t.TargetY - t.AnimY;
+                    float da = t.TargetAlpha - t.Alpha;
+
+                    if (Math.Abs(dx) > 0.5f) { t.AnimX += dx * speed; anyMoved = true; }
+                    else t.AnimX = t.TargetX;
+
+                    if (Math.Abs(dy) > 0.5f) { t.AnimY += dy * speed; anyMoved = true; }
+                    else t.AnimY = t.TargetY;
+
+                    if (Math.Abs(da) > 0.005f) { t.Alpha += da * speed; anyMoved = true; }
+                    else t.Alpha = t.TargetAlpha;
+                }
+
+                for (int i = _leavingTiles.Count - 1; i >= 0; i--)
+                {
+                    Tile lt = _leavingTiles[i];
+                    float da = lt.TargetAlpha - lt.Alpha;
+                    if (Math.Abs(da) > 0.005f)
+                    {
+                        lt.Alpha += da * speed;
+                        anyMoved = true;
+                    }
+                    else
+                    {
+                        lt.Alpha = 0f;
+                        _leavingTiles.RemoveAt(i);
+                    }
+                }
+
+                for (int i = 0; i < _heads.Count; i++)
+                {
+                    Header h = _heads[i];
+                    float dy = h.TargetY - h.AnimY;
+                    float da = h.TargetAlpha - h.Alpha;
+
+                    if (Math.Abs(dy) > 0.5f) { h.AnimY += dy * speed; anyMoved = true; }
+                    else h.AnimY = h.TargetY;
+
+                    if (Math.Abs(da) > 0.005f) { h.Alpha += da * speed; anyMoved = true; }
+                    else h.Alpha = h.TargetAlpha;
+                }
+
+                for (int i = _leavingHeads.Count - 1; i >= 0; i--)
+                {
+                    Header lh = _leavingHeads[i];
+                    float da = lh.TargetAlpha - lh.Alpha;
+                    if (Math.Abs(da) > 0.005f)
+                    {
+                        lh.Alpha += da * speed;
+                        anyMoved = true;
+                    }
+                    else
+                    {
+                        lh.Alpha = 0f;
+                        _leavingHeads.RemoveAt(i);
+                    }
+                }
+
+                float dBarY = _allBarTargetY - _allBarAnimY;
+                if (Math.Abs(dBarY) > 0.5f) { _allBarAnimY += dBarY * speed; anyMoved = true; }
+                else _allBarAnimY = _allBarTargetY;
+
+                if (anyMoved) anim = true;
+                else _layoutTransitioning = false;
+            }
+
             int now = Environment.TickCount;
             if (_tileEntrance == null || _tileEntrance.Length != _tiles.Count)
                 _tileEntrance = new float[_tiles.Count];
 
             for (int i = 0; i < _tiles.Count; i++)
             {
+                if (_tileEntrance[i] >= 1.0f) continue;
                 int delay = Math.Min(i, 24) * 20;
                 int elapsed = now - _entranceStartTick - delay;
                 if (elapsed > 0)
@@ -244,18 +380,57 @@ namespace AbletonManager
         /// <summary>Что сейчас загружено в плеер (необязательно играет — см. Playing) —
         /// тот же приём, что и PlayingTag у RowListView: сравниваем по ссылке на
         /// SetEntry, а не по пути.</summary>
-        public object PlayingTag;
+        public object PlayingTag
+        {
+            get { return _playingTag; }
+            set { if (!ReferenceEquals(_playingTag, value)) { _playingTag = value; SyncPulse(); } }
+        }
+        object _playingTag;
 
         /// <summary>Плеер сейчас действительно звучит, а не на паузе.</summary>
-        public bool Playing;
+        public bool Playing
+        {
+            get { return _playing; }
+            set { if (_playing != value) { _playing = value; SyncPulse(); } }
+        }
+        bool _playing;
+
+        /// <summary>
+        /// Пока звучит — подписываем плитку на общий пульс, чтобы столбики шевелились.
+        /// Перерисовываем не весь экран, а уголок превью: играющая плитка ездит с
+        /// прокруткой, поэтому прямоугольник считается заново на каждый тик.
+        /// </summary>
+        void SyncPulse()
+        {
+            if (_playing && _playingTag != null) PlayPulse.Attach(this, PulseRect);
+            else PlayPulse.Detach(this);
+            Invalidate();
+        }
+
+        Rectangle PulseRect()
+        {
+            if (_playingTag == null) return Rectangle.Empty;
+            int over = _scroller != null ? (int)Math.Round(_scroller.Overscroll) : 0;
+            for (int i = 0; i < _tiles.Count; i++)
+            {
+                Tile t = _tiles[i];
+                if (t.Set == null || !ReferenceEquals(t.Set, _playingTag)) continue;
+                if (!t.HasPlay) return Rectangle.Empty;   // пульс живёт в кнопке play
+                int dx = (int)Math.Round(t.AnimX) - t.Bounds.X;
+                int dy = (int)Math.Round(t.AnimY) - t.Bounds.Y - (_scroll + over);
+                return new Rectangle(t.Play.X + dx, t.Play.Y + dy, t.Play.Width, t.Play.Height);
+            }
+            return Rectangle.Empty;
+        }
 
         public HomeView()
         {
             Cursor = Cursors.Default;
             Surface = Theme.Backdrop;
-            _scrollTimer = new Timer();
-            _scrollTimer.Interval = 16;
-            _scrollTimer.Tick += delegate { ScrollTick(); };
+            _barFade = new ScrollFade(this, BarRect);
+            _scroller = new SmoothScroller(this,
+                delegate (int s) { _scroll = s; _scrollCurrent = s; ClampScroll(); },
+                delegate { return Math.Max(0, _contentHeight - Height); });
         }
 
         // ------------------------------------------------------------- содержимое
@@ -270,6 +445,16 @@ namespace AbletonManager
         public void Rebuild(bool animate)
         {
             BuildLayout(animate);
+            Invalidate();
+        }
+
+        /// <summary>
+        /// Плавная анимация перестроения: плитки плавно съезжают на новые места,
+        /// лишние исчезают, новые проявляются. Применяется при закреплении и откреплении сетов.
+        /// </summary>
+        public void RebuildTransition()
+        {
+            BuildLayoutTransition();
             Invalidate();
         }
 
@@ -372,15 +557,16 @@ namespace AbletonManager
         void EnsureTileVisible(Rectangle b)
         {
             int pad = Sc(16);
-            float target = _scrollTarget;
+            float target = _scroll;
             if (b.Y - pad < target) target = b.Y - pad;
             else if (b.Bottom + pad > target + Height) target = b.Bottom + pad - Height;
-            if (target == _scrollTarget) return;
+            if (target == _scroll) return;
 
-            _scrollTarget = target;
-            ClampScrollTarget();
-            _scrolling = true;
-            if (!_scrollTimer.Enabled) _scrollTimer.Start();
+            _scroll = (int)Math.Max(0, Math.Min(_contentHeight - Height, target));
+            _scrollTarget = _scrollCurrent = _scroll;
+            if (_scroller != null) _scroller.SyncPosition(_scroll);
+            ClampScroll();
+            Invalidate();
         }
 
         /// <summary>Меню выбранной плитки — для клавиши вызова меню на клавиатуре.</summary>
@@ -466,19 +652,12 @@ namespace AbletonManager
 
         // --------------------------------------------------------------- раскладка
 
-        int Gap { get { return Sc(18); } }
+        int Gap { get { return Sc(16); } }   // S4 — тот же шаг, что между строками свойств
 
         void BuildLayout() { BuildLayout(true); }
 
-        void BuildLayout(bool animate)
+        void ComputeLayout()
         {
-            _tiles.Clear();
-            _heads.Clear();
-            _allBar = Rectangle.Empty;
-            if (Width <= 0) return;
-
-            // Колонки подбираем под ширину: плитка около 250 логических точек, но
-            // растягивается до ровного заполнения строки — дырки справа выглядят браком.
             int gap = Gap;
             int target = Sc(250);
             int cols = Math.Min(8, Math.Max(1, (Width + gap) / (target + gap)));
@@ -486,9 +665,6 @@ namespace AbletonManager
             int thumbH = (int)(tileW * 0.56f);
             int tileH = thumbH + Sc(68);
 
-            // Сколько картинок разрешаем себе держать — ровно столько, сколько плиток
-            // помещается в запрашиваемую полосу (три экрана), плюс запас на неполные
-            // ряды по краям. См. _thumbBudget.
             int bandRows = Height * 3 / Math.Max(1, tileH + gap) + 2;
             _thumbBudget = Math.Max(MinThumbs, cols * bandRows);
 
@@ -496,26 +672,39 @@ namespace AbletonManager
             List<SetEntry> pinned = Pinned();
             if (pinned.Count > 0)
             {
-                y = Section(L.S("Pinned", "Закреплённые"), "", pinned, y, cols, tileW, tileH, thumbH, gap, false);
-                y += Sc(10);
+                y = Section("Pinned", "", pinned, y, cols, tileW, tileH, thumbH, gap, false);
+                y += Sc(32);                       // S6 — между секциями
             }
 
-            // Первый слот в Recent — не проект, а кнопка «New Live Set»: место, где
-            // обычно смотрят первым делом, и остаётся один клик до пустого сета.
-            // Сама пачка — просто 9 последних по дате изменения, без учёта того,
-            // открывали ли сет через Manager.
             List<SetEntry> recent = Recent(pinned);
-            string note = HomeStore.Pins.Count > 0 || recent.Count > 0
-                ? L.S("recently changed", "недавно изменённые") : "";
-            y = Section(L.S("Recent", "Недавние"), note, recent, y, cols, tileW, tileH, thumbH, gap, true);
+            y = Section("Recent", "", recent, y, cols, tileW, tileH, thumbH, gap, true);
 
-            y += Sc(14);
+            y += Sc(24);                           // S5 — перед строкой «Show all»
             _allBar = new Rectangle(0, y, Width, Sc(58));
+            _allBarTargetY = _allBar.Y;
+            if (_allBarAnimY <= 0 || !_layoutTransitioning)
+                _allBarAnimY = _allBarTargetY;
             y += _allBar.Height;
 
             _contentHeight = y;
             ClampScroll();
+        }
 
+        void BuildLayout(bool animate)
+        {
+            _leavingTiles.Clear();
+            _leavingHeads.Clear();
+            _layoutTransitioning = false;
+            _tiles.Clear();
+            _heads.Clear();
+            _allBar = Rectangle.Empty;
+            _hot = -1; _playHot = _pinHot = false;
+            _pinHoverFactor = _playHoverFactor = 0f;
+            if (Width <= 0) return;
+
+            ComputeLayout();
+
+            _tileHoverFactors = new float[_tiles.Count];
             _tileEntrance = new float[_tiles.Count];
             if (animate)
             {
@@ -524,10 +713,140 @@ namespace AbletonManager
             }
             else
             {
-                // Плитки сразу на месте: массив нулей означал бы «ещё не появились»,
-                // и без запущенной анимации сетка осталась бы пустой.
                 for (int i = 0; i < _tileEntrance.Length; i++) _tileEntrance[i] = 1f;
             }
+        }
+
+        static bool IsSameTile(Tile a, Tile b)
+        {
+            if (a == null || b == null) return false;
+            if (a.IsNewProject || b.IsNewProject) return a.IsNewProject && b.IsNewProject;
+            if (a.Set != null && b.Set != null)
+                return string.Equals(a.Set.Path, b.Set.Path, StringComparison.OrdinalIgnoreCase);
+            return false;
+        }
+
+        void BuildLayoutTransition()
+        {
+            if (Width <= 0) return;
+            if (_tiles.Count == 0)
+            {
+                BuildLayout(true);
+                return;
+            }
+
+            List<Tile> oldTiles = new List<Tile>(_tiles);
+            foreach (Tile lt in _leavingTiles) oldTiles.Add(lt);
+            List<Header> oldHeads = new List<Header>(_heads);
+            foreach (Header lh in _leavingHeads) oldHeads.Add(lh);
+
+            _leavingTiles.Clear();
+            _leavingHeads.Clear();
+            _tiles.Clear();
+            _heads.Clear();
+            _allBar = Rectangle.Empty;
+
+            _hot = -1; _playHot = _pinHot = false;
+            _pinHoverFactor = _playHoverFactor = 0f;
+            _layoutTransitioning = true;
+            ComputeLayout();
+
+            _tileHoverFactors = new float[_tiles.Count];
+            _tileEntrance = new float[_tiles.Count];
+            for (int i = 0; i < _tileEntrance.Length; i++) _tileEntrance[i] = 1f;
+
+            bool[] usedOld = new bool[oldTiles.Count];
+
+            for (int i = 0; i < _tiles.Count; i++)
+            {
+                Tile nt = _tiles[i];
+                int match = -1;
+                for (int k = 0; k < oldTiles.Count; k++)
+                {
+                    if (usedOld[k]) continue;
+                    if (IsSameTile(nt, oldTiles[k])) { match = k; break; }
+                }
+
+                if (match >= 0)
+                {
+                    usedOld[match] = true;
+                    Tile ot = oldTiles[match];
+                    nt.AnimX = ot.AnimX;
+                    nt.AnimY = ot.AnimY;
+                    nt.Alpha = ot.Alpha;
+                    nt.TargetX = nt.Bounds.X;
+                    nt.TargetY = nt.Bounds.Y;
+                    nt.TargetAlpha = 1.0f;
+                }
+                else
+                {
+                    nt.AnimX = nt.Bounds.X;
+                    nt.AnimY = nt.Bounds.Y;
+                    nt.TargetX = nt.Bounds.X;
+                    nt.TargetY = nt.Bounds.Y;
+                    nt.Alpha = 0.0f;
+                    nt.TargetAlpha = 1.0f;
+                }
+            }
+
+            for (int k = 0; k < oldTiles.Count; k++)
+            {
+                if (!usedOld[k] && oldTiles[k].Alpha > 0.01f)
+                {
+                    Tile ot = oldTiles[k];
+                    ot.Leaving = true;
+                    ot.TargetAlpha = 0.0f;
+                    ot.TargetX = ot.AnimX;
+                    ot.TargetY = ot.AnimY;
+                    _leavingTiles.Add(ot);
+                }
+            }
+
+            bool[] usedHeads = new bool[oldHeads.Count];
+            for (int i = 0; i < _heads.Count; i++)
+            {
+                Header nh = _heads[i];
+                int match = -1;
+                for (int k = 0; k < oldHeads.Count; k++)
+                {
+                    if (usedHeads[k]) continue;
+                    if (string.Equals(nh.Text, oldHeads[k].Text, StringComparison.OrdinalIgnoreCase))
+                    {
+                        match = k; break;
+                    }
+                }
+
+                if (match >= 0)
+                {
+                    usedHeads[match] = true;
+                    Header oh = oldHeads[match];
+                    nh.AnimY = oh.AnimY;
+                    nh.Alpha = oh.Alpha;
+                    nh.TargetY = nh.Bounds.Y;
+                    nh.TargetAlpha = 1.0f;
+                }
+                else
+                {
+                    nh.AnimY = nh.Bounds.Y;
+                    nh.TargetY = nh.Bounds.Y;
+                    nh.Alpha = 0.0f;
+                    nh.TargetAlpha = 1.0f;
+                }
+            }
+
+            for (int k = 0; k < oldHeads.Count; k++)
+            {
+                if (!usedHeads[k] && oldHeads[k].Alpha > 0.01f)
+                {
+                    Header oh = oldHeads[k];
+                    oh.Leaving = true;
+                    oh.TargetAlpha = 0.0f;
+                    oh.TargetY = oh.AnimY;
+                    _leavingHeads.Add(oh);
+                }
+            }
+
+            AnimEngine.Register(this);
         }
 
         int Section(string title, string note, List<SetEntry> sets, int y, int cols,
@@ -538,14 +857,19 @@ namespace AbletonManager
             h.Note = note;
             h.Bounds = new Rectangle(0, y, Width, Sc(38));
             h.NoteShift = title.Length > 0 ? TextRenderer.MeasureText(title, Theme.FHead).Width + Sc(12) : 0;
+            h.AnimY = h.TargetY = h.Bounds.Y;
+            h.Alpha = h.TargetAlpha = 1f;
             _heads.Add(h);
-            y += h.Bounds.Height + Sc(14);
+            y += h.Bounds.Height + Sc(16);
 
             if (sets.Count == 0 && !leadingNewTile)
             {
-                _heads.Add(new Header {
-                    Text = "", Note = L.S("nothing here yet", "пока пусто"),
-                    Bounds = new Rectangle(0, y, Width, Sc(30)) });
+                Header emptyH = new Header {
+                    Text = "", Note = "nothing here yet",
+                    Bounds = new Rectangle(0, y, Width, Sc(30)) };
+                emptyH.AnimY = emptyH.TargetY = emptyH.Bounds.Y;
+                emptyH.Alpha = emptyH.TargetAlpha = 1f;
+                _heads.Add(emptyH);
                 return y + Sc(30);
             }
 
@@ -555,6 +879,9 @@ namespace AbletonManager
                 Tile nt = new Tile();
                 nt.IsNewProject = true;
                 nt.Bounds = new Rectangle(0, y, tileW, tileH);
+                nt.AnimX = nt.TargetX = nt.Bounds.X;
+                nt.AnimY = nt.TargetY = nt.Bounds.Y;
+                nt.Alpha = nt.TargetAlpha = 1f;
                 _tiles.Add(nt);
                 slot = 1;
             }
@@ -567,6 +894,9 @@ namespace AbletonManager
                 Tile t = new Tile();
                 t.Set = sets[i];
                 t.Bounds = b;
+                t.AnimX = t.TargetX = b.X;
+                t.AnimY = t.TargetY = b.Y;
+                t.Alpha = t.TargetAlpha = 1f;
                 t.Thumb = new Rectangle(b.X, b.Y, b.Width, thumbH);
                 t.HasPlay = sets[i].HasRenders;
 
@@ -600,7 +930,11 @@ namespace AbletonManager
         {
             base.OnResize(e);
             DropScaledThumbs();
-            BuildLayout();
+            // Без анимации: ресайз — это только новая геометрия для того же набора
+            // плиток, не новый контент. С BuildLayout(true) вся сетка переигрывала
+            // fade-in заново на каждый чих, включая появление/скрытие мини-плеера
+            // внизу окна (оно меняет высоту HomeView и приходит именно сюда).
+            BuildLayout(false);
         }
 
         void DropScaledThumbs()
@@ -620,48 +954,9 @@ namespace AbletonManager
         protected override void OnMouseWheel(MouseEventArgs e)
         {
             if (_contentHeight <= Height) return;
-            _scrollTarget -= (int)(e.Delta / 120f * Sc(90));
-            ClampScrollTarget();
-            if (!Theme.SmoothScroll)
-            {
-                _scroll = (int)_scrollTarget;
-                _scrollCurrent = _scrollTarget;
-                ClampScroll();
-                _scrolling = false;
-                Invalidate();
-            }
-            else
-            {
-                _scrolling = true;
-                if (!_scrollTimer.Enabled) _scrollTimer.Start();
-            }
+            _scroller.OnMouseWheel(e.Delta, Sc(90));
+            _barFade.Ping();
             base.OnMouseWheel(e);
-        }
-
-        void ClampScrollTarget()
-        {
-            int max = Math.Max(0, _contentHeight - Height);
-            if (_scrollTarget > max) _scrollTarget = max;
-            if (_scrollTarget < 0) _scrollTarget = 0;
-        }
-
-        void ScrollTick()
-        {
-            _scrollCurrent += (_scrollTarget - _scrollCurrent) * 0.35f;
-            if (Math.Abs(_scrollTarget - _scrollCurrent) < 0.5f)
-            {
-                _scrollCurrent = _scrollTarget;
-                _scrollTimer.Stop();
-                _scrolling = false;
-                Invalidate();
-            }
-            int newScroll = (int)Math.Round(_scrollCurrent);
-            if (newScroll != _scroll)
-            {
-                _scroll = newScroll;
-                ClampScroll();
-                Invalidate();
-            }
         }
 
         // ------------------------------------------------------------------- мышь
@@ -669,12 +964,22 @@ namespace AbletonManager
         int TileAt(Point p, out bool onPlay, out bool onPin)
         {
             onPlay = onPin = false;
-            Point q = new Point(p.X, p.Y + _scroll);
+            // Вместе с резиновым перелётом: во время отскока плитки уезжают, а попадания
+            // считались по старому месту — звёздочка срабатывала там, где её уже нет.
+            int over = _scroller != null ? (int)Math.Round(_scroller.Overscroll) : 0;
+            Point q = new Point(p.X, p.Y + _scroll + over);
             for (int i = 0; i < _tiles.Count; i++)
             {
-                if (!_tiles[i].Bounds.Contains(q)) continue;
-                onPlay = _tiles[i].HasPlay && _tiles[i].Play.Contains(q);
-                onPin = _tiles[i].Pin.Contains(q);
+                Tile t = _tiles[i];
+                if (t.Alpha < 0.3f) continue;
+                int dx = (int)Math.Round(t.AnimX) - t.Bounds.X;
+                int dy = (int)Math.Round(t.AnimY) - t.Bounds.Y;
+                Rectangle curBounds = new Rectangle(t.Bounds.X + dx, t.Bounds.Y + dy, t.Bounds.Width, t.Bounds.Height);
+                if (!curBounds.Contains(q)) continue;
+                Rectangle curPlay = new Rectangle(t.Play.X + dx, t.Play.Y + dy, t.Play.Width, t.Play.Height);
+                Rectangle curPin = new Rectangle(t.Pin.X + dx, t.Pin.Y + dy, t.Pin.Width, t.Pin.Height);
+                onPlay = t.HasPlay && curPlay.Contains(q);
+                onPin = curPin.Contains(q);
                 return i;
             }
             return -1;
@@ -682,6 +987,8 @@ namespace AbletonManager
 
         protected override void OnMouseMove(MouseEventArgs e)
         {
+            _barFade.SetHot(e.X >= Width - Sc(22));
+
             if (_draggingBar)
             {
                 Rectangle bar = BarRect();
@@ -689,19 +996,41 @@ namespace AbletonManager
                 int max = Math.Max(1, _contentHeight - Height);
                 float t = (e.Y - _dragOffset - Sc(5)) / (float)Math.Max(1, track - bar.Height);
                 _scrollTarget = _scrollCurrent = _scroll = (int)Math.Round(t * max);
-                ClampScrollTarget();
+                if (_scroller != null) _scroller.SyncPosition(_scroll);
                 ClampScroll();
                 Invalidate();
                 return;
             }
 
+            if (Math.Abs(Environment.TickCount - _lastPinTime) < 400)
+            {
+                int dist = Math.Abs(e.X - _lastPinPos.X) + Math.Abs(e.Y - _lastPinPos.Y);
+                if (dist < Sc(8))
+                {
+                    if (_hot >= 0)
+                    {
+                        _hot = -1; _playHot = _pinHot = false;
+                        Cursor = Cursors.Default;
+                        Invalidate();
+                    }
+                    base.OnMouseMove(e);
+                    return;
+                }
+            }
+
+            int over = _scroller != null ? (int)Math.Round(_scroller.Overscroll) : 0;
             bool play, pin;
             int hot = TileAt(e.Location, out play, out pin);
-            bool all = !_allBar.IsEmpty
-                       && _allBar.Contains(new Point(e.X, e.Y + _scroll));
+            int barY = (int)Math.Round(_allBarAnimY) - _scroll - over;
+            bool all = !_allBar.IsEmpty && new Rectangle(_allBar.X, barY, _allBar.Width, _allBar.Height).Contains(e.Location);
 
             if (hot != _hot || play != _playHot || pin != _pinHot || all != _allHot)
             {
+                bool isNewHot = hot >= 0 && hot < _tiles.Count && _tiles[hot].IsNewProject;
+                bool wasNewHot = _hot >= 0 && _hot < _tiles.Count && _tiles[_hot].IsNewProject;
+                if (isNewHot && !wasNewHot)
+                    PickNextSplash();
+
                 _hot = hot; _playHot = play; _pinHot = pin; _allHot = all;
                 Cursor = (hot >= 0 || all) ? Cursors.Hand : Cursors.Default;
                 AnimEngine.Register(this);
@@ -722,6 +1051,7 @@ namespace AbletonManager
             base.OnMouseLeave(e);
         }
 
+        Point _lastPinPos;
         int _lastPinTime;
 
         protected override void OnMouseDown(MouseEventArgs e)
@@ -751,10 +1081,22 @@ namespace AbletonManager
             if (_allHot)
             {
                 _showAllRecent = !_showAllRecent;
-                Rebuild();
+                RebuildTransition();
                 return;
             }
-            if (hit < 0) return;
+
+            // Клик мимо плиток снимает выделение — иначе от него нельзя избавиться,
+            // не выбрав что-то другое.
+            if (hit < 0)
+            {
+                if (_selected != null || _newSelected)
+                {
+                    _newSelected = false;
+                    Selected = null;
+                    Invalidate();
+                }
+                return;
+            }
 
             // «New Live Set» ведёт себя как остальные карточки: одиночный клик только
             // выделяет, само действие — по двойному. Раньше она срабатывала сразу, и на
@@ -773,9 +1115,15 @@ namespace AbletonManager
             if (pin)
             {
                 _lastPinTime = Environment.TickCount;
-                HomeStore.TogglePin(s.Path);
-                Rebuild();
+                _lastPinPos = e.Location;
                 _hot = -1; _playHot = _pinHot = false;
+                _pinHoverFactor = _playHoverFactor = 0f;
+                if (_tileHoverFactors != null)
+                {
+                    for (int i = 0; i < _tileHoverFactors.Length; i++) _tileHoverFactors[i] = 0f;
+                }
+                HomeStore.TogglePin(s.Path);
+                RebuildTransition();
                 return;
             }
 
@@ -828,32 +1176,44 @@ namespace AbletonManager
         {
             ContextMenuStrip m = DarkMenu.Create();
 
-            ToolStripMenuItem open = new ToolStripMenuItem(L.S("Open in Live", "Открыть в Live"));
+            ToolStripMenuItem open = new ToolStripMenuItem("Open in Live");
             open.Click += delegate { if (Activated != null) Activated(s); };
             m.Items.Add(open);
 
             if (s.HasRenders)
             {
-                ToolStripMenuItem play = new ToolStripMenuItem(L.S("Play render", "Слушать рендер"));
+                ToolStripMenuItem play = new ToolStripMenuItem("Play render");
                 play.Click += delegate { if (PlayRequested != null) PlayRequested(s); };
                 m.Items.Add(play);
             }
 
             ToolStripMenuItem pin = new ToolStripMenuItem(
-                HomeStore.IsPinned(s.Path) ? L.S("Unpin", "Открепить") : L.S("Pin project", "Закрепить"));
+                HomeStore.IsPinned(s.Path) ? "Unpin" : "Pin project");
             pin.Checked = HomeStore.IsPinned(s.Path);
-            pin.Click += delegate { _lastPinTime = Environment.TickCount; HomeStore.TogglePin(s.Path); Rebuild(); };
+            pin.Click += delegate
+            {
+                _lastPinTime = Environment.TickCount;
+                _lastPinPos = at;
+                _hot = -1; _playHot = _pinHot = false;
+                _pinHoverFactor = _playHoverFactor = 0f;
+                if (_tileHoverFactors != null)
+                {
+                    for (int i = 0; i < _tileHoverFactors.Length; i++) _tileHoverFactors[i] = 0f;
+                }
+                HomeStore.TogglePin(s.Path);
+                RebuildTransition();
+            };
             m.Items.Add(pin);
 
-            ToolStripMenuItem details = new ToolStripMenuItem(L.S("Show details", "Подробности"));
+            ToolStripMenuItem details = new ToolStripMenuItem("Show details");
             details.Click += delegate { if (DetailsRequested != null) DetailsRequested(s); };
             m.Items.Add(details);
 
-            ToolStripMenuItem rescue = new ToolStripMenuItem(L.S("Rescue project…", "Восстановить проект…"));
+            ToolStripMenuItem rescue = new ToolStripMenuItem("Rescue project…");
             rescue.Click += delegate { if (RescueRequested != null) RescueRequested(s); };
             m.Items.Add(rescue);
 
-            ToolStripMenuItem reveal = new ToolStripMenuItem(L.S("Show in Explorer", "Показать в папке"));
+            ToolStripMenuItem reveal = new ToolStripMenuItem("Show in Explorer");
             reveal.Click += delegate { if (RevealRequested != null) RevealRequested(s); };
             m.Items.Add(reveal);
 
@@ -1112,71 +1472,100 @@ namespace AbletonManager
 
             if (_tiles.Count == 0 && _heads.Count == 0)
             {
-                Chrome.DrawText(g, L.S("Nothing indexed yet", "Пока ничего не проиндексировано"),
+                Chrome.DrawText(g, "Nothing indexed yet",
                     Theme.FBody, new Rectangle(0, Sc(40), Width, Sc(30)), Theme.TextDim, Chrome.Left);
                 return;
             }
 
-            foreach (Header h in _heads)
-            {
-                Rectangle r = new Rectangle(h.Bounds.X, h.Bounds.Y - _scroll, h.Bounds.Width, h.Bounds.Height);
-                if (r.Bottom < 0 || r.Top > Height) continue;
-                if (h.Text.Length > 0)
-                    Chrome.DrawText(g, h.Text, Theme.FHead, r, Theme.Text,
-                                    Chrome.Left | TextFormatFlags.NoClipping);
-                if (h.Note.Length > 0)
-                {
-                    Chrome.DrawText(g, h.Note, Theme.FLabel,
-                        new Rectangle(r.X + h.NoteShift, r.Y, Math.Max(0, r.Width - h.NoteShift), r.Height),
-                        Theme.TextDim, Chrome.Left | TextFormatFlags.NoClipping);
-                }
-            }
+            // Резиновый перелёт за край — едет всё содержимое, кроме полосы прокрутки.
+            int over = _scroller != null ? (int)Math.Round(_scroller.Overscroll) : 0;
+            int scroll = _scroll + over;
+
+            foreach (Header h in _heads) PaintHeader(g, h, scroll);
+            foreach (Header lh in _leavingHeads) PaintHeader(g, lh, scroll);
 
             int bufferTop = -Height;
             int bufferBottom = Height * 2;
 
+            for (int i = 0; i < _leavingTiles.Count; i++)
+            {
+                PaintOneTile(g, _leavingTiles[i], -1, true, scroll, bufferTop, bufferBottom);
+            }
+
             for (int i = 0; i < _tiles.Count; i++)
             {
-                Tile t = _tiles[i];
-                Rectangle b = new Rectangle(t.Bounds.X, t.Bounds.Y - _scroll, t.Bounds.Width, t.Bounds.Height);
-
-                // Плитка далеко за пределами видимости (более 1 экрана от края) — пропускаем полностью
-                if (b.Bottom < bufferTop || b.Top > bufferBottom) continue;
-
-                // Плитка в упреждающей буферной зоне (в пределах 1 экрана за краем) — предзагружаем превью.
-                // Уже загруженную отмечаем как нужную: она вот-вот приедет на экран, и
-                // вытеснять её раньше того, что уехало далеко вверх, незачем.
-                if (b.Bottom < 0 || b.Top > Height)
-                {
-                    if (t.Set != null)
-                    {
-                        if (_thumbs.ContainsKey(t.Set.Path)) TouchThumb(t.Set.Path);
-                        else Want(t.Set.Path);
-                    }
-                    continue;
-                }
-
-                // Видимая плитка — отрисовываем
-                float entrance = (_tileEntrance != null && i < _tileEntrance.Length) ? _tileEntrance[i] : 1.0f;
-                if (entrance <= 0.001f) continue;
-
-                int offsetY = (int)Math.Round((1.0f - entrance) * Sc(30));
-                Rectangle animB = new Rectangle(b.X, b.Y + offsetY, b.Width, b.Height);
-
-                float hover = (_tileHoverFactors != null && i < _tileHoverFactors.Length) ? _tileHoverFactors[i] : (i == _hot ? 1f : 0f);
-                if (t.IsNewProject) PaintNewProjectTile(g, animB, i == _hot, hover, entrance);
-                else PaintTile(g, t, animB, i == _hot, hover, entrance);
+                PaintOneTile(g, _tiles[i], i, false, scroll, bufferTop, bufferBottom);
             }
 
             if (!_allBar.IsEmpty) PaintAllBar(g);
 
+            // Полоса прокрутки поверх сетки: Sc(4) в покое, Sc(8) под курсором,
+            // гаснет через секунду после последней прокрутки.
             Rectangle bar = BarRect();
             if (!bar.IsEmpty)
             {
-                bool barHot = _draggingBar || bar.Contains(PointToClient(Cursor.Position));
-                Color c = _draggingBar ? Theme.Text : (barHot ? Theme.Light : Color.FromArgb(0x40, 0xFF, 0xFF, 0xFF));
-                Theme.FillRound(g, bar, bar.Width / 2f, c);
+                float a = _draggingBar ? 1f : _barFade.Alpha;
+                if (a > 0.01f)
+                {
+                    float thick = _draggingBar ? 1f : _barFade.Thick;
+                    int grow = (int)Math.Round(Sc(4) * thick);
+                    Rectangle b = new Rectangle(bar.Right - bar.Width - grow, bar.Y, bar.Width + grow, bar.Height);
+                    int alpha = (int)Math.Round((0x4A + 0x50 * thick) * a);
+                    Theme.FillRound(g, b, b.Width / 2f, Color.FromArgb(alpha, 0xFF, 0xFF, 0xFF));
+                }
             }
+        }
+
+        void PaintHeader(Graphics g, Header h, int scroll)
+        {
+            if (h.Alpha <= 0.005f) return;
+            int hy = (int)Math.Round(h.AnimY) - scroll;
+            Rectangle r = new Rectangle(h.Bounds.X, hy, h.Bounds.Width, h.Bounds.Height);
+            if (r.Bottom < 0 || r.Top > Height) return;
+            Color textC = h.Alpha < 0.99f ? Color.FromArgb((int)Math.Round(Theme.Text.A * h.Alpha), Theme.Text) : Theme.Text;
+            Color noteC = h.Alpha < 0.99f ? Color.FromArgb((int)Math.Round(Theme.TextDim.A * h.Alpha), Theme.TextDim) : Theme.TextDim;
+            if (h.Text.Length > 0)
+                Chrome.DrawText(g, h.Text, Theme.FHead, r, textC,
+                                Chrome.Left | TextFormatFlags.NoClipping);
+            if (h.Note.Length > 0)
+            {
+                Chrome.DrawText(g, h.Note, Theme.FLabel,
+                    new Rectangle(r.X + h.NoteShift, r.Y, Math.Max(0, r.Width - h.NoteShift), r.Height),
+                    noteC, Chrome.Left | TextFormatFlags.NoClipping);
+            }
+        }
+
+        void PaintOneTile(Graphics g, Tile t, int index, bool isLeaving, int scroll, int bufferTop, int bufferBottom)
+        {
+            int curX = (int)Math.Round(t.AnimX);
+            int curY = (int)Math.Round(t.AnimY);
+            Rectangle b = new Rectangle(curX, curY - scroll, t.Bounds.Width, t.Bounds.Height);
+
+            // Плитка далеко за пределами видимости (более 1 экрана от края) — пропускаем полностью
+            if (b.Bottom < bufferTop || b.Top > bufferBottom) return;
+
+            if (b.Bottom < 0 || b.Top > Height)
+            {
+                if (t.Set != null)
+                {
+                    if (_thumbs.ContainsKey(t.Set.Path)) TouchThumb(t.Set.Path);
+                    else Want(t.Set.Path);
+                }
+                return;
+            }
+
+            // Входная анимация (если была запущена полная) умножается на прозрачность плитки
+            float entrance = (_tileEntrance != null && index >= 0 && index < _tileEntrance.Length) ? _tileEntrance[index] : 1.0f;
+            float totalAlpha = entrance * t.Alpha;
+            if (totalAlpha <= 0.001f) return;
+
+            int offsetY = (entrance < 1.0f) ? (int)Math.Round((1.0f - entrance) * Sc(30)) : 0;
+            Rectangle animB = new Rectangle(b.X, b.Y + offsetY, b.Width, b.Height);
+
+            bool isHot = !isLeaving && (index == _hot);
+            float hover = (!isLeaving && _tileHoverFactors != null && index >= 0 && index < _tileHoverFactors.Length) ? _tileHoverFactors[index] : (isHot ? 1f : 0f);
+            if (t.IsNewProject) PaintNewProjectTile(g, animB, isHot, hover, totalAlpha);
+            else PaintTile(g, t, animB, isHot, hover, totalAlpha);
         }
 
         /// <summary>
@@ -1193,29 +1582,76 @@ namespace AbletonManager
             Theme.PaintGlassSurface(this, g, r, radius, alpha);
         }
 
-        /// <summary>Серая карточка-кнопка: плюс и подпись посередине, функция та же,
-        /// что у футерной кнопки «New Live Set» — просто открыть саму Live.</summary>
+        /// <summary>Карточка создания нового сета: мягкий штрихованный контур без фона
+        /// и аккуратный центрированный плюс в стиле Apple.</summary>
         void PaintNewProjectTile(Graphics g, Rectangle b, bool hot, float hoverFactor, float entrance)
         {
-            int alpha = (int)Math.Round(Theme.Lerp(Theme.GlassSurfaceAlpha, Theme.GlassSurfaceHotAlpha, hoverFactor) * entrance);
-            PaintCard(g, b, Sc(Theme.CardR), alpha);
-            if (_newSelected) Theme.DrawRound(g, b, Sc(Theme.CardR), Theme.Light, 1.5f);
+            float cardR = Sc(Theme.CardR);
 
-            Color ink = hoverFactor > 0.01f ? Theme.Interpolate(Theme.TextDim, Theme.Text, hoverFactor) : Theme.TextDim;
+            // Мягкий штрихованный контур по скруглённому контуру карточки без фона и без сплошной обводки
+            int borderAlpha = _newSelected ? 0xFF : (int)Math.Round((0x22 + 0x2A * hoverFactor) * entrance);
+            Color dashColor = _newSelected ? Theme.Light : Color.FromArgb(borderAlpha, 0xFF, 0xFF, 0xFF);
+            float dashWidth = _newSelected ? 1.5f : 1.2f;
+            if (borderAlpha > 0)
+            {
+                using (Pen dashPen = new Pen(dashColor, dashWidth))
+                {
+                    dashPen.DashStyle = DashStyle.Custom;
+                    dashPen.DashPattern = new float[] { 5f, 4f };
+                    using (GraphicsPath path = Theme.Round(b, cardR))
+                    {
+                        g.DrawPath(dashPen, path);
+                    }
+                }
+            }
+
+            Color ink = hoverFactor > 0.01f ? Theme.Interpolate(Theme.TextDim, Color.White, hoverFactor) : Theme.TextDim;
             if (entrance < 1.0f) ink = Color.FromArgb((int)Math.Round(ink.A * entrance), ink);
-            string label = L.S("New Live Set", "Новый сет Live");
-            int iconSize = Sc(30);
+
+            string label = "New Live Set";
+            int discDiam = Sc(44);
             int labelH = Sc(24);
-            int gap = Sc(10);
+            int gap = Sc(12);
 
-            int groupH = iconSize + gap + labelH;
-            float iconY = b.Y + (b.Height - groupH) / 2f;
+            int groupH = discDiam + gap + labelH;
+            float discY = b.Y + (b.Height - groupH) / 2f;
+            float discX = b.X + (b.Width - discDiam) / 2f;
 
-            RectangleF iconBox = new RectangleF(b.X + (b.Width - iconSize) / 2f, iconY, iconSize, iconSize);
+            // Матовый стеклянный кружок под иконку плюса
+            RectangleF discRect = new RectangleF(discX, discY, discDiam, discDiam);
+            Color discBg = Color.FromArgb((int)Math.Round((0x12 + 0x1E * hoverFactor) * entrance), 0xFF, 0xFF, 0xFF);
+            Color discBorder = Color.FromArgb((int)Math.Round((0x1E + 0x28 * hoverFactor) * entrance), 0xFF, 0xFF, 0xFF);
+
+            using (Brush discBrush = new SolidBrush(discBg))
+                g.FillEllipse(discBrush, discRect);
+            using (Pen discPen = new Pen(discBorder, 1f))
+                g.DrawEllipse(discPen, discRect);
+
+            // Иконка плюса внутри кружка
+            int iconSize = Sc(20);
+            RectangleF iconBox = new RectangleF(b.X + (b.Width - iconSize) / 2f, discY + (discDiam - iconSize) / 2f, iconSize, iconSize);
             Icons.Draw(g, Glyph.Plus, iconBox, ink, 1.8f);
 
-            Rectangle textR = new Rectangle(b.X, (int)(iconY + iconSize + gap), b.Width, labelH);
+            // Подпись под кружком
+            Rectangle textR = new Rectangle(b.X, (int)(discY + discDiam + gap), b.Width, labelH);
             Chrome.DrawText(g, label, Theme.FTitle, textR, ink, Chrome.Center | TextFormatFlags.NoClipping);
+
+            // Подзаголовок при наведении в духе Minecraft/Terraria с продюсерским юмором
+            if (hoverFactor > 0.02f)
+            {
+                string splash = (_splashIndex >= 0 && _splashIndex < Splashes.Length) ? Splashes[_splashIndex] : Splashes[0];
+                int padX = Sc(12);
+                int subY = textR.Bottom + Sc(4);
+                Rectangle subR = new Rectangle(b.X + padX, subY, b.Width - padX * 2, Sc(44));
+                Color subTarget = Theme.Interpolate(Theme.TextDim, Theme.Text, 0.35f);
+                Color subColor = Theme.Interpolate(Theme.Bg, subTarget, hoverFactor * entrance);
+                TextFormatFlags flags = TextFormatFlags.HorizontalCenter |
+                                        TextFormatFlags.Top |
+                                        TextFormatFlags.WordBreak |
+                                        TextFormatFlags.NoPrefix |
+                                        TextFormatFlags.NoClipping;
+                Chrome.DrawText(g, splash, Theme.FLabel, subR, subColor, flags);
+            }
         }
 
         void PaintTile(Graphics g, Tile t, Rectangle b, bool hot, float hoverFactor, float entrance)
@@ -1225,25 +1661,48 @@ namespace AbletonManager
             float cardR = Sc(Theme.CardR);
 
             PaintCard(g, b, cardR, alpha);
-            if (selected) Theme.DrawRound(g, b, cardR, Theme.Light, 1.5f);
 
-            Rectangle thumb = new Rectangle(t.Thumb.X, t.Thumb.Y - _scroll, t.Thumb.Width, t.Thumb.Height);
+            // Наведение подсвечивает контур: заливка на стекле почти не меняется,
+            // и без этого карточка на курсор не отзывалась вовсе.
+            if (!selected && hoverFactor > 0.01f)
+                Theme.DrawRound(g, b, cardR,
+                    Color.FromArgb((int)Math.Round(0x3C * hoverFactor * entrance), 255, 255, 255), 1.2f);
+            if (selected)
+            {
+                // Выделение — обычным светлым, не акцентом: акцент выбирают кнопки,
+                // прогресс и переключатели, а обводка активного элемента от выбора
+                // темы не зависит.
+                RectangleF ring = RectangleF.Inflate(b, -0.75f, -0.75f);
+                Color line = Color.FromArgb((int)Math.Round(0xD0 * entrance), Theme.Light);
+                using (GraphicsPath rp = Theme.Round(ring, cardR - 0.75f))
+                using (Pen pen = new Pen(line, 1.5f))
+                    g.DrawPath(pen, rp);
+            }
+
+            // Всё внутри плитки считаем от её собственного прямоугольника: он уже учёл
+            // и прокрутку, и резинку, и сдвиг анимации перехода.
+            int dx = b.X - t.Bounds.X;
+            int dy = b.Y - t.Bounds.Y;
+            Rectangle thumb = new Rectangle(t.Thumb.X + dx, t.Thumb.Y + dy, t.Thumb.Width, t.Thumb.Height);
             Rectangle inner = Rectangle.Inflate(thumb, -Sc(ThumbInset), -Sc(ThumbInset));
             inner.Height = thumb.Height - Sc(ThumbInset);   // снизу картинка идёт вплотную к тексту
-            Theme.FillRound(g, inner, Sc(Theme.ThumbR), Theme.Bg);
+            Color innerBg = entrance < 0.99f ? Color.FromArgb((int)Math.Round(255 * entrance), Theme.Bg) : Theme.Bg;
+            Theme.FillRound(g, inner, Sc(Theme.ThumbR), innerBg);
 
             Bitmap art;
             bool known = _thumbs.TryGetValue(t.Set.Path, out art);
             if (!known)
             {
                 Want(t.Set.Path);
-                Chrome.DrawText(g, L.S("reading…", "читаю…"), Theme.FSmall, inner,
-                                Theme.TextDim, Chrome.Center);
+                Color readC = entrance < 0.99f ? Color.FromArgb((int)Math.Round(Theme.TextDim.A * entrance), Theme.TextDim) : Theme.TextDim;
+                Chrome.DrawText(g, "reading…", Theme.FSmall, inner,
+                                readC, Chrome.Center);
             }
             else if (art == null)
             {
-                Chrome.DrawText(g, L.S("no arrangement", "пусто на линейке"), Theme.FSmall, inner,
-                                Theme.TextDim, Chrome.Center);
+                Color emptyText = Color.FromArgb((int)Math.Round(0xFF * entrance), 0x80, 0x80, 0x84);
+                Chrome.DrawText(g, "no arrangement", Theme.FSmall, inner,
+                                emptyText, Chrome.Center);
             }
             else
             {
@@ -1254,10 +1713,24 @@ namespace AbletonManager
                 {
                     // Используем прэ-масштабированную копию: DrawImage 1:1 без ресемплинга
                     Bitmap scaled = GetScaledThumb(t.Set.Path, art, fit.Size);
-                    if (scaled != null)
-                        g.DrawImage(scaled, fit.X, fit.Y);
+                    Bitmap bmp = scaled ?? art;
+                    if (entrance < 0.99f)
+                    {
+                        using (ImageAttributes ia = new ImageAttributes())
+                        {
+                            ColorMatrix cm = new ColorMatrix();
+                            cm.Matrix33 = Math.Max(0f, Math.Min(1f, entrance));
+                            ia.SetColorMatrix(cm);
+                            g.DrawImage(bmp, fit, 0, 0, bmp.Width, bmp.Height, GraphicsUnit.Pixel, ia);
+                        }
+                    }
                     else
-                        g.DrawImage(art, fit);
+                    {
+                        if (scaled != null)
+                            g.DrawImage(scaled, fit.X, fit.Y);
+                        else
+                            g.DrawImage(art, fit);
+                    }
                 }
             }
 
@@ -1265,39 +1738,52 @@ namespace AbletonManager
             // сама пара строк держится ближе к превью, а не к середине пустого низа.
             int textY = thumb.Bottom + Sc(4);
             Rectangle nameR = new Rectangle(b.X + Sc(16), textY, b.Width - Sc(32), Sc(26));
-            Chrome.DrawText(g, t.Set.Name, Theme.FTitle, nameR, Theme.Text,
+            Color nameC = entrance < 0.99f ? Color.FromArgb((int)Math.Round(Theme.Text.A * entrance), Theme.Text) : Theme.Text;
+            Chrome.DrawText(g, t.Set.Name, Theme.FTitle, nameR, nameC,
                             Chrome.Left | TextFormatFlags.NoClipping);
 
             Rectangle dateR = new Rectangle(b.X + Sc(16), nameR.Bottom + Sc(4), b.Width - Sc(32), Sc(22));
-            Chrome.DrawText(g, t.Subtitle ?? "", Theme.FLabel, dateR, Theme.TextDim,
+            Color dateC = entrance < 0.99f ? Color.FromArgb((int)Math.Round(Theme.TextDim.A * entrance), Theme.TextDim) : Theme.TextDim;
+            Chrome.DrawText(g, t.Subtitle ?? "", Theme.FLabel, dateR, dateC,
                             Chrome.Left | TextFormatFlags.NoClipping);
 
             // Кнопка прослушивания — только если рядом с проектом есть рендер.
+            bool isPlaying = Playing && PlayingTag != null && ReferenceEquals(PlayingTag, t.Set);
             if (t.HasPlay)
             {
-                Rectangle pb = new Rectangle(t.Play.X, t.Play.Y - _scroll, t.Play.Width, t.Play.Height);
+                Rectangle pb = new Rectangle(t.Play.X + dx, t.Play.Y + dy, t.Play.Width, t.Play.Height);
                 bool ph = hot && _playHot;
-                bool playing = Playing && PlayingTag != null && ReferenceEquals(PlayingTag, t.Set);
-                Theme.FillRound(g, pb, pb.Height / 2f, ph ? Color.White : Theme.Light);
-                Icons.Draw(g, playing ? Glyph.Pause : Glyph.Play,
-                           RectangleF.Inflate(pb, -Sc(9), -Sc(9)), Theme.OnLight, 1.4f);
+                Color btnBg = ph ? Color.White : Theme.Light;
+                if (entrance < 0.99f) btnBg = Color.FromArgb((int)Math.Round(btnBg.A * entrance), btnBg);
+                Theme.FillRound(g, pb, pb.Height / 2f, btnBg);
+
+                Color iconC = entrance < 0.99f ? Color.FromArgb((int)Math.Round(Theme.OnLight.A * entrance), Theme.OnLight) : Theme.OnLight;
+                if (isPlaying && !ph)
+                    PlayPulse.Paint(g, RectangleF.Inflate(pb, -Sc(9), -Sc(9)), iconC);
+                else
+                    Icons.Draw(g, isPlaying ? Glyph.Pause : Glyph.Play,
+                               RectangleF.Inflate(pb, -Sc(9), -Sc(9)), iconC, 1.4f);
             }
 
             // Звёздочка: у закреплённого видна всегда, у остальных — под курсором.
             bool pinned = HomeStore.IsPinned(t.Set.Path);
             if (pinned || hot)
             {
-                Rectangle nb = new Rectangle(t.Pin.X, t.Pin.Y - _scroll, t.Pin.Width, t.Pin.Height);
+                Rectangle nb = new Rectangle(t.Pin.X + dx, t.Pin.Y + dy, t.Pin.Width, t.Pin.Height);
                 bool nh = hot && _pinHot;
-                if (nh) Theme.PaintGlassSurface(this, g, nb, nb.Height / 2f, Theme.GlassSurfacePressedAlpha);
+                if (nh) Theme.PaintGlassSurface(this, g, nb, nb.Height / 2f, (int)Math.Round(Theme.GlassSurfacePressedAlpha * entrance));
+                Color starC = pinned ? Theme.Light : (nh ? Theme.Text : Theme.TextDim);
+                if (entrance < 0.99f) starC = Color.FromArgb((int)Math.Round(starC.A * entrance), starC);
                 Icons.Draw(g, pinned ? Glyph.StarFill : Glyph.Star, RectangleF.Inflate(nb, -Sc(6), -Sc(6)),
-                           pinned ? Theme.Light : (nh ? Theme.Text : Theme.TextDim), 1.2f);
+                           starC, 1.2f);
             }
         }
 
         void PaintAllBar(Graphics g)
         {
-            Rectangle r = new Rectangle(_allBar.X, _allBar.Y - _scroll, _allBar.Width, _allBar.Height);
+            int over = _scroller != null ? (int)Math.Round(_scroller.Overscroll) : 0;
+            int barY = (int)Math.Round(_allBarAnimY) - _scroll - over;
+            Rectangle r = new Rectangle(_allBar.X, barY, _allBar.Width, _allBar.Height);
             if (r.Bottom < 0 || r.Top > Height) return;
 
             int barAlpha = _allHot ? Theme.GlassSurfaceHotAlpha : Theme.GlassSurfaceAlpha;
@@ -1305,13 +1791,13 @@ namespace AbletonManager
 
             Rectangle text = new Rectangle(r.X + Sc(20), r.Y, r.Width - Sc(70), r.Height);
             string title = _showAllRecent
-                ? L.S("Show less", "Свернуть")
-                : L.S("Show all projects", "Показать все проекты");
+                ? "Show less"
+                : "Show all projects";
             Chrome.DrawText(g, title, Theme.FTitle, text,
                             _allHot ? Color.White : Theme.Text, Chrome.Left);
 
             int total = Index != null ? Index.Sets.Count : 0;
-            Chrome.DrawText(g, total + L.S(" sets indexed", " сетов в индексе"), Theme.FLabel, text,
+            Chrome.DrawText(g, total + " sets indexed", Theme.FLabel, text,
                             Theme.TextDim, Chrome.Right);
 
             float cx = r.Right - Sc(26), cy = r.Y + r.Height / 2f, s = Sc(5);
@@ -1341,7 +1827,9 @@ namespace AbletonManager
         {
             if (disposing)
             {
-                if (_scrollTimer != null) _scrollTimer.Dispose();
+                PlayPulse.Detach(this);
+                if (_barFade != null) _barFade.Dispose();
+                if (_scroller != null) _scroller.Dispose();
                 DropThumbs();
             }
             base.Dispose(disposing);

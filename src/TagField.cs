@@ -147,7 +147,7 @@ namespace AbletonManager
             if (Selected.Count > 0)
             {
                 if (added > 0) menu.Items.Add(new ToolStripSeparator());
-                ToolStripMenuItem clear = new ToolStripMenuItem(L.S("Clear", "Очистить"));
+                ToolStripMenuItem clear = new ToolStripMenuItem("Clear");
                 clear.Click += delegate { Selected.Clear(); Fire(); };
                 menu.Items.Add(clear);
             }

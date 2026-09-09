@@ -141,10 +141,9 @@ namespace AbletonManager
             Theme.PaintGlassSurface(this, g, card, Sc(Theme.CardR), Theme.GlassAlpha);
 
             string hint = null;
-            if (_arr == null) hint = L.S("Reading the set…", "Читаю сет…");
+            if (_arr == null) hint = "Reading the set…";
             else if (_arr.Error != null) hint = _arr.Error;
-            else if (!_arr.HasContent) hint = L.S("Nothing on the arrangement timeline",
-                                                  "На линейке аранжировки пусто");
+            else if (!_arr.HasContent) hint = "Nothing on the arrangement timeline";
             if (hint != null)
             {
                 Chrome.DrawText(g, hint, Theme.FBody, card, Theme.TextDim, Chrome.Center);

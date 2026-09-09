@@ -21,19 +21,23 @@ namespace AbletonManager.Nebula
         readonly ProjectIndex _index = new ProjectIndex();
 
         readonly CloudView _cloud = new CloudView();
+        readonly DetailPanel _detail = new DetailPanel();
+        ArrangementLoader _arrangements;
+
+        public DetailPanel Detail { get { return _detail; } }
+        public string SelectedPath { get { return _cloud.Selected != null ? _cloud.Selected.Path : null; } }
+        public string InitialPath { get; set; }
+        public event Action<string> ShowInListRequested;
 
         readonly IconButton _folders = new IconButton();
-        readonly IconButton _rescan = new IconButton();
         readonly IconButton _min = new IconButton();
         readonly IconButton _max = new IconButton();
         readonly IconButton _close = new IconButton();
 
         readonly PillToggle _spin = new PillToggle();
-        readonly PillToggle _backups = new PillToggle();
         readonly GlassButton _reset = new GlassButton();
         readonly CameraPresetBar _camera = new CameraPresetBar();
 
-        readonly SeekSlider _blur = new SeekSlider();
         readonly SeekSlider _minFade = new SeekSlider();
         readonly SeekSlider _maxFade = new SeekSlider();
         readonly SeekSlider _minSize = new SeekSlider();
@@ -65,9 +69,10 @@ namespace AbletonManager.Nebula
         DropField[] Fields() { return new DropField[] { _dx, _dy, _dz, _dsize, _dalpha, _dcolor }; }
         ChannelSwitch[] Switches() { return new ChannelSwitch[] { _ex, _ey, _ez, _esize, _ealpha, _ecolor }; }
 
-        Rectangle _rPanel, _rStatus, _rTitle;
+        Rectangle _rPanel, _rStatus;
 
         bool _scanning;
+        bool _rescanPending;
         int _scanDone, _scanTotal;
         CancellationTokenSource _cancel;
 
@@ -80,7 +85,7 @@ namespace AbletonManager.Nebula
             FormBorderStyle = FormBorderStyle.None;
             StartPosition = FormStartPosition.CenterScreen;
             ClientSize = new Size(1360, 860);
-            MinimumSize = new Size(1040, 660);
+            MinimumSize = new Size(1120, 680);
             BackColor = Theme.Bg;
             if (Glass.AppIcon != null) Icon = Glass.AppIcon;
             KeyPreview = true;
@@ -89,6 +94,7 @@ namespace AbletonManager.Nebula
                      ControlStyles.UserPaint | ControlStyles.ResizeRedraw, true);
 
             _settings = Settings.Load();
+            Settings.RootsChanged += OnGlobalRootsChanged;
             Build();
             LoadChannels();
         }
@@ -100,24 +106,37 @@ namespace AbletonManager.Nebula
         void Build()
         {
             Controls.Add(_cloud);
-            _cloud.HoverChanged += delegate { Invalidate(_rPanel); };
-            _cloud.SelectionChanged += delegate { Invalidate(_rPanel); };
-            _cloud.OpenRequested += delegate { OpenSelected(); };
+            _cloud.SelectionChanged += delegate
+            {
+                _detail.Show(_cloud.Selected);
+            };
+            _cloud.OpenRequested += delegate { RevealSelected(); };
+
+            _detail.Index = _index;
+            _arrangements = new ArrangementLoader(this);
+            _arrangements.Ready += _detail.OnArrangement;
+            _detail.Loader = _arrangements;
+            _detail.OpenRequested += delegate { OpenInLive(); };
+            _detail.RevealRequested += delegate { RevealSelected(); };
+            _detail.PreviewRequested += delegate { OpenPreview(); };
+            _detail.ShowInListRequested += delegate { OnShowInList(); };
+            _detail.NotesRequested += delegate (SetEntry s) { EditNotes(s); };
+            _detail.SetRequested += delegate (SetEntry s) { OnSetRequested(s); };
+            _detail.PluginRequested += delegate (string p) { OnPluginRequested(p); };
+            Controls.Add(_detail);
 
             _min.Icon = Glyph.Minimize;
             _max.Icon = Glyph.Maximize;
             _close.Icon = Glyph.Close;
             _close.Danger = true;
             _folders.Icon = Glyph.Folder;
-            _rescan.Icon = Glyph.Refresh;
 
             _min.Click += delegate { WindowState = FormWindowState.Minimized; };
             _max.Click += delegate { ToggleMaximize(); };
             _close.Click += delegate { Close(); };
             _folders.Click += delegate { EditRoots(); };
-            _rescan.Click += delegate { StartScan(); };
 
-            foreach (IconButton b in new IconButton[] { _folders, _rescan, _min, _max, _close })
+            foreach (IconButton b in new IconButton[] { _folders, _min, _max, _close })
                 Controls.Add(b);
 
             _spin.Text = "Spin";
@@ -125,11 +144,6 @@ namespace AbletonManager.Nebula
             _spin.FitToText();
             _spin.CheckedChanged += delegate { _cloud.Spin = _spin.Checked; SaveChannels(); };
             Controls.Add(_spin);
-
-            _backups.Text = "Backups";
-            _backups.FitToText();
-            _backups.CheckedChanged += delegate { Apply(); };
-            Controls.Add(_backups);
 
             _reset.Text = "Reset view";
             _reset.Width = Sc(120);
@@ -147,11 +161,9 @@ namespace AbletonManager.Nebula
             };
             Controls.Add(_camera);
 
-            _blur.Progress = 0.42f;
-            _blur.Seeked += delegate (float v) { _cloud.Softness = v; SaveChannels(); Invalidate(); };
-            Controls.Add(_blur);
+            _cloud.Softness = 0.04f;
 
-            _minFade.Progress = 0.16f;
+            _minFade.Progress = 0.08f;
             _minFade.Seeked += delegate (float v) { _cloud.MinAlpha = v; SaveChannels(); Invalidate(); };
             Controls.Add(_minFade);
 
@@ -159,7 +171,7 @@ namespace AbletonManager.Nebula
             _maxFade.Seeked += delegate (float v) { _cloud.MaxAlpha = v; SaveChannels(); Invalidate(); };
             Controls.Add(_maxFade);
 
-            _minSize.Progress = (2f - MinSizeLo) / (MinSizeHi - MinSizeLo);
+            _minSize.Progress = (1f - MinSizeLo) / (MinSizeHi - MinSizeLo);
             _minSize.Seeked += delegate (float v)
             {
                 _cloud.MinPointRadius = MinSizeLo + v * (MinSizeHi - MinSizeLo);
@@ -226,7 +238,7 @@ namespace AbletonManager.Nebula
         // ------------------------------------------------------------------- каналы
 
         static readonly string[] DefaultChannels =
-            { "tracks", "plugins", "bpm", "projsize", "created", "live" };
+            { "tracks", "plugins", "bpm", "setsize", "created", "live" };
 
         static string ConfigPath { get { return Path.Combine(Settings.Dir, "nebula.cfg"); } }
 
@@ -235,9 +247,9 @@ namespace AbletonManager.Nebula
             string[] ids = (string[])DefaultChannels.Clone();
             bool[] on = { true, true, true, true, true, true };
             bool spin = false;
-            float blur = 0.42f;
-            float minFade = 0.16f, maxFade = 1f;
-            float minSize = 2f, maxSize = 16f;
+            float blur = 0.05f;
+            float minFade = 0.08f, maxFade = 1f;
+            float minSize = 1f, maxSize = 16f;
             string gradId = Palette.Gradients[0].Id;
             try
             {
@@ -274,8 +286,7 @@ namespace AbletonManager.Nebula
             _spin.Checked = spin;
             _cloud.Spin = spin;
 
-            _blur.Progress = blur;
-            _cloud.Softness = blur;
+            _cloud.Softness = 0.04f;
 
             _minFade.Progress = Clamp(minFade, 0f, 1f);
             _cloud.MinAlpha = minFade;
@@ -313,7 +324,7 @@ namespace AbletonManager.Nebula
                     sb.Append(ChannelKeys[i]).Append("_on=").AppendLine(switches[i].Checked ? "1" : "0");
                 }
                 sb.Append("spin=").AppendLine(_spin.Checked ? "1" : "0");
-                sb.Append("blur=").AppendLine(_blur.Progress.ToString("0.###", CultureInfo.InvariantCulture));
+                sb.Append("blur=").AppendLine(_cloud.Softness.ToString("0.###", CultureInfo.InvariantCulture));
                 sb.Append("minfade=").AppendLine(_cloud.MinAlpha.ToString("0.###", CultureInfo.InvariantCulture));
                 sb.Append("maxfade=").AppendLine(_cloud.MaxAlpha.ToString("0.###", CultureInfo.InvariantCulture));
                 sb.Append("minsize=").AppendLine(_cloud.MinPointRadius.ToString("0.##", CultureInfo.InvariantCulture));
@@ -363,13 +374,26 @@ namespace AbletonManager.Nebula
             foreach (SetEntry s in _index.Sets)
             {
                 if (s.Error.Length > 0) continue;
-                if (!_backups.Checked && s.IsBackup) continue;
+                if (s.IsBackup) continue;
                 visible.Add(s);
             }
             _cloud.SetData(visible);
             _hint = visible.Count == 0 && !_scanning
                   ? "Nothing found. Add a folder with .als projects."
                   : "";
+            if (!string.IsNullOrEmpty(InitialPath))
+            {
+                foreach (SetEntry s in visible)
+                {
+                    if (string.Equals(s.Path, InitialPath, StringComparison.OrdinalIgnoreCase))
+                    {
+                        _cloud.Select(s);
+                        break;
+                    }
+                }
+                InitialPath = null;
+            }
+            _detail.Show(_cloud.Selected);
             Invalidate();
         }
 
@@ -391,14 +415,32 @@ namespace AbletonManager.Nebula
                 _settings.DisabledRoots.Clear();
                 _settings.DisabledRoots.AddRange(d.DisabledRoots);
                 _settings.Save();
+                Settings.NotifyRootsChanged(this);
                 StartScan();
                 return true;
             }
         }
 
+        void OnGlobalRootsChanged(object source)
+        {
+            if (source == this || IsDisposed) return;
+            if (InvokeRequired)
+            {
+                try { BeginInvoke((MethodInvoker)delegate { OnGlobalRootsChanged(source); }); } catch { }
+                return;
+            }
+            _settings.ReloadRoots();
+            StartScan();
+        }
+
         void StartScan()
         {
-            if (_scanning) return;
+            if (_scanning)
+            {
+                _rescanPending = true;
+                if (_cancel != null) { try { _cancel.Cancel(); } catch { } }
+                return;
+            }
             if (_settings.Roots.Count == 0) { EditRoots(); return; }
 
             _scanning = true;
@@ -428,6 +470,11 @@ namespace AbletonManager.Nebula
                     {
                         _scanning = false;
                         Apply();
+                        if (_rescanPending)
+                        {
+                            _rescanPending = false;
+                            StartScan();
+                        }
                     });
                 }
                 catch { }
@@ -478,6 +525,7 @@ namespace AbletonManager.Nebula
                     {
                         _weighing = false;
                         _cloud.Rebuild(true);
+                        if (_cloud.Selected != null) _detail.Show(_cloud.Selected);
                         Invalidate();
                     });
                 }
@@ -488,12 +536,80 @@ namespace AbletonManager.Nebula
             t.Start();
         }
 
-        void OpenSelected()
+        void OpenInLive()
+        {
+            SetEntry s = _cloud.Selected;
+            if (s == null || !File.Exists(s.Path)) return;
+            try
+            {
+                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(s.Path) { UseShellExecute = true });
+            }
+            catch { }
+        }
+
+        void RevealSelected()
         {
             SetEntry s = _cloud.Selected;
             if (s == null) return;
-            try { System.Diagnostics.Process.Start("explorer.exe", "/select,\"" + s.Path + "\""); }
+            try
+            {
+                if (File.Exists(s.Path)) System.Diagnostics.Process.Start("explorer.exe", "/select,\"" + s.Path + "\"");
+                else if (Directory.Exists(s.ProjectDir)) System.Diagnostics.Process.Start("explorer.exe", "\"" + s.ProjectDir + "\"");
+            }
             catch { }
+        }
+
+        void OpenPreview()
+        {
+            SetEntry s = _cloud.Selected;
+            if (s == null || !File.Exists(s.Path)) return;
+            using (PreviewDialog d = new PreviewDialog(s, _arrangements))
+                d.ShowDialog(this);
+        }
+
+        void OnShowInList()
+        {
+            string path = SelectedPath;
+            if (ShowInListRequested != null)
+            {
+                ShowInListRequested(path);
+            }
+            else
+            {
+                MainForm mf = Owner as MainForm;
+                if (mf != null && !string.IsNullOrEmpty(path))
+                    mf.SelectSetByPath(path);
+            }
+        }
+
+        void EditNotes(SetEntry s)
+        {
+            if (s == null) return;
+            using (NotesDialog d = new NotesDialog(s))
+            {
+                if (d.ShowDialog(this) != DialogResult.OK) return;
+                _detail.Show(s);
+            }
+        }
+
+        void OnSetRequested(SetEntry s)
+        {
+            if (s == null) return;
+            _cloud.Select(s);
+            _detail.Show(s);
+        }
+
+        void OnPluginRequested(string pluginName)
+        {
+            if (string.IsNullOrEmpty(pluginName)) return;
+            foreach (PluginStat p in _index.PluginUsage())
+            {
+                if (string.Equals(p.Name, pluginName, StringComparison.OrdinalIgnoreCase))
+                {
+                    _detail.ShowPlugin(p);
+                    return;
+                }
+            }
         }
 
         // ------------------------------------------------------------------ раскладка
@@ -526,27 +642,34 @@ namespace AbletonManager.Nebula
             _max.SetBounds(_close.Left - step, y, icon, icon);
             _min.SetBounds(_max.Left - step, y, icon, icon);
 
-            int panelW = Sc(300);
-            int panelX = right - panelW;
+            int detailW = Sc(Theme.PanelW);
+            int detailX = right - detailW;
 
-            _folders.SetBounds(panelX, y, icon, icon);
-            _rescan.SetBounds(panelX + step, y, icon, icon);
+            _folders.SetBounds(detailX, y, icon, icon);
 
-            Size ts = TextRenderer.MeasureText("Nebula", Theme.FHead);
-            _rTitle = new Rectangle(pad, y, ts.Width + Sc(6), icon);
-
-            int x = _rTitle.Right + Sc(20);
+            int x = pad;
             _spin.SetBounds(x, y, _spin.Width, h); x += _spin.Width + Sc(10);
-            _backups.SetBounds(x, y, _backups.Width, h); x += _backups.Width + Sc(10);
             _reset.SetBounds(x, y, _reset.Width, h); x += _reset.Width + Sc(14);
             _camera.SetBounds(x, y, Sc(150), h);
 
-            int top = Sc(Theme.ContentY);
-            int bottom = ClientSize.Height - pad - Sc(24);
+            int panelW = Sc(300);
+            int panelX = pad;
 
-            _cloud.SetBounds(pad, top, Math.Max(Sc(200), panelX - Sc(26) - pad), Math.Max(Sc(200), bottom - top));
-            _rStatus = new Rectangle(pad, bottom + Sc(4), Math.Max(0, panelX - pad), Sc(20));
-            _rPanel = new Rectangle(panelX, top, panelW, Math.Max(0, ClientSize.Height - pad - top));
+            int top = Sc(Theme.ContentY);
+            int panelBottom = ClientSize.Height - pad;
+            _detail.SetBounds(detailX, top, detailW, Math.Max(Sc(120), panelBottom - top));
+
+            int gap = Sc(16);
+            int cloudX = panelX + panelW + gap;
+            int cloudRight = detailX - gap;
+            int cloudW = Math.Max(Sc(200), cloudRight - cloudX);
+
+            int bottom = ClientSize.Height - pad - Sc(24);
+            int cloudH = Math.Max(Sc(200), bottom - top);
+            _cloud.SetBounds(cloudX, top, cloudW, cloudH);
+
+            _rStatus = new Rectangle(cloudX, bottom + Sc(4), cloudW, Sc(20));
+            _rPanel = new Rectangle(panelX, top, panelW, Math.Max(0, panelBottom - top));
 
             DropField[] fields = Fields();
             ChannelSwitch[] switches = Switches();
@@ -567,10 +690,9 @@ namespace AbletonManager.Nebula
             _dgrad.SetBounds(panelX, fy, panelW, h);
             fy += h + Sc(18);
 
-            // Пять ползунков точек — подпись рисуется над каждым в PaintPanel, поэтому
+            // Четыре ползунка точек — подпись рисуется над каждым в PaintPanel, поэтому
             // строка выше самого ползунка тоже входит в шаг.
             int sliderH = Sc(18), labelH = Sc(18), sliderStep = labelH + sliderH + Sc(10);
-            _blur.SetBounds(panelX, fy + labelH, panelW, sliderH); fy += sliderStep;
             _minFade.SetBounds(panelX, fy + labelH, panelW, sliderH); fy += sliderStep;
             _maxFade.SetBounds(panelX, fy + labelH, panelW, sliderH); fy += sliderStep;
             _minSize.SetBounds(panelX, fy + labelH, panelW, sliderH); fy += sliderStep;
@@ -586,8 +708,6 @@ namespace AbletonManager.Nebula
             Graphics g = e.Graphics;
             Chrome.PaintBase(this, g, ClientRectangle, Theme.Backdrop);
             Theme.Smooth(g);
-
-            Chrome.DrawText(g, "Nebula", Theme.FHead, _rTitle, Theme.Text, Chrome.Left);
 
             Chrome.DrawText(g, StatusText(), Theme.FLabel, _rStatus, Theme.TextDim, Chrome.Left);
 
@@ -634,9 +754,6 @@ namespace AbletonManager.Nebula
             if (_dgrad.Visible)
                 SliderLabel(g, x, w, _dgrad.Top - Sc(20), "PALETTE");
 
-            string blurWord = _blur.Progress < 0.15f ? "crisp" : _blur.Progress > 0.75f ? "soft" : "";
-            SliderLabel(g, x, w, _blur.Top, "BLUR" + (blurWord.Length > 0 ? "  ·  " + blurWord.ToUpperInvariant() : ""));
-
             SliderLabel(g, x, w, _minFade.Top,
                         "MIN FADE  ·  " + Math.Round(_cloud.MinAlpha * 100f) + "%");
             SliderLabel(g, x, w, _maxFade.Top,
@@ -656,13 +773,6 @@ namespace AbletonManager.Nebula
                             Theme.FBadge, new Rectangle(x + Sc(4), y, w, Sc(18)), Theme.TextDim, Chrome.Left);
             y += Sc(22);
             if (colorOn) y = PaintLegend(g, x, y, w);
-
-            SetEntry s = _cloud.Hovered != null ? _cloud.Hovered : _cloud.Selected;
-            if (s != null) PaintCard(g, x, y + Sc(18), w, s);
-            else
-                Chrome.DrawText(g, "Point at a dot to read it,\nclick to keep it,\ndouble click to open its folder.",
-                                Theme.FSmall, new Rectangle(x + Sc(4), y + Sc(24), w - Sc(8), Sc(96)),
-                                Theme.TextDim, Chrome.Wrap);
         }
 
         /// <summary>Мелкая подпись строго над контролом — используется поверх ползунков
@@ -752,57 +862,6 @@ namespace AbletonManager.Nebula
             return y + ((rows + 1) / 2) * Sc(20) + Sc(6);
         }
 
-        void PaintCard(Graphics g, int x, int y, int w, SetEntry s)
-        {
-            int pad = Sc(14);
-            int rowH = Sc(22);
-            int h = Sc(58) + rowH * 7 + pad;
-            if (y + h > ClientSize.Height - Sc(Theme.Pad)) h = ClientSize.Height - Sc(Theme.Pad) - y;
-            if (h < Sc(80)) return;
-
-            Rectangle card = new Rectangle(x, y, w, h);
-            Theme.PaintGlassSurface(this, g, card, Sc(Theme.CardR), Theme.GlassSurfaceAlpha);
-
-            int tx = x + pad, tw = w - pad * 2;
-            int ty = y + pad;
-
-            Chrome.DrawText(g, s.Name, Theme.FTitle, new Rectangle(tx, ty, tw, Sc(20)), Theme.Text, Chrome.Left);
-            ty += Sc(20);
-            Chrome.DrawText(g, s.Place, Theme.FBadge, new Rectangle(tx, ty, tw, Sc(16)), Theme.TextDim, Chrome.Left);
-            ty += Sc(24);
-
-            DropField[] fields = Fields();
-            ChannelSwitch[] switches = Switches();
-            for (int i = 0; i < fields.Length; i++)
-            {
-                if (ty + rowH > y + h) break;
-                Metric m = MetricOf(fields[i]);
-                bool on = switches[i].Checked;
-                string value = on ? m.Text(s) : "off";
-
-                // Ширины меряем, а не делим пополам: «Size · Project size» и «2026-08-07»
-                // в одной строке иначе оба обрезаются многоточием ради пустого места
-                // посередине. Если и так не влезает — от подписи остаётся имя канала:
-                // какая под ним величина, видно в списке прямо над карточкой.
-                int vw = Math.Min((int)(tw * 0.55f), TextRenderer.MeasureText(value, Theme.FSmall).Width + Sc(4));
-                int lw = tw - vw - Sc(8);
-                string label = ChannelLabels[i] + " · " + m.Title;
-                if (TextRenderer.MeasureText(label, Theme.FBadge).Width > lw) label = ChannelLabels[i];
-
-                Chrome.DrawText(g, label, Theme.FBadge,
-                                new Rectangle(tx, ty, lw, rowH), Theme.TextDim, Chrome.Left);
-                Chrome.DrawText(g, value, Theme.FSmall,
-                                new Rectangle(tx + tw - vw, ty, vw, rowH), on ? Theme.Text : Theme.TextDim, Chrome.Right);
-                ty += rowH;
-            }
-
-            if (ty + rowH <= y + h)
-            {
-                Chrome.DrawText(g, s.Modified.ToLocalTime().ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture),
-                                Theme.FBadge, new Rectangle(tx, ty, tw, rowH), Theme.TextDim, Chrome.Left);
-            }
-        }
-
         // ------------------------------------------------------------ окно и клавиши
 
         protected override CreateParams CreateParams
@@ -843,13 +902,14 @@ namespace AbletonManager.Nebula
             if (e.KeyCode == Keys.Space) { _spin.Checked = !_spin.Checked; e.Handled = true; }
             else if (e.KeyCode == Keys.R) { _cloud.ResetView(); e.Handled = true; }
             else if (e.KeyCode == Keys.F5) { StartScan(); e.Handled = true; }
-            else if (e.KeyCode == Keys.Enter) { OpenSelected(); e.Handled = true; }
+            else if (e.KeyCode == Keys.Enter) { OpenInLive(); e.Handled = true; }
             else if (e.KeyCode == Keys.Escape) { _cloud.Select(null); e.Handled = true; }
             base.OnKeyDown(e);
         }
 
         protected override void OnFormClosing(FormClosingEventArgs e)
         {
+            Settings.RootsChanged -= OnGlobalRootsChanged;
             if (_cancel != null) { try { _cancel.Cancel(); } catch { } }
             base.OnFormClosing(e);
         }

@@ -227,7 +227,7 @@ namespace AbletonManager
 
             if (string.IsNullOrEmpty(path) || !File.Exists(path))
             {
-                r.Error = L.S("File is gone", "Файла больше нет");
+                r.Error = "File is gone";
                 r.Opening = false;          // поток не запускаем — открывать нечего
                 return;
             }
@@ -300,12 +300,12 @@ namespace AbletonManager
             try
             {
                 if (Mf.MFStartup(Mf.Version, 0) != 0)
-                { r.Error = L.S("Media Foundation is unavailable", "Media Foundation недоступна"); return; }
+                { r.Error = "Media Foundation is unavailable"; return; }
                 mfStarted = true;
 
                 long durationMs;
                 if (!Mf.OpenPcm(r.Path, out reader, out r.Channels, out r.Bits, out r.Rate, out durationMs))
-                { r.Error = L.S("No decoder for this file", "Для этого файла нет декодера"); return; }
+                { r.Error = "No decoder for this file"; return; }
 
                 // Часть WAV (одиночные сэмплы, файлы без индекса) длительности не
                 // сообщает — тогда берём её прямо из заголовка. Если и там пусто,
@@ -315,7 +315,7 @@ namespace AbletonManager
 
                 r.FrameSize = r.Bits / 8 * r.Channels;
                 if (r.FrameSize <= 0)
-                { r.Error = L.S("Unsupported audio format", "Неподдерживаемый формат"); return; }
+                { r.Error = "Unsupported audio format"; return; }
 
                 WaveFormat fmt = new WaveFormat();
                 fmt.Channels = (short)r.Channels;
@@ -326,7 +326,7 @@ namespace AbletonManager
 
                 IntPtr hwo;
                 if (waveOutOpen(out hwo, -1 /* WAVE_MAPPER */, fmt, IntPtr.Zero, IntPtr.Zero, 0) != 0)
-                { r.Error = L.S("The sound device is busy", "Звуковое устройство занято"); return; }
+                { r.Error = "The sound device is busy"; return; }
                 lock (r.Gate) r.Hwo = hwo;
 
                 AllocBuffers(r);

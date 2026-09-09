@@ -31,12 +31,11 @@ namespace AbletonManager
             Caption = set.Name;
             ClientSize = new Size(Sc(560), Sc(430));
 
-            _tags.Cue = L.S("remix, collab, femboycore",
-                            "drum, wip, для Саши — через запятую");
+            _tags.Cue = "remix, collab, femboycore";
             _tags.Box.Text = ProjectMeta.JoinTags(ProjectMeta.TagsOf(_dir));
             Controls.Add(_tags);
 
-            _pick.Text = L.S("Existing…", "Уже есть…");
+            _pick.Text = "Existing…";
             _pick.FitToText(14);
             _pick.Click += delegate { PickExisting(); };
             Controls.Add(_pick);
@@ -55,12 +54,12 @@ namespace AbletonManager
             _note.Text = ProjectMeta.NoteOf(_dir);
             Controls.Add(_note);
 
-            _cancel.Text = L.S("Cancel", "Отмена");
+            _cancel.Text = "Cancel";
             _cancel.FitToText(16);
             _cancel.Click += delegate { DialogResult = DialogResult.Cancel; Close(); };
             Controls.Add(_cancel);
 
-            _save.Text = L.S("Save", "Сохранить");
+            _save.Text = "Save";
             _save.Primary = true;
             _save.FitToText(20);
             _save.Click += delegate { Commit(); };
@@ -98,7 +97,7 @@ namespace AbletonManager
                 m.Items.Add(mi);
             }
             if (m.Items.Count == 0)
-                m.Items.Add(new ToolStripMenuItem(L.S("no tags yet", "тегов пока нет")) { Enabled = false });
+                m.Items.Add(new ToolStripMenuItem("no tags yet") { Enabled = false });
             m.Show(_pick, new Point(0, _pick.Height + Sc(4)));
         }
 
@@ -150,17 +149,17 @@ namespace AbletonManager
             Graphics g = e.Graphics;
             Theme.Smooth(g);
 
-            Chrome.DrawText(g, L.S("Tags (separate by comma)", "Теги (через запятую)"),
+            Chrome.DrawText(g, "Tags (separate by comma)",
                             Theme.FLabel, _labelTags, Theme.TextDim,
                             Chrome.Left | TextFormatFlags.NoClipping);
-            Chrome.DrawText(g, L.S("Notes", "Заметки"), Theme.FLabel, _labelNote, Theme.TextDim,
+            Chrome.DrawText(g, "Notes", Theme.FLabel, _labelNote, Theme.TextDim,
                             Chrome.Left | TextFormatFlags.NoClipping);
 
             // Подложка под нативным полем: сам TextBox рисует только текст на своём фоне,
             // скруглить себя он не умеет.
             if (_noteBox.Width > 0) Theme.FillRound(g, _noteBox, Sc(10), Theme.Sunken);
 
-            Chrome.DrawText(g, L.S("Ctrl+Enter to save", "Ctrl+Enter — сохранить"), Theme.FBadge,
+            Chrome.DrawText(g, "Ctrl+Enter to save", Theme.FBadge,
                             new Rectangle(Card.Left + Sc(Theme.Pad), _save.Top,
                                           Card.Width, _save.Height),
                             Theme.TextDim, Chrome.Left | TextFormatFlags.VerticalCenter);

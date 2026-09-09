@@ -2,7 +2,9 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Drawing;
+using System.Drawing.Drawing2D;
 using System.IO;
+using System.Runtime.InteropServices;
 using System.Threading;
 using System.Windows.Forms;
 
@@ -84,6 +86,19 @@ namespace AbletonManager
         public event Action PlayStateChanged;
 
         public AudioPlayer Audio { get { return _audio; } }
+        public RenderFile CurrentFile
+        {
+            get { return _current >= 0 && _current < _files.Count ? _files[_current] : null; }
+        }
+        public string CurrentFileName
+        {
+            get
+            {
+                RenderFile f = CurrentFile;
+                if (f == null) return "";
+                return Path.GetFileName(f.Path);
+            }
+        }
         public float Volume { get { return _vol.Value; } set { _vol.Value = value; } }
         public void Seek(int ms) { if (_audio != null && _audio.IsOpen) _audio.Seek(ms); }
 
@@ -93,7 +108,7 @@ namespace AbletonManager
 
         public PlayerDialog()
         {
-            Caption = L.S("Player", "Плеер");
+            Caption = "Player";
             StartPosition = FormStartPosition.Manual;
             ShowInTaskbar = true;
             if (Glass.AppIcon != null) Icon = Glass.AppIcon;
@@ -132,12 +147,12 @@ namespace AbletonManager
             _list.RowRightClicked += OnRowMenu;
             Controls.Add(_list);
 
-            _pin.Text = L.S("Set as Preview", "Сделать главным");
+            _pin.Text = "Set as Preview";
             _pin.FitToText(18);
             _pin.Click += delegate { PinSelected(); };
             Controls.Add(_pin);
 
-            _reveal.Text = L.S("Show in folder", "Показать в папке");
+            _reveal.Text = "Show in folder";
             _reveal.FitToText(18);
             _reveal.Click += delegate { Reveal(SelectedFile()); };
             Controls.Add(_reveal);
@@ -196,8 +211,7 @@ namespace AbletonManager
                 _audio.Close();
                 _wave.Wave = null;
                 _wave.Progress = 0f;
-                _note = L.S("No renders next to this project (Samples are skipped)",
-                            "Рядом с проектом нет рендеров (Samples не в счёт)");
+                _note = "No renders next to this project (Samples are skipped)";
             }
             else if (!sameSet || !_audio.IsOpen || _current < 0)
             {
@@ -219,24 +233,30 @@ namespace AbletonManager
 
         void FillList()
         {
-            _list.SetColumns(
-                new Column(L.S("File", "Файл"), 0) { Id = "name", Font = Theme.FTitle, Color = Theme.Text },
-                new Column(L.S("Folder", "Папка"), 90) { Id = "dir" },
-                new Column(L.S("Modified", "Изменён"), 150) { Id = "mod" });
+            // Колонку папки показываем, только если она хоть у кого-то заполнена: у
+            // рендеров рядом с сетом папки нет, и пустой столбец с живым заголовком
+            // занимал место и ничего не сообщал.
+            bool anyFolder = false;
+            foreach (RenderFile f in _files)
+                if (!string.IsNullOrEmpty(f.Folder)) { anyFolder = true; break; }
+
+            List<Column> cols = new List<Column>();
+            cols.Add(new Column("File", 0) { Id = "name", Font = Theme.FTitle, Color = Theme.Text });
+            if (anyFolder) cols.Add(new Column("Folder", 90) { Id = "dir" });
+            cols.Add(new Column("Modified", 150) { Id = "mod" });
+            _list.SetColumns(cols.ToArray());
 
             List<RowData> rows = new List<RowData>();
             foreach (RenderFile f in _files)
             {
                 RowData r = new RowData();
-                r.Cells = new string[] {
-                    // С расширением: рядом обычно лежат «имя.wav» и «имя.mp3» одного
-                    // рендера, и без него две строки в списке неотличимы.
-                    f.Name + "." + f.Ext.ToLowerInvariant(),
-                    // Корень проекта — случай по умолчанию, и подписывать его нечем:
-                    // пустая ячейка сама говорит «файл лежит рядом с сетом».
-                    f.Folder,
-                    f.Modified == default(DateTime) ? "" : f.Modified.ToLocalTime().ToString("yyyy-MM-dd")
-                };
+                List<string> cells = new List<string>();
+                // С расширением: рядом обычно лежат «имя.wav» и «имя.mp3» одного
+                // рендера, и без него две строки в списке неотличимы.
+                cells.Add(f.Name + "." + f.Ext.ToLowerInvariant());
+                if (anyFolder) cells.Add(f.Folder);
+                cells.Add(f.Modified == default(DateTime) ? "" : f.Modified.ToLocalTime().ToString("yyyy-MM-dd"));
+                r.Cells = cells.ToArray();
                 r.Pinned = f.Pinned;
                 r.Tag = f;
                 rows.Add(r);
@@ -263,7 +283,7 @@ namespace AbletonManager
             _wave.Wave = null;
             _wave.Progress = 0f;
             _lastHeadPx = -1;
-            _wave.Hint = L.S("reading…", "читаю…");
+            _wave.Hint = "reading…";
             _note = "";
 
             // Огибающую считаем в любом случае: даже если файл не заиграл, увидеть,
@@ -279,6 +299,7 @@ namespace AbletonManager
             _atEnd = false;
 
             UpdatePlayIcon();
+            if (PlayStateChanged != null) PlayStateChanged();
             Invalidate(true);
         }
 
@@ -493,17 +514,17 @@ namespace AbletonManager
 
             ContextMenuStrip m = DarkMenu.Create();
 
-            ToolStripMenuItem play = new ToolStripMenuItem(L.S("Play", "Играть"));
+            ToolStripMenuItem play = new ToolStripMenuItem("Play");
             play.Click += delegate { PlayIndex(idx, true); };
             m.Items.Add(play);
 
             ToolStripMenuItem pin = new ToolStripMenuItem(
-                f.Pinned ? L.S("Clear preview", "Снять главный") : L.S("Set as Preview", "Сделать главным"));
+                f.Pinned ? "Clear preview" : "Set as Preview");
             pin.Checked = f.Pinned;
             pin.Click += delegate { Pin(f); };
             m.Items.Add(pin);
 
-            ToolStripMenuItem show = new ToolStripMenuItem(L.S("Show in folder", "Показать в папке"));
+            ToolStripMenuItem show = new ToolStripMenuItem("Show in folder");
             show.Click += delegate { Reveal(f); };
             m.Items.Add(show);
 
@@ -618,14 +639,92 @@ namespace AbletonManager
             Location = new Point(Math.Max(wa.X, x), Math.Max(wa.Y, y));
         }
 
+        [DllImport("user32.dll")]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        static extern bool SetForegroundWindow(IntPtr hWnd);
+
+        /// <summary>
+        /// Закрытие окна плеера — это Hide, а не уничтожение формы.
+        /// Если просто скрыть активное окно с ShowInTaskbar, Windows перенесёт фокус на
+        /// предыдущее активное приложение (браузер, проводник и т.д.), а не на главное
+        /// окно менеджера. Явно активируем владельца перед скрытием и подтверждаем после.
+        /// </summary>
+        void Dismiss()
+        {
+            _lastLocation = Location;
+            _lastVolume = _vol.Value;
+
+            ActivateFallback();
+            Hide();
+            ActivateFallback();
+        }
+
+        void ActivateFallback()
+        {
+            Form target = null;
+
+            // 1. Если поверх открыт модальный диалог (например, фильтры или настройки) —
+            // фокус должен вернуться в него, а не в отключенное главное окно.
+            for (int i = Application.OpenForms.Count - 1; i >= 0; i--)
+            {
+                Form f = Application.OpenForms[i];
+                if (f != this && f.Visible && !f.IsDisposed && f.Enabled && f.WindowState != FormWindowState.Minimized)
+                {
+                    if (f.Modal) { target = f; break; }
+                }
+            }
+
+            // 2. Иначе — владелец окна (главное окно менеджера).
+            if (target == null && Owner != null && !Owner.IsDisposed && Owner.Visible && Owner.Enabled &&
+                Owner.WindowState != FormWindowState.Minimized)
+            {
+                target = Owner;
+            }
+
+            // 3. Любая другая активная и видимая форма приложения.
+            if (target == null)
+            {
+                for (int i = Application.OpenForms.Count - 1; i >= 0; i--)
+                {
+                    Form f = Application.OpenForms[i];
+                    if (f != this && f.Visible && !f.IsDisposed && f.Enabled && f.WindowState != FormWindowState.Minimized)
+                    {
+                        target = f;
+                        break;
+                    }
+                }
+            }
+
+            if (target != null && target.IsHandleCreated)
+            {
+                try
+                {
+                    SetForegroundWindow(target.Handle);
+                    target.Activate();
+                }
+                catch { }
+            }
+        }
+
+        bool _shuttingDown;
+
+        /// <summary>
+        /// Закрыть насовсем — вместе со звуком и мини-транспортом. Крестик самого окна
+        /// плеера только прячет его (слушать и дальше разбирать библиотеку — одно и то
+        /// же занятие), а крестик в мини-полосе должен означать «хватит».
+        /// </summary>
+        public void ShutDown()
+        {
+            _shuttingDown = true;
+            Close();
+        }
+
         protected override void OnFormClosing(FormClosingEventArgs e)
         {
-            if (e.CloseReason == CloseReason.UserClosing)
+            if (e.CloseReason == CloseReason.UserClosing && !_shuttingDown)
             {
                 e.Cancel = true;
-                _lastLocation = Location;
-                _lastVolume = _vol.Value;
-                Hide();
+                Dismiss();
                 return;
             }
             base.OnFormClosing(e);
@@ -660,9 +759,7 @@ namespace AbletonManager
             if (e.KeyCode == Keys.Left && e.Control) { Step(-1); e.Handled = true; return; }
             if (e.KeyCode == Keys.Escape)
             {
-                _lastLocation = Location;
-                _lastVolume = _vol.Value;
-                Hide();
+                Dismiss();
                 e.Handled = true;
                 return;
             }
@@ -774,8 +871,14 @@ namespace AbletonManager
                         Theme.TextDim, Chrome.Center);
             }
 
-            using (Pen head = new Pen(Theme.Text, 1.5f))
-                g.DrawLine(head, playedX, inner.Y, playedX, inner.Bottom);
+            // Плейхед со скруглёнными концами — иначе линия в 1.5px обрывается квадратом
+            // и на волне читается как случайный столбик.
+            using (Pen head = new Pen(Color.White, 1.5f))
+            {
+                head.StartCap = LineCap.Round;
+                head.EndCap = LineCap.Round;
+                g.DrawLine(head, playedX, inner.Y + 1, playedX, inner.Bottom - 1);
+            }
         }
     }
 
@@ -838,9 +941,14 @@ namespace AbletonManager
             Chrome.PaintBase(this, g, Surface);
             Theme.Smooth(g);
 
-            float box = Sc(18);
-            Icons.Draw(g, _value <= 0.001f ? Glyph.Mute : Glyph.Volume,
-                       new RectangleF(Sc(2), (Height - box) / 2f, box, box), Theme.TextDim, 1.4f);
+            float iconW = Sc(17);
+            float iconH = Sc(13);
+            RectangleF iconRect = new RectangleF(Sc(3), (Height - iconH) / 2f, iconW, iconH);
+            Color iconColor = Hot || _drag ? Color.White : Theme.Light;
+            Glyph volGlyph = _value <= 0.001f ? Glyph.Volume0
+                           : _value <= 0.5f ? Glyph.VolumeLow
+                           : Glyph.VolumeHigh;
+            Icons.Draw(g, volGlyph, iconRect, iconColor, 1.5f);
 
             Rectangle t = Track;
             Theme.FillRound(g, t, t.Height / 2f, Theme.Surface);

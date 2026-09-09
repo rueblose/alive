@@ -24,13 +24,13 @@ namespace AbletonManager
             try
             {
                 if (Mf.MFStartup(Mf.Version, 0) != 0)
-                { w.Note = L.S("no decoder", "нет декодера"); return w; }
+                { w.Note = "no decoder"; return w; }
                 started = true;
 
                 int channels, bits, rate;
                 long durationMs;
                 if (!Mf.OpenPcm(path, out reader, out channels, out bits, out rate, out durationMs))
-                { w.Note = L.S("cannot decode", "не декодируется"); return w; }
+                { w.Note = "cannot decode"; return w; }
 
                 // OpenPcm всегда конвертирует в float32 — фиксированная раскладка без
                 // вариаций упаковки, никаких «bits» из атрибутов тут не нужно.
@@ -87,13 +87,13 @@ namespace AbletonManager
                 }
 
                 if (inBlock > 0 && bMax >= bMin) { mins.Add(bMin); maxs.Add(bMax); }
-                if (mins.Count == 0) { w.Note = L.S("silent or empty", "пусто"); return w; }
+                if (mins.Count == 0) { w.Note = "silent or empty"; return w; }
 
                 Resample(mins, maxs, buckets, w);
                 w.Ok = true;
                 return w;
             }
-            catch { w.Note = L.S("cannot decode", "не декодируется"); return w; }
+            catch { w.Note = "cannot decode"; return w; }
             finally
             {
                 Mf.Release(reader);

@@ -1,5 +1,6 @@
 using System;
 using System.Drawing;
+using System.Drawing.Drawing2D;
 using System.Windows.Forms;
 
 namespace AbletonManager
@@ -20,9 +21,8 @@ namespace AbletonManager
         int InnerPad { get { return Sc(16); } }
         int TextLeft { get { return InnerPad; } }
 
-        // Вырезает контрол по форме пилюли (см. GlassControl.OnResize) — без этого
-        // за скруглёнными углами всё равно оставался бы прямоугольник: заливка фона
-        // ниже красит весь Bounds, а скругление рисуется только поверх него.
+        // Вырезает контрол по форме пилюли — без этого за скруглёнными углами
+        // оставался бы прямоугольник, закрывающий содержимое под контролом.
         protected override float PillRadius { get { return Sc(Theme.CardR); } }
 
         public Toast()
@@ -39,6 +39,29 @@ namespace AbletonManager
                 _fadingOut = true;
                 AnimEngine.Register(this);
             };
+        }
+
+        protected override void OnResize(EventArgs e)
+        {
+            base.OnResize(e);
+            UpdateRegion();
+        }
+
+        void UpdateRegion()
+        {
+            if (Width <= 0 || Height <= 0) return;
+            float r = PillRadius;
+            if (r <= 0f)
+            {
+                if (Region != null) { Region.Dispose(); Region = null; }
+                return;
+            }
+            using (GraphicsPath p = Theme.Round(new RectangleF(0, 0, Width, Height), r))
+            {
+                Region old = Region;
+                Region = new Region(p);
+                if (old != null) old.Dispose();
+            }
         }
 
         /// <summary>Показать текст и погасить через ms миллисекунд.</summary>
@@ -74,6 +97,7 @@ namespace AbletonManager
             int margin = Sc(18);
             int y = Math.Max(content.Top, content.Bottom - h - margin);
             SetBounds(content.Left, y, w, h);
+            UpdateRegion();
         }
 
         public override bool OnAnimTick()
@@ -99,31 +123,29 @@ namespace AbletonManager
 
         protected override void Dispose(bool disposing)
         {
-            if (disposing) _hideTimer.Dispose();
+            if (disposing)
+            {
+                _hideTimer.Dispose();
+                if (Region != null) { Region.Dispose(); Region = null; }
+            }
             base.Dispose(disposing);
         }
+
+        protected override void OnPaintBackground(PaintEventArgs e) { }
 
         protected override void OnPaint(PaintEventArgs e)
         {
             Graphics g = e.Graphics;
             Theme.Smooth(g);
 
-            // Полностью непрозрачная подложка — без стекла и вообще без прозрачности.
-            // Пробовал через PaintGlassSurface: у него что сама заливка, что уголки
-            // прямоугольника снаружи скругления — настоящая акриловая дыра в окне, а
-            // она показывает не соседние плитки программы, а то, что реально ЗА окном
-            // на рабочем столе, — и это ПОСТОЯННО, а не только на входе/выходе. Стоит
-            // там чему-то шевельнуться (другое окно, курсор), плашка на глазах меняет
-            // цвет, хотя сама ничего не анимирует. Появление и исчезновение делаем не
-            // альфой, а перетеканием цвета между фоном и цветом плашки — снаружи тот же
-            // мягкий переход, а пиксель остаётся честно непрозрачным всегда.
-            Color baseBg = Theme.Bg;
-            g.FillRectangle(Theme.GetBrush(baseBg), new Rectangle(0, 0, Width, Height));
             if (_alpha <= 0.01f) return;
 
+            Color baseBg = Theme.Backdrop;
+            Color cardColor = Theme.Interpolate(baseBg, Theme.SurfacePressed, _alpha);
             RectangleF card = new RectangleF(0, 0, Width, Height);
-            float r = Sc(Theme.CardR);
-            Theme.FillRound(g, card, r, Theme.Interpolate(baseBg, Theme.SurfacePressed, _alpha));
+            float r = PillRadius;
+            g.Clear(cardColor);
+            Theme.FillRound(g, card, r, cardColor);
 
             Chrome.DrawText(g, _text, Font,
                 new Rectangle(TextLeft, 0, Math.Max(0, Width - TextLeft - InnerPad), Height),

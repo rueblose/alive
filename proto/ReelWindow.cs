@@ -68,7 +68,7 @@ namespace Reel
 
         public ReelWindow(string startPath)
         {
-            Caption = L.S("Forks", "Версии");
+            Caption = "Forks";
             if (Glass.AppIcon != null) Icon = Glass.AppIcon;
 
             Build();
@@ -86,16 +86,16 @@ namespace Reel
             // сохранил» вспоминается либо словами, либо восемью знаками хеша, которые
             // стоят и в имени файла в проводнике.
             _search.ShowClear = true;
-            _search.Cue = L.S("Search comments and ids", "Поиск по сообщениям и id");
+            _search.Cue = "Search comments and ids";
             _search.Box.TextChanged += delegate { FillHistory(0); };
             Controls.Add(_search);
 
-            _reveal.Text = L.S("Show file", "Показать файл");
+            _reveal.Text = "Show file";
             _reveal.FitToText(16);
             _reveal.Click += delegate { RevealSelected(); };
             Controls.Add(_reveal);
 
-            _restore.Text = L.S("Restore", "Вернуть");
+            _restore.Text = "Restore";
             _restore.FitToText(18);
             _restore.Click += delegate { RestoreSelected(); };
             Controls.Add(_restore);
@@ -103,12 +103,12 @@ namespace Reel
             // Restore чинит откатом на старую версию, Rescue — диагностикой текущей: два
             // разных ответа на один и тот же повод открыть Reel («сет не открывается»),
             // поэтому кнопки стоят рядом.
-            _rescue.Text = L.S("Rescue", "Восстановить");
+            _rescue.Text = "Rescue";
             _rescue.FitToText(18);
             _rescue.Click += delegate { RescueCurrent(); };
             Controls.Add(_rescue);
 
-            _snap.Text = L.S("Snapshot", "Снимок");
+            _snap.Text = "Snapshot";
             _snap.Primary = true;
             _snap.FitToText(20);
             _snap.Click += delegate { TakeSnapshot(); };
@@ -123,10 +123,10 @@ namespace Reel
             _list.RowRightClicked += RowMenu;
             Controls.Add(_list);
 
-            _diff.EmptyText = L.S("Nothing selected", "Ничего не выбрано");
+            _diff.EmptyText = "Nothing selected";
             Controls.Add(_diff);
 
-            _deps.EmptyText = L.S("Nothing selected", "Ничего не выбрано");
+            _deps.EmptyText = "Nothing selected";
             Controls.Add(_deps);
         }
 
@@ -234,8 +234,8 @@ namespace Reel
                                 Chrome.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.PathEllipsis);
             }
 
-            SectionLabel(g, _rDiffLabel, L.S("WHAT CHANGED", "ЧТО ИЗМЕНИЛОСЬ"), _compared, 0);
-            SectionLabel(g, _rDepsLabel, L.S("NEEDED TO OPEN", "ЧТО НУЖНО"), "", 0);
+            SectionLabel(g, _rDiffLabel, "WHAT CHANGED", _compared, 0);
+            SectionLabel(g, _rDepsLabel, "NEEDED TO OPEN", "", 0);
 
             if (_store != null)
             {
@@ -244,7 +244,7 @@ namespace Reel
                 // самое, потому что рисует его само окно, а не список: всё, что
                 // нарисовано в границах RowListView, он закрывает своей отрисовкой.
                 string left = _store.Entries.Count == 0
-                    ? L.S("No snapshots yet — press Snapshot, or turn on Auto-save", "")
+                    ? "No snapshots yet — press Snapshot, or turn on Auto-save"
                     : _store.Describe();
 
                 Chrome.DrawText(g, left, Theme.FSmall, _rStore, Theme.TextDim,
@@ -256,7 +256,7 @@ namespace Reel
 
             if (_alsPath.Length == 0)
             {
-                Chrome.DrawText(g, L.S("Pick a project in the catalogue and press Forks", "Выберите проект в каталоге"),
+                Chrome.DrawText(g, "Pick a project in the catalogue and press Forks",
                                 Theme.FBody, _rEmpty, Theme.TextDim,
                                 Chrome.Left | TextFormatFlags.VerticalCenter);
             }
@@ -330,7 +330,7 @@ namespace Reel
 
         void LoadEnvironmentAsync()
         {
-            Status(L.S("Reading Live configuration…", ""));
+            Status("Reading Live configuration…");
             ThreadPool.QueueUserWorkItem(delegate
             {
                 LiveEnvironment env = LiveEnvironment.Detect();
@@ -340,8 +340,8 @@ namespace Reel
                     _env = env;
                     _inv = inv;
                     Status(inv.IsEmpty
-                        ? L.S("Live has no plugin database — plugin checks will be unknown", "")
-                        : inv.All.Count + L.S(" plugins installed", ""));
+                        ? "Live has no plugin database — plugin checks will be unknown"
+                        : inv.All.Count + " plugins installed");
                     if (_store != null) Recompute();
                 });
             });
@@ -358,7 +358,7 @@ namespace Reel
             FillHistory(0);
 
             if (_store.Entries.Count == 0)
-                Status(L.S("No versions yet — press Snapshot to keep this one", ""));
+                Status("No versions yet — press Snapshot to keep this one");
 
             Invalidate();
         }
@@ -401,11 +401,11 @@ namespace Reel
             // «531.5 KB» и восьмизначный хеш должны помещаться целиком — обрезанный
             // размер или хеш бесполезны, их читают ради последних знаков.
             List<Column> cols = new List<Column>();
-            cols.Add(new Column(L.S("When", "Когда"), 165));
-            cols.Add(new Column(L.S("Message", "Сообщение"), 0));
-            if (showSet) cols.Add(new Column(L.S("Set", "Сет"), 180));
-            cols.Add(new Column(L.S("Size", "Размер"), 135) { Right = true });
-            cols.Add(new Column(L.S("Id", "Id"), 135) { Font = Theme.FSmall, Color = Theme.TextDim });
+            cols.Add(new Column("When", 165));
+            cols.Add(new Column("Message", 0));
+            if (showSet) cols.Add(new Column("Set", 180));
+            cols.Add(new Column("Size", 135) { Right = true });
+            cols.Add(new Column("Id", 135) { Font = Theme.FSmall, Color = Theme.TextDim });
 
             _list.SetColumns(cols.ToArray());
             _showSet = showSet;
@@ -448,9 +448,9 @@ namespace Reel
 
                 RowData r = new RowData();
                 r.Cells = Cells(
-                    L.S("Working file", "Текущий файл"),
-                    w.Dirty ? L.S("not snapshotted yet", "")
-                            : (w.Known ? L.S("same as latest snapshot", "") : L.S("cannot read the file", "")),
+                    "Working file",
+                    w.Dirty ? "not snapshotted yet"
+                            : (w.Known ? "same as latest snapshot" : "cannot read the file"),
                     Path.GetFileName(_alsPath), "", "");
                 r.Tag = w;
                 r.CanPlay = false;
@@ -502,13 +502,13 @@ namespace Reel
                 if (s == null)
                 {
                     Status(string.IsNullOrEmpty(_store.Error)
-                        ? L.S("Nothing changed since the last snapshot", "")
-                        : L.S("Could not save: ", "") + _store.Error);
+                        ? "Nothing changed since the last snapshot"
+                        : "Could not save: " + _store.Error);
                     FillHistory(-1);
                     return;
                 }
 
-                Status(L.S("Snapshot ", "") + s.Short + (s.Message.Length > 0 ? " — " + s.Message : ""));
+                Status("Snapshot " + s.Short + (s.Message.Length > 0 ? " — " + s.Message : ""));
 
                 // Показываем именно его: под открытым поиском новая запись могла бы в
                 // список и не попасть, а после сохранения человек ждёт увидеть её.
@@ -524,18 +524,18 @@ namespace Reel
             if (s == null || _store == null) return;
 
             string target = Path.Combine(_projectDir, s.Source);
-            string question = L.S("Replace", "") + "\n\n    " + s.Source + "\n\n"
-                            + L.S("with the version from ", "") + s.Time.ToString("d MMM yyyy, HH:mm") + "?\n\n"
-                            + L.S("The current file goes into history first.", "") + "\n\n"
-                            + L.S("Close the set in Live before restoring.", "");
+            string question = "Replace" + "\n\n    " + s.Source + "\n\n"
+                            + "with the version from " + s.Time.ToString("d MMM yyyy, HH:mm") + "?\n\n"
+                            + "The current file goes into history first." + "\n\n"
+                            + "Close the set in Live before restoring.";
 
-            if (MessageBox.Show(this, question, L.S("Restore version", ""),
+            if (MessageBox.Show(this, question, "Restore version",
                                 MessageBoxButtons.OKCancel, MessageBoxIcon.Question) != DialogResult.OK) return;
 
             string note;
             bool ok = _store.Restore(s, target, out note);
-            Status(ok ? L.S("Restored ", "") + s.Short + " — " + note
-                      : L.S("Restore failed: ", "") + note);
+            Status(ok ? "Restored " + s.Short + " — " + note
+                      : "Restore failed: " + note);
             FillHistory(0);
         }
 
@@ -548,7 +548,7 @@ namespace Reel
         void RescueCurrent()
         {
             if (_alsPath.Length == 0) return;
-            if (!File.Exists(_alsPath)) { Status(L.S("The file is gone: ", "") + _alsPath); return; }
+            if (!File.Exists(_alsPath)) { Status("The file is gone: " + _alsPath); return; }
 
             SetEntry set = new SetEntry();
             set.Path = _alsPath;
@@ -563,7 +563,7 @@ namespace Reel
                 d.ShowDialog(this);
                 if (d.Produced.Length > 0)
                 {
-                    Status(L.S("Saved ", "") + Path.GetFileName(d.Produced));
+                    Status("Saved " + Path.GetFileName(d.Produced));
                     // Спасённая копия — новый .als в папке проекта; список слева её не
                     // подхватит сам, пока не перечитать склад.
                     ReloadStore();
@@ -585,7 +585,7 @@ namespace Reel
                 if (File.Exists(path)) Process.Start("explorer.exe", "/select,\"" + path + "\"");
                 else if (_projectDir.Length > 0 && Directory.Exists(_projectDir))
                     Process.Start("explorer.exe", "\"" + _projectDir + "\"");
-                else { Status(L.S("The file is gone: ", "") + path); return; }
+                else { Status("The file is gone: " + path); return; }
 
                 Status(path);
             }
@@ -611,12 +611,12 @@ namespace Reel
 
             ContextMenuStrip m = DarkMenu.Create();
 
-            ToolStripMenuItem show = new ToolStripMenuItem(L.S("Show file in Explorer", ""));
+            ToolStripMenuItem show = new ToolStripMenuItem("Show file in Explorer");
             show.Click += delegate { RevealSelected(); };
             m.Items.Add(show);
 
             bool isSnapshot = _list.Rows[index].Tag is Snapshot;
-            ToolStripMenuItem restore = new ToolStripMenuItem(L.S("Restore this version…", ""));
+            ToolStripMenuItem restore = new ToolStripMenuItem("Restore this version…");
             restore.Enabled = isSnapshot;
             restore.Click += delegate { RestoreSelected(); };
             m.Items.Add(restore);
@@ -643,7 +643,7 @@ namespace Reel
             {
                 newPath = w.Path;
                 older = _store.LastOf(Path.GetFileName(w.Path));
-                title = L.S("working file", "");
+                title = "working file";
             }
             else
             {
@@ -656,13 +656,13 @@ namespace Reel
             string oldPath = older != null ? older.ObjectPath : null;
             _compared = (older != null
                             ? older.Time.ToString("d MMM, HH:mm", CultureInfo.CurrentCulture)
-                            : L.S("nothing earlier", ""))
+                            : "nothing earlier")
                       + "  →  " + title;
 
             string displayName = Path.GetFileName(w != null ? w.Path : ((Snapshot)sel).Source);
 
-            _diff.SetItems(new LineItem[] { new LineItem(L.S("reading…", ""), Theme.TextDim) });
-            _deps.SetItems(new LineItem[] { new LineItem(L.S("reading…", ""), Theme.TextDim) });
+            _diff.SetItems(new LineItem[] { new LineItem("reading…", Theme.TextDim) });
+            _deps.SetItems(new LineItem[] { new LineItem("reading…", Theme.TextDim) });
             Invalidate();
 
             int job = ++_job;
@@ -721,7 +721,7 @@ namespace Reel
 
             if (rep.Error != null)
             {
-                res.Add(new LineItem(L.S("Cannot read set: ", "") + rep.Error, Theme.Red));
+                res.Add(new LineItem("Cannot read set: " + rep.Error, Theme.Red));
                 return res;
             }
 
@@ -751,20 +751,20 @@ namespace Reel
 
         static string Summary(SetModel m, DependencyReport rep)
         {
-            string s = m.Tracks.Count + L.S(" tracks, ", "") + m.TotalClips + L.S(" clips, ", "")
-                     + m.DeviceCount + L.S(" devices", "");
+            string s = m.Tracks.Count + " tracks, " + m.TotalClips + " clips, "
+                     + m.DeviceCount + " devices";
             if (m.Tempo > 0) s += ", " + m.Tempo.ToString("0.##", CultureInfo.InvariantCulture) + " BPM";
             if (m.Key.Length > 0) s += ", " + m.Key;
 
             if (rep.MissingSamples > 0 || rep.MissingPlugins > 0 || rep.MissingPacks > 0)
             {
                 List<string> parts = new List<string>();
-                if (rep.MissingSamples > 0) parts.Add(rep.MissingSamples + L.S(" samples", ""));
-                if (rep.MissingPlugins > 0) parts.Add(rep.MissingPlugins + L.S(" plugins", ""));
-                if (rep.MissingPacks > 0) parts.Add(rep.MissingPacks + L.S(" packs", ""));
-                s += L.S("   ·   missing: ", "") + string.Join(", ", parts.ToArray());
+                if (rep.MissingSamples > 0) parts.Add(rep.MissingSamples + " samples");
+                if (rep.MissingPlugins > 0) parts.Add(rep.MissingPlugins + " plugins");
+                if (rep.MissingPacks > 0) parts.Add(rep.MissingPacks + " packs");
+                s += "   ·   missing: " + string.Join(", ", parts.ToArray());
             }
-            else s += L.S("   ·   everything on this machine", "");
+            else s += "   ·   everything on this machine";
 
             return s;
         }

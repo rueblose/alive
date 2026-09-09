@@ -3,16 +3,21 @@ using System.Collections.Generic;
 using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.Globalization;
+using System.IO;
 
 namespace AbletonManager
 {
     public enum Glyph
     {
-        Folder, Refresh, Minimize, Maximize, Close, CloseFullscreen,
+        Folder, Refresh, Settings, Minimize, Maximize, Close, CloseFullscreen,
         Filters, Magnifier, ChevronDown, SortUp, SortDown, Check,
-        Play, Pause, Volume, Mute, Star, StarFill, Plus,
+        Play, Pause,
+        Volume0, VolumeLow, VolumeHigh,
+        Volume = VolumeHigh, Mute = Volume0,
+        Volume1_50 = VolumeLow, Volume51_100 = VolumeHigh,
+        Star, StarFill, Plus,
         NextSet, PrevSet, NextTrack, PrevTrack, OpenPlaylist, ViewTiles, ViewList,
-        Note, Tag, Dice
+        Note, Tag, Dice, Nebula
     }
 
     public static class Icons
@@ -67,6 +72,13 @@ namespace AbletonManager
                 case Glyph.Refresh:
                     DrawSvg(g, p, null, r, 14, 16, () => {
                         g.DrawPath(p, GetSvgPath("M5.06299 10.75H1.31299V14.5M8.06299 4.75H11.813V1M1.00024 5.50255C1.42076 4.46175 2.12482 3.55978 3.0324 2.89917C3.93998 2.23856 5.01563 1.84564 6.1353 1.76538C7.25498 1.68512 8.37404 1.92055 9.36657 2.44496C10.3591 2.96937 11.1839 3.7619 11.7486 4.73209M12.1262 9.9978C11.7056 11.0386 11.0016 11.9406 10.094 12.6012C9.18641 13.2618 8.11186 13.6542 6.99219 13.7345C5.87251 13.8147 4.75254 13.5793 3.76001 13.0549C2.76748 12.5305 1.9421 11.7381 1.37744 10.7679"));
+                    });
+                    break;
+
+                case Glyph.Settings:
+                    DrawSvg(g, p, null, r, 24, 24, () => {
+                        g.DrawPath(p, GetSvgPath("M20.3499 8.92293L19.9837 8.7192C19.9269 8.68756 19.8989 8.67169 19.8714 8.65524C19.5983 8.49165 19.3682 8.26564 19.2002 7.99523C19.1833 7.96802 19.1674 7.93949 19.1348 7.8831C19.1023 7.82677 19.0858 7.79823 19.0706 7.76998C18.92 7.48866 18.8385 7.17515 18.8336 6.85606C18.8331 6.82398 18.8332 6.79121 18.8343 6.72604L18.8415 6.30078C18.8529 5.62025 18.8587 5.27894 18.763 4.97262C18.6781 4.70053 18.536 4.44993 18.3462 4.23725C18.1317 3.99685 17.8347 3.82534 17.2402 3.48276L16.7464 3.1982C16.1536 2.85658 15.8571 2.68571 15.5423 2.62057C15.2639 2.56294 14.9765 2.56561 14.6991 2.62789C14.3859 2.69819 14.0931 2.87351 13.5079 3.22396L13.5045 3.22555L13.1507 3.43741C13.0948 3.47091 13.0665 3.48779 13.0384 3.50338C12.7601 3.6581 12.4495 3.74365 12.1312 3.75387C12.0992 3.7549 12.0665 3.7549 12.0013 3.7549C11.9365 3.7549 11.9024 3.7549 11.8704 3.75387C11.5515 3.74361 11.2402 3.65759 10.9615 3.50224C10.9334 3.48658 10.9056 3.46956 10.8496 3.4359L10.4935 3.22213C9.90422 2.86836 9.60915 2.69121 9.29427 2.62057C9.0157 2.55807 8.72737 2.55634 8.44791 2.61471C8.13236 2.68062 7.83577 2.85276 7.24258 3.19703L7.23994 3.1982L6.75228 3.48124L6.74688 3.48454C6.15904 3.82572 5.86441 3.99672 5.6517 4.23614C5.46294 4.4486 5.32185 4.69881 5.2374 4.97018C5.14194 5.27691 5.14703 5.61896 5.15853 6.3027L5.16568 6.72736C5.16676 6.79166 5.16864 6.82362 5.16817 6.85525C5.16343 7.17499 5.08086 7.48914 4.92974 7.77096C4.9148 7.79883 4.8987 7.8267 4.86654 7.88237C4.83436 7.93809 4.81877 7.96579 4.80209 7.99268C4.63336 8.26452 4.40214 8.49186 4.12733 8.65572C4.10015 8.67193 4.0715 8.68752 4.01521 8.71871L3.65365 8.91908C3.05208 9.25245 2.75137 9.41928 2.53256 9.65669C2.33898 9.86672 2.19275 10.1158 2.10349 10.3882C2.00259 10.6939 2.00267 11.0378 2.00424 11.7255L2.00551 12.2877C2.00706 12.9708 2.00919 13.3122 2.11032 13.6168C2.19979 13.8863 2.34495 14.134 2.53744 14.3427C2.75502 14.5787 3.05274 14.7445 3.64974 15.0766L4.00808 15.276C4.06907 15.3099 4.09976 15.3266 4.12917 15.3444C4.40148 15.5083 4.63089 15.735 4.79818 16.0053C4.81625 16.0345 4.8336 16.0648 4.8683 16.1255C4.90256 16.1853 4.92009 16.2152 4.93594 16.2452C5.08261 16.5229 5.16114 16.8315 5.16649 17.1455C5.16707 17.1794 5.16658 17.2137 5.16541 17.2827L5.15853 17.6902C5.14695 18.3763 5.1419 18.7197 5.23792 19.0273C5.32287 19.2994 5.46484 19.55 5.65463 19.7627C5.86915 20.0031 6.16655 20.1745 6.76107 20.5171L7.25478 20.8015C7.84763 21.1432 8.14395 21.3138 8.45869 21.379C8.73714 21.4366 9.02464 21.4344 9.30209 21.3721C9.61567 21.3017 9.90948 21.1258 10.4964 20.7743L10.8502 20.5625C10.9062 20.5289 10.9346 20.5121 10.9626 20.4965C11.2409 20.3418 11.5512 20.2558 11.8695 20.2456C11.9015 20.2446 11.9342 20.2446 11.9994 20.2446C12.0648 20.2446 12.0974 20.2446 12.1295 20.2456C12.4484 20.2559 12.7607 20.3422 13.0394 20.4975C13.0639 20.5112 13.0885 20.526 13.1316 20.5519L13.5078 20.7777C14.0971 21.1315 14.3916 21.3081 14.7065 21.3788C14.985 21.4413 15.2736 21.4438 15.5531 21.3855C15.8685 21.3196 16.1657 21.1471 16.7586 20.803L17.2536 20.5157C17.8418 20.1743 18.1367 20.0031 18.3495 19.7636C18.5383 19.5512 18.6796 19.3011 18.764 19.0297C18.8588 18.7252 18.8531 18.3858 18.8417 17.7119L18.8343 17.2724C18.8332 17.2081 18.8331 17.1761 18.8336 17.1445C18.8383 16.8247 18.9195 16.5104 19.0706 16.2286C19.0856 16.2007 19.1018 16.1726 19.1338 16.1171C19.166 16.0615 19.1827 16.0337 19.1994 16.0068C19.3681 15.7349 19.5995 15.5074 19.8744 15.3435C19.9012 15.3275 19.9289 15.3122 19.9838 15.2818L19.9857 15.2809L20.3472 15.0805C20.9488 14.7472 21.2501 14.5801 21.4689 14.3427C21.6625 14.1327 21.8085 13.8839 21.8978 13.6126C21.9981 13.3077 21.9973 12.9658 21.9958 12.2861L21.9945 11.7119C21.9929 11.0287 21.9921 10.6874 21.891 10.3828C21.8015 10.1133 21.6555 9.86561 21.463 9.65685C21.2457 9.42111 20.9475 9.25526 20.3517 8.92378L20.3499 8.92293Z"));
+                        g.DrawPath(p, GetSvgPath("M8.00033 12C8.00033 14.2091 9.79119 16 12.0003 16C14.2095 16 16.0003 14.2091 16.0003 12C16.0003 9.79082 14.2095 7.99996 12.0003 7.99996C9.79119 7.99996 8.00033 9.79082 8.00033 12Z"));
                     });
                     break;
 
@@ -180,9 +192,11 @@ namespace AbletonManager
                     break;
 
                 case Glyph.Play:
+                    // Оптическая компенсация: треугольник направлен вправо, поэтому его
+                    // визуальный центр масс смещён влево. Сдвигаем на 2.2f правее для идеального оптического баланса в круге.
                     DrawSvg(g, p, b, r, 17, 19, () => {
                         g.FillPath(b, GetSvgPath("M15.5347 8.39118C16.192 8.77783 16.192 9.7284 15.5347 10.115L1.50702 18.3666C0.840386 18.7588 -3.56578e-07 18.2781 -3.22771e-07 17.5047L3.98605e-07 1.00153C4.32412e-07 0.228114 0.840387 -0.252541 1.50702 0.139596L15.5347 8.39118Z"));
-                    }, false, 0.72f);
+                    }, false, 0.72f, 2.2f);
                     break;
 
                 case Glyph.Pause:
@@ -220,19 +234,9 @@ namespace AbletonManager
                     }, true, 0.72f);
                     break;
 
-                case Glyph.Volume:
-                    DrawSvg(g, p, b, r, 12, 17, () => {
-                        g.FillPath(b, GetSvgPath("M0 5.04762C0 4.49534 0.447715 4.04762 1 4.04762H1.64597C1.87502 4.04762 2.09714 3.96898 2.27517 3.82486L5.3708 1.31887C6.02462 0.789594 7 1.25492 7 2.09612V14.9039C7 15.7451 6.02462 16.2104 5.3708 15.6811L2.27517 13.1751C2.09714 13.031 1.87502 12.9524 1.64597 12.9524H1C0.447715 12.9524 0 12.5047 0 11.9524V5.04762Z"));
-                        g.DrawPath(p, GetSvgPath("M10.25 5C10.25 5 11.25 6.59707 11.25 8.5C11.25 10.4029 10.25 12 10.25 12"));
-                    });
-                    break;
-
-                case Glyph.Mute:
-                    DrawSvg(g, p, b, r, 14, 17, () => {
-                        g.FillPath(b, GetSvgPath("M0 5.04762C0 4.49534 0.447716 4.04762 1 4.04762H1.38291C1.60296 4.04762 1.81686 3.97504 1.99147 3.84113L5.39145 1.23363C6.04927 0.729134 7 1.19814 7 2.02714V14.9729C7 15.8019 6.04926 16.2709 5.39144 15.7664L1.99147 13.1589C1.81686 13.025 1.60296 12.9524 1.38291 12.9524H1C0.447716 12.9524 0 12.5047 0 11.9524V5.04762Z"));
-                        g.DrawPath(p, GetSvgPath("M10 12L13 5M13 12L10 5"));
-                    });
-                    break;
+                case Glyph.Volume0:    Volume(g, p, b, r, 0); break;
+                case Glyph.VolumeLow:  Volume(g, p, b, r, 1); break;
+                case Glyph.VolumeHigh: Volume(g, p, b, r, 2); break;
 
                 case Glyph.Star:
                     DrawSvg(g, p, null, r, 19, 19, () => {
@@ -275,7 +279,59 @@ namespace AbletonManager
                         FillDot(g, b, 14.5f, 14.5f, 1.5f);
                     });
                     break;
+
+                case Glyph.Nebula:
+                {
+                    Image img = GetNebulaImage();
+                    if (img != null)
+                    {
+                        InterpolationMode oldInterp = g.InterpolationMode;
+                        PixelOffsetMode oldOffset = g.PixelOffsetMode;
+                        g.InterpolationMode = InterpolationMode.HighQualityBicubic;
+                        g.PixelOffsetMode = PixelOffsetMode.Half;
+                        float size = Math.Min(w, h);
+                        RectangleF dest = new RectangleF(cx - size / 2f, cy - size / 2f, size, size);
+                        g.DrawImage(img, dest, new RectangleF(0, 0, img.Width, img.Height), GraphicsUnit.Pixel);
+                        g.InterpolationMode = oldInterp;
+                        g.PixelOffsetMode = oldOffset;
+                    }
+                    break;
+                }
             }
+        }
+
+        static Image _nebulaImage;
+        static Image GetNebulaImage()
+        {
+            if (_nebulaImage == null)
+            {
+                string[] candidates = {
+                    Path.Combine(AppDomain.CurrentDomain.BaseDirectory, @"src\icons\nebula icon.png"),
+                    Path.Combine(AppDomain.CurrentDomain.BaseDirectory, @"..\src\icons\nebula icon.png"),
+                    Path.Combine(AppDomain.CurrentDomain.BaseDirectory, @"src\nebula icon (1).png"),
+                    Path.Combine(AppDomain.CurrentDomain.BaseDirectory, @"..\src\nebula icon (1).png")
+                };
+                foreach (string candidate in candidates)
+                {
+                    try
+                    {
+                        if (File.Exists(candidate))
+                        {
+                            _nebulaImage = Image.FromFile(candidate);
+                            break;
+                        }
+                    }
+                    catch { }
+                }
+
+                if (_nebulaImage == null)
+                {
+                    byte[] bytes = Convert.FromBase64String("iVBORw0KGgoAAAANSUhEUgAAABMAAAATCAYAAAByUDbMAAAACXBIWXMAAAsTAAALEwEAmpwYAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAOdEVYdFNvZnR3YXJlAEZpZ21hnrGWYwAAA4VJREFUeAF1k09MHUUcx78zO7v79r1neECplQqstkn/xKR4qF6MhXhRE9Oe8eDDJiZ6sZfaIzYxIaaHogev4EWP9tKLMWltYxNBU5o0wda0PAIt8KCwsLwH+3Znpr/ZfVD6b5Lv253Z+X3m+52Zx/CSVh7SpRMHlk59dOTGwQ7v+n5uhxXg0S3U5VX29qXgRTXi2YEPh7Vf28LoX8vou7tUhBV6+OToDErFPwFLUkUX9NSpMaB0nh0Zq+yu5bs7A8O6PFfFzetT6Pu/Ckwse/jp9ju4Nvs+oqQEqBBozAH1/8qIq1f07a96Xwj78oI+M/0Ao/PzKNmMBkixBv5ZLuHH8ZMYn32LBl1SjqDkMHroQy4Q8GzvU7BzF7W/uIiL4SrQSpA2GiuQLFJCurbQjct3T2Nu5T3q2Zk0fY0WyW7wm755prQDSzYwtL4AdEKBlkMX0+gk6D5SB6lIs67c/wATD04iiv0mUGTAjVkfTu5rw2FD5zZ9bKnpZDWCxyQYgWrMQl1zhMrBuhJYkwJ1yv3x4TsYOD6CnvZ/CURxNcVWLrR4NeDvjraKvQ+DPkXUotWAQ6dlCUULMkQEDKkgVDYC6WBNC7RYHIKbiA5BmpIEjaJS4/eBXpHTqgdcQjAFm5zZ3AAlXMtK3x1a3dUSh9sf4fihy9hTuJcBVC596iQTV+KYANM+JcsaM5uu4NC2uyIGJ5dSM/Tsu4NDb15FZ+sEHBbRJnsZaBvWMGBBu6h1JQWpprSmU1FwVQz3lU34r/2B7v3jaMnPg9O3bVCq2MBozxoumHQC42wGNEeTLdWUeTe/7YV59HT+jWJ+eidWJgLEbgqCeTYcRFAznFvyEuULTFJFkbSRSg1CrucQrXZDRnvIEUHSYicFIHEISMEapNiqFD+9MMkHx94woBEDSl3RlTBBQf0oLGKlcgy16lGoqKUJMa7sFAR6IqFwSn+7c2m5SH6gaIEBSjTdNeNuhW0IqwcRhx2Zs8RuimCJRYfAKs7nwz/vwIy7JOH9BAuk4nSCPHW5fcIpcOkA4o22zBWBNIFAIMlU/3N/9C9+eX1SQ/eTq0oKS+NmQEWFW+sdqK12Ia6XUiBLxGSMRr83+H0FT27W0+3X8pSfz+OzgrNZzjt1v+jW4dk15MQmHJKXWwu8wsqIffq788/WPgfb3cbP3jiR9+p+zsCsGsGiW3u/GZx82fzH5rqxRbquHXEAAAAASUVORK5CYII=");
+                    using (MemoryStream ms = new MemoryStream(bytes))
+                        _nebulaImage = Image.FromStream(ms);
+                }
+            }
+            return _nebulaImage;
         }
 
         static void DrawRoundRect(Graphics g, Pen p, float x, float y, float w, float h, float rx)
@@ -309,7 +365,20 @@ namespace AbletonManager
             }
         }
 
-        static void DrawSvg(Graphics g, Pen p, SolidBrush b, RectangleF r, float vw, float vh, Action drawAction, bool flipX = false, float contentScale = 1.0f)
+        // Громкость: залитый рупор плюс волны по уровню. Вьюбокс у всех трёх состояний
+        // один (16x13) — иначе рупор прыгал бы вбок, когда волны появляются и исчезают.
+        static void Volume(Graphics g, Pen p, SolidBrush b, RectangleF r, int waves)
+        {
+            DrawSvg(g, p, b, r, 16, 13, () => {
+                GraphicsPath cone = GetSvgPath("M0.75 3.98493H3.75L7.75 0.750008V11.75L3.75 8.51509H0.75V3.98493Z");
+                g.FillPath(b, cone);
+                g.DrawPath(p, cone);
+                if (waves > 0) g.DrawPath(p, GetSvgPath("M10.75 3.75001C10.75 3.75001 11.75 4.89077 11.75 6.25001C11.75 7.60925 10.75 8.75001 10.75 8.75001"));
+                if (waves > 1) g.DrawPath(p, GetSvgPath("M13.25 1.75001C13.25 1.75001 14.75 3.80338 14.75 6.25001C14.75 8.69664 13.25 10.75 13.25 10.75"));
+            });
+        }
+
+        static void DrawSvg(Graphics g, Pen p, SolidBrush b, RectangleF r, float vw, float vh, Action drawAction, bool flipX = false, float contentScale = 1.0f, float offsetX = 0f, float offsetY = 0f)
         {
             Matrix old = g.Transform;
             try
@@ -317,8 +386,8 @@ namespace AbletonManager
                 float baseScale = Math.Min(r.Width / vw, r.Height / vh);
                 float scale = baseScale * contentScale;
 
-                float dx = r.X + (r.Width - vw * scale) / 2f;
-                float dy = r.Y + (r.Height - vh * scale) / 2f;
+                float dx = r.X + (r.Width - vw * scale) / 2f + offsetX * scale;
+                float dy = r.Y + (r.Height - vh * scale) / 2f + offsetY * scale;
 
                 using (Matrix m = old.Clone())
                 {

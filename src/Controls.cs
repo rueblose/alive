@@ -39,6 +39,12 @@ namespace AbletonManager
             clip.Intersect(c.ClientRectangle);
             if (clip.Width <= 0 || clip.Height <= 0) return;
 
+            // Полупрозрачный фон имеет смысл только там, где DWM реально читает альфу
+            // окна. У диалога с UseGlass=false её никто не читает, и записанная
+            // SourceCopy прозрачность превращалась в чёрный прямоугольник вокруг пилюли
+            // (раньше его прятал region-клип контрола, теперь клипа нет).
+            if (surface.A < 255 && !Theme.IsBlurred(c)) surface = Color.FromArgb(255, surface);
+
             // Полупрозрачная поверхность — это стекло, и её надо записать в буфер как
             // есть, а не подмешать поверх. Причин две: буфер WinForms переиспользуется
             // между кадрами, так что альфа копилась бы от кадра к кадру; и DWM показывает
@@ -179,6 +185,149 @@ namespace AbletonManager
         }
     }
 
+    /// <summary>
+    /// Пульс «сейчас играет»: три столбика, которые шевелятся, пока идёт звук.
+    /// Общий на всё приложение — один таймер на 90 мс вместо таймера у каждого списка,
+    /// и перерисовывается не весь список, а только прямоугольник самого значка
+    /// (подписчик отдаёт его функцией, потому что играющая строка ездит с прокруткой).
+    /// </summary>
+    public static class PlayPulse
+    {
+        static readonly System.Windows.Forms.Timer _timer;
+        static readonly List<Control> _subs = new List<Control>();
+        static readonly List<Func<Rectangle>> _rects = new List<Func<Rectangle>>();
+
+        static PlayPulse()
+        {
+            _timer = new System.Windows.Forms.Timer();
+            _timer.Interval = 90;
+            _timer.Tick += delegate
+            {
+                for (int i = _subs.Count - 1; i >= 0; i--)
+                {
+                    Control c = _subs[i];
+                    if (c.IsDisposed || !c.IsHandleCreated) { _subs.RemoveAt(i); _rects.RemoveAt(i); continue; }
+                    Rectangle r = _rects[i]();
+                    if (r.Width > 0 && r.Height > 0) c.Invalidate(Rectangle.Inflate(r, 2, 2));
+                }
+                if (_subs.Count == 0) _timer.Stop();
+            };
+        }
+
+        public static void Attach(Control c, Func<Rectangle> rect)
+        {
+            if (c == null || rect == null) return;
+            int i = _subs.IndexOf(c);
+            if (i >= 0) { _rects[i] = rect; }
+            else { _subs.Add(c); _rects.Add(rect); }
+            if (!_timer.Enabled) _timer.Start();
+        }
+
+        public static void Detach(Control c)
+        {
+            int i = _subs.IndexOf(c);
+            if (i < 0) return;
+            _subs.RemoveAt(i);
+            _rects.RemoveAt(i);
+            if (_subs.Count == 0) _timer.Stop();
+        }
+
+        /// <summary>Высота столбика номер i, 0.25..1. Фаза общая — от часов, без своего состояния.</summary>
+        public static float Level(int i)
+        {
+            double t = Environment.TickCount / 260.0 + i * 0.7;
+            return 0.28f + 0.72f * (float)((Math.Sin(t) * 0.5 + 0.5) * (0.55 + 0.45 * (Math.Sin(t * 1.7 + i) * 0.5 + 0.5)));
+        }
+
+        /// <summary>Три столбика по нижнему краю прямоугольника.</summary>
+        public static void Paint(Graphics g, RectangleF r, Color color)
+        {
+            float barW = r.Width / 5f;
+            for (int i = 0; i < 3; i++)
+            {
+                float h = Math.Max(1.5f, r.Height * Level(i));
+                RectangleF b = new RectangleF(r.X + i * barW * 2f, r.Bottom - h, barW, h);
+                Theme.FillRound(g, b, barW / 2f, color);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Оверлейная полоса прокрутки: тонкая в покое, толще под курсором, гаснет через
+    /// секунду после последней прокрутки. Держит только свои две доли (видимость и
+    /// толщину) — саму геометрию и цвет рисует владелец, потому что у списка и у сетки
+    /// плиток полосы стоят по-разному.
+    /// </summary>
+    public sealed class ScrollFade : IDisposable
+    {
+        readonly Control _owner;
+        readonly Func<Rectangle> _rect;
+        readonly System.Windows.Forms.Timer _t = new System.Windows.Forms.Timer();
+        int _lastPing;
+        float _alpha, _thick;
+        bool _hot;
+
+        const int HoldMs = 900;
+
+        public ScrollFade(Control owner, Func<Rectangle> rect)
+        {
+            _owner = owner;
+            _rect = rect;
+            _t.Interval = 30;
+            _t.Tick += Step;
+        }
+
+        /// <summary>Насколько полоса видна, 0..1.</summary>
+        public float Alpha { get { return _alpha; } }
+
+        /// <summary>Насколько полоса «толстая», 0..1 — от покоя к наведению.</summary>
+        public float Thick { get { return _thick; } }
+
+        /// <summary>Была прокрутка — показать полосу и завести отсчёт до затухания.</summary>
+        public void Ping()
+        {
+            _lastPing = Environment.TickCount;
+            if (!_t.Enabled) _t.Start();
+            InvalidateBar();
+        }
+
+        /// <summary>Курсор у самой полосы: она не гаснет и становится толще.</summary>
+        public void SetHot(bool value)
+        {
+            if (_hot == value) return;
+            _hot = value;
+            Ping();
+        }
+
+        void Step(object sender, EventArgs e)
+        {
+            if (_owner.IsDisposed) { _t.Stop(); return; }
+
+            bool want = _hot || Environment.TickCount - _lastPing < HoldMs;
+            float ta = want ? 1f : 0f;
+            float tt = _hot ? 1f : 0f;
+
+            _alpha += (ta - _alpha) * (ta > _alpha ? 0.40f : 0.13f);
+            _thick += (tt - _thick) * 0.30f;
+
+            if (Math.Abs(ta - _alpha) < 0.01f && Math.Abs(tt - _thick) < 0.01f)
+            {
+                _alpha = ta; _thick = tt;
+                _t.Stop();
+            }
+            InvalidateBar();
+        }
+
+        void InvalidateBar()
+        {
+            if (!_owner.IsHandleCreated || _owner.IsDisposed) return;
+            Rectangle r = _rect();
+            if (r.Width > 0 && r.Height > 0) _owner.Invalidate(Rectangle.Inflate(r, 8, 8));
+        }
+
+        public void Dispose() { _t.Stop(); _t.Dispose(); }
+    }
+
     /// <summary>База для контролов: без мигания, с фоном своей поверхности и плавной анимацией hover/press.</summary>
     public class GlassControl : Control, IAnimatable
     {
@@ -209,14 +358,17 @@ namespace AbletonManager
 
         protected int Sc(int v) { return (int)Math.Round(v * (DeviceDpi / 96f)); }
 
-        protected override void OnResize(EventArgs e)
-        {
-            base.OnResize(e);
-            float r = PillRadius;
-            if (r < 0f || Width <= 0 || Height <= 0) return;
-            using (GraphicsPath p = Theme.Round(new RectangleF(0, 0, Width, Height), r))
-                Region = new Region(p);
-        }
+        /// <summary>
+        /// Насколько контрол «продавлен» при нажатии — на столько пикселей всё его
+        /// содержимое рисуется внутрь. Тактильность, которую дают Apple-контролы,
+        /// это она, а не анимация цвета.
+        /// </summary>
+        protected float PressInset { get { return PressFactor * Sc(2); } }
+
+        // Регион-клипа здесь больше нет. Он был однобитным, и сглаженный край пилюли
+        // срезался по нему ступеньками — заметно на любой заливной кнопке (Open in Live,
+        // Apply). Фон под скруглениями пишет PaintBase, так что регион не держал ничего,
+        // кроме этих ступенек.
 
         protected override void OnMouseEnter(EventArgs e) { Hot = true; AnimEngine.Register(this); base.OnMouseEnter(e); }
         protected override void OnMouseLeave(EventArgs e) { Hot = false; Pressed = false; AnimEngine.Register(this); base.OnMouseLeave(e); }
@@ -241,8 +393,11 @@ namespace AbletonManager
                 return false;
             }
 
-            HoverFactor += dh * 0.35f;
-            PressFactor += dp * 0.40f;
+            // Вход быстрый, возврат ленивый — симметричные скорости читаются как
+            // «интерфейс думает». Числа — доля остатка за кадр (16 мс):
+            // наведение ~110 мс вход / ~260 мс выход, нажатие ~55 / ~210.
+            HoverFactor += dh * (dh > 0f ? 0.45f : 0.18f);
+            PressFactor += dp * (dp > 0f ? 0.70f : 0.22f);
             Invalidate();
             return true;
         }
@@ -306,11 +461,37 @@ namespace AbletonManager
 
             if (Primary)
             {
-                Color fill = Theme.Interpolate(Theme.Light, Color.White, HoverFactor);
+                RectangleF pr = RectangleF.Inflate(r, -PressInset, -PressInset);
+                float rad = pr.Height / 2f;
+
+                // Вертикальный градиент со светом сверху — то же, что у ручки тумблера:
+                // кнопка читается как приподнятая, а значит нажимаемая. Плоская заливка
+                // выглядела выключенной рядом с обводочными кнопками.
+                Color top = Theme.Interpolate(Theme.LightTop, Color.White, HoverFactor);
+                Color bottom = Theme.Interpolate(Theme.Light, Theme.LightTop, HoverFactor);
                 if (PressFactor > 0.01f)
-                    fill = Theme.Interpolate(fill, Color.FromArgb(0xFF, 0xA8, 0xA8, 0xA9), PressFactor);
-                Theme.FillRound(g, r, Height / 2f, fill);
+                {
+                    top = Theme.Interpolate(top, Theme.LightPressed, PressFactor);
+                    bottom = Theme.Interpolate(bottom, Theme.LightPressed, PressFactor);
+                }
+
+                using (GraphicsPath path = Theme.Round(pr, rad))
+                using (LinearGradientBrush lgb = new LinearGradientBrush(
+                           new RectangleF(pr.X, pr.Y - 1f, pr.Width, pr.Height + 2f),
+                           top, bottom, LinearGradientMode.Vertical))
+                    g.FillPath(lgb, path);
+
+                // Блик по верхней дуге — 1px белым, гаснет при нажатии.
+                using (Pen hi = new Pen(Color.FromArgb((int)Math.Round(0x66 * (1f - PressFactor)), 255, 255, 255), 1f))
+                using (GraphicsPath tp = Theme.RoundTop(RectangleF.Inflate(pr, -0.5f, -0.5f), rad - 0.5f))
+                    g.DrawPath(hi, tp);
+
                 text = Theme.OnLight;
+                Chrome.DrawText(g, Text, Font,
+                    new Rectangle((int)Math.Round(pr.X), (int)Math.Round(pr.Y),
+                                  (int)Math.Round(pr.Width), (int)Math.Round(pr.Height)),
+                    text, Chrome.Center);
+                return;
             }
             else if (Quiet)
             {
@@ -334,7 +515,8 @@ namespace AbletonManager
                 if (PressFactor > 0.01f)
                     alpha = (int)Math.Round(Theme.Lerp(alpha, Theme.GlassSurfacePressedAlpha, PressFactor));
 
-                Theme.PaintGlassSurface(this, g, r, Height / 2f, alpha);
+                RectangleF pr = RectangleF.Inflate(r, -PressInset, -PressInset);
+                Theme.PaintGlassSurface(this, g, pr, pr.Height / 2f, alpha);
                 text = Theme.Interpolate(Theme.TextDim, Theme.Text, HoverFactor);
             }
 
@@ -399,7 +581,13 @@ namespace AbletonManager
     {
         public Glyph Icon = Glyph.Close;
         public bool Danger;          // закрытие окна краснеет под курсором
+        public bool Quiet;           // без подложки: только значок, светлеющий под курсором
         public float IconScale = 0.46f;
+
+        /// <summary>Провернуть значок на пол-оборота при нажатии — для кубика.</summary>
+        public bool SpinOnClick;
+        float _spin;                 // текущий угол, градусы
+        int _spinFrom;
 
         protected override float PillRadius { get { return Height / 2f; } }
 
@@ -416,6 +604,32 @@ namespace AbletonManager
             base.OnDoubleClick(e);
         }
 
+        protected override void OnClick(EventArgs e)
+        {
+            if (SpinOnClick)
+            {
+                _spinFrom = (int)Math.Round(_spin) + 180;
+                _spin = _spinFrom;
+                AnimEngine.Register(this);
+            }
+            base.OnClick(e);
+        }
+
+        public override bool OnAnimTick()
+        {
+            bool more = base.OnAnimTick();
+            if (_spin > 0.5f)
+            {
+                // Доводим угол к нулю по той же экспоненте, что и ховер: кубик
+                // проворачивается и встаёт на место, а не крутится вечно.
+                _spin += (0f - _spin) * 0.22f;
+                Invalidate();
+                return true;
+            }
+            if (_spin != 0f) { _spin = 0f; Invalidate(); }
+            return more;
+        }
+
         protected override void OnPaint(PaintEventArgs e)
         {
             Graphics g = e.Graphics;
@@ -428,7 +642,7 @@ namespace AbletonManager
                 Color bg = Color.FromArgb((int)Math.Round(HoverFactor * 255), Theme.Red);
                 Theme.FillRound(g, r, Height / 2f, bg);
             }
-            else
+            else if (!Quiet)
             {
                 int baseAlpha = Theme.GlassSurfaceAlpha;
                 int targetAlpha = PressFactor > 0.01f ? Theme.GlassSurfacePressedAlpha : Theme.GlassSurfaceHotAlpha;
@@ -437,16 +651,38 @@ namespace AbletonManager
             }
 
             float box = Width * IconScale;
-            RectangleF ir = new RectangleF((Width - box) / 2f, (Height - box) / 2f, box, box);
-            Color ink = Danger ? Theme.Interpolate(Theme.Light, Color.White, HoverFactor) : Theme.Light;
+            // У значка ход вдвое короче: он и так мельче пилюли, и полный отступ
+            // съедал бы заметную долю самого рисунка.
+            float inset = PressInset * 0.5f;
+            RectangleF ir = new RectangleF((Width - box) / 2f + inset, (Height - box) / 2f + inset,
+                                           box - inset * 2, box - inset * 2);
+            Color ink = Danger ? Theme.Interpolate(Theme.Light, Color.White, HoverFactor)
+                      : (Quiet ? Theme.Interpolate(Theme.TextDim, Theme.Text, HoverFactor) : Theme.Light);
+
+            if (_spin > 0.5f)
+            {
+                System.Drawing.Drawing2D.Matrix old = g.Transform;
+                g.TranslateTransform(Width / 2f, Height / 2f);
+                g.RotateTransform(_spin);
+                g.TranslateTransform(-Width / 2f, -Height / 2f);
+                Icons.Draw(g, Icon, ir, ink, Math.Max(1.4f, Width / 24f));
+                g.Transform = old;
+                return;
+            }
             Icons.Draw(g, Icon, ir, ink, Math.Max(1.4f, Width / 24f));
         }
     }
 
-    /// <summary>Переключатель-«таблетка» для фильтров.</summary>
+    /// <summary>Пилюля-переключатель: выбор из двух состояний или тумблер (IsSwitch).</summary>
     public class PillToggle : GlassControl
     {
         bool _checked;
+
+        public bool IsSwitch;
+        float _thumbPos;
+        float _targetPos;
+        System.Windows.Forms.Timer _animTimer;
+
         public event EventHandler CheckedChanged;
 
         protected override float PillRadius { get { return Height / 2f; } }
@@ -465,9 +701,43 @@ namespace AbletonManager
             set
             {
                 if (_checked == value) return;
-                _checked = value; Invalidate();
+                _checked = value;
+                _targetPos = _checked ? 1f : 0f;
+                if (IsSwitch && IsHandleCreated && Visible)
+                {
+                    StartSwitchAnim();
+                }
+                else
+                {
+                    _thumbPos = _targetPos;
+                    Invalidate();
+                }
                 if (CheckedChanged != null) CheckedChanged(this, EventArgs.Empty);
             }
+        }
+
+        void StartSwitchAnim()
+        {
+            if (_animTimer == null)
+            {
+                _animTimer = new System.Windows.Forms.Timer();
+                _animTimer.Interval = 15;
+                _animTimer.Tick += delegate
+                {
+                    float diff = _targetPos - _thumbPos;
+                    if (Math.Abs(diff) < 0.04f)
+                    {
+                        _thumbPos = _targetPos;
+                        _animTimer.Stop();
+                    }
+                    else
+                    {
+                        _thumbPos += diff * 0.35f;
+                    }
+                    Invalidate();
+                };
+            }
+            if (!_animTimer.Enabled) _animTimer.Start();
         }
 
         public void FitToText() { Width = TextRenderer.MeasureText(Text, Font).Width + Sc(32); }
@@ -491,6 +761,16 @@ namespace AbletonManager
             base.OnDoubleClick(e);
         }
 
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing && _animTimer != null)
+            {
+                _animTimer.Dispose();
+                _animTimer = null;
+            }
+            base.Dispose(disposing);
+        }
+
         protected override void OnPaint(PaintEventArgs e)
         {
             Graphics g = e.Graphics;
@@ -498,6 +778,12 @@ namespace AbletonManager
             Theme.Smooth(g);
 
             RectangleF r = new RectangleF(0, 0, Width, Height);
+
+            if (IsSwitch)
+            {
+                PaintAppleSwitch(g, r);
+                return;
+            }
 
             if (!Enabled)
             {
@@ -527,6 +813,128 @@ namespace AbletonManager
                 Chrome.DrawText(g, Text, Font, new Rectangle(0, 0, Width, Height), text, Chrome.Center);
             }
         }
+
+        void PaintAppleSwitch(Graphics g, RectangleF r)
+        {
+            float trackW = Math.Min(Width, Sc(38));
+            float trackH = Math.Min(Height, Sc(22));
+            float trackX = r.X + (r.Width - trackW) / 2f;
+            float trackY = r.Y + (r.Height - trackH) / 2f;
+            RectangleF track = new RectangleF(trackX, trackY, trackW, trackH);
+            float radius = trackH / 2f;
+
+            float t = (_animTimer != null && _animTimer.Enabled) ? _thumbPos : (_checked ? 1f : 0f);
+
+            // 1. Ложе трека:
+            // OFF: утопленный тёмный стеклянный трек (Theme.Sunken + деликатная полупрозрачность)
+            // ON: обычный светлый (Theme.Light)
+            Color offSunken = Theme.Sunken;
+            Color offOverlay = Color.FromArgb((int)(0x14 + 0x0E * HoverFactor), 0xFF, 0xFF, 0xFF);
+
+            using (GraphicsPath trackPath = Theme.Round(track, radius))
+            {
+                if (!Enabled)
+                {
+                    using (Brush b = new SolidBrush(Color.FromArgb(0x14, 0xFF, 0xFF, 0xFF)))
+                        g.FillPath(b, trackPath);
+                }
+                else
+                {
+                    if (t < 0.999f)
+                    {
+                        using (Brush b = new SolidBrush(offSunken)) g.FillPath(b, trackPath);
+                        using (Brush b = new SolidBrush(offOverlay)) g.FillPath(b, trackPath);
+                    }
+                    if (t > 0.001f)
+                    {
+                        int alpha = (int)(255 * t);
+                        using (Brush b = new SolidBrush(Color.FromArgb(alpha, Theme.Light)))
+                            g.FillPath(b, trackPath);
+
+                        if (HoverFactor > 0.01f)
+                        {
+                            using (Brush b = new SolidBrush(Color.FromArgb((int)(0x20 * HoverFactor * t), 255, 255, 255)))
+                                g.FillPath(b, trackPath);
+                        }
+                    }
+                }
+            }
+
+            // 2. Стеклянный контур ложа с бликом по верхнему краю (в стилистике PaintGlassBorder)
+            if (Enabled)
+            {
+                int borderAlpha = (int)(0x26 * (1f - t) + 0x30 * t + 0x10 * HoverFactor);
+                using (Pen pen = new Pen(Color.FromArgb(borderAlpha, 255, 255, 255), 1f))
+                using (GraphicsPath path = Theme.Round(new RectangleF(track.X + 0.5f, track.Y + 0.5f, track.Width - 1f, track.Height - 1f), radius - 0.5f))
+                {
+                    g.DrawPath(pen, path);
+                }
+
+                int hiAlpha = (int)(0x1A * (1f - t) + 0x38 * t + 0x10 * HoverFactor);
+                using (Pen hiPen = new Pen(Color.FromArgb(hiAlpha, 255, 255, 255), 1f))
+                using (GraphicsPath topPath = Theme.RoundTop(new RectangleF(track.X + 1f, track.Y + 1f, track.Width - 2f, track.Height - 2f), radius - 1f))
+                {
+                    g.DrawPath(hiPen, topPath);
+                }
+            }
+            else
+            {
+                using (Pen pen = new Pen(Color.FromArgb(0x12, 255, 255, 255), 1f))
+                using (GraphicsPath path = Theme.Round(new RectangleF(track.X + 0.5f, track.Y + 0.5f, track.Width - 1f, track.Height - 1f), radius - 0.5f))
+                {
+                    g.DrawPath(pen, path);
+                }
+            }
+
+            // 3. Ручка (knob): тактильная, с мягким градиентом, серебристая в OFF, белая в ON
+            float inset = Sc(2);
+            float knobDiam = trackH - inset * 2;
+            float offX = trackX + inset;
+            float onX = trackX + trackW - inset - knobDiam;
+            float knobX = Theme.Lerp(offX, onX, t);
+            float knobY = trackY + inset;
+
+            RectangleF knobRect = new RectangleF(knobX, knobY, knobDiam, knobDiam);
+
+            if (Enabled)
+            {
+                // Мягкая диффузная тень под ручкой
+                RectangleF s1 = new RectangleF(knobX - 0.5f, knobY + 0.5f, knobDiam + 1f, knobDiam + 1f);
+                using (Brush b1 = new SolidBrush(Color.FromArgb(0x18, 0, 0, 0))) g.FillEllipse(b1, s1);
+                RectangleF s2 = new RectangleF(knobX, knobY + 1f, knobDiam, knobDiam);
+                using (Brush b2 = new SolidBrush(Color.FromArgb(0x35, 0, 0, 0))) g.FillEllipse(b2, s2);
+
+                Color knobTop = Theme.Interpolate(Color.FromArgb(255, 0xE8, 0xE8, 0xEB), Color.FromArgb(255, 0xFF, 0xFF, 0xFF), t);
+                Color knobBottom = Theme.Interpolate(Color.FromArgb(255, 0xC6, 0xC6, 0xCA), Color.FromArgb(255, 0xEE, 0xEE, 0xF2), t);
+
+                if (knobRect.Width > 0 && knobRect.Height > 0)
+                {
+                    using (LinearGradientBrush lgb = new LinearGradientBrush(knobRect, knobTop, knobBottom, LinearGradientMode.Vertical))
+                    {
+                        g.FillEllipse(lgb, knobRect);
+                    }
+                }
+                else
+                {
+                    using (Brush b = new SolidBrush(knobTop)) g.FillEllipse(b, knobRect);
+                }
+
+                using (Pen knobBorder = new Pen(Color.FromArgb(0x22, 0, 0, 0), 1f))
+                {
+                    g.DrawEllipse(knobBorder, knobRect.X, knobRect.Y, knobRect.Width, knobRect.Height);
+                }
+                using (Pen knobHi = new Pen(Color.FromArgb(0x50, 255, 255, 255), 1f))
+                {
+                    g.DrawArc(knobHi, knobRect.X + 0.5f, knobRect.Y + 0.5f, knobRect.Width - 1f, knobRect.Height - 1f, 200, 140);
+                }
+            }
+            else
+            {
+                Color disKnob = Color.FromArgb(0x60, 255, 255, 255);
+                using (Brush b = new SolidBrush(disKnob))
+                    g.FillEllipse(b, knobRect);
+            }
+        }
     }
 
     /// <summary>Сегментированный переключатель: обводка и подвижная пилюля внутри.</summary>
@@ -541,7 +949,7 @@ namespace AbletonManager
         public Segmented()
         {
             SetStyle(ControlStyles.StandardDoubleClick, false);
-            Height = 38;
+            Height = Sc(Theme.ControlH);
             Cursor = Cursors.Hand;
             Font = Theme.FButton;
         }
@@ -549,7 +957,7 @@ namespace AbletonManager
         public void SetItems(params string[] items)
         {
             _items = items;
-            int w = Sc(6);
+            int w = 0;
             foreach (string s in items) w += Math.Max(Sc(60), TextRenderer.MeasureText(s, Font).Width + Sc(36));
             Width = w;
             Invalidate();
@@ -568,9 +976,8 @@ namespace AbletonManager
 
         RectangleF SegRect(int i)
         {
-            float inset = Sc(3);
-            float w = (Width - inset * 2) / Math.Max(1, _items.Length);
-            return new RectangleF(inset + i * w, inset, w, Height - inset * 2);
+            float w = (Width - 1f) / Math.Max(1, _items.Length);
+            return new RectangleF(0.5f + i * w, 0.5f, w, Height - 1f);
         }
 
         protected override void OnMouseMove(MouseEventArgs e)
@@ -607,21 +1014,25 @@ namespace AbletonManager
             PaintSurface(g);
             Theme.Smooth(g);
 
-            RectangleF r = new RectangleF(0.5f, 0.5f, Width - 1, Height - 1);
-            // Была почти не видна: Theme.Surface тут — практически тот же тон, что и
-            // фон под ним. Светлая полупрозрачная линия читается на любом фоне ровно
-            // так же, как обводки у стеклянных карточек — тем же приёмом, просто ярче.
-            Theme.DrawRound(g, r, (Height - 1) / 2f, Color.FromArgb(46, 255, 255, 255), 1f);
+            RectangleF r = new RectangleF(0, 0, Width, Height);
+            Theme.PaintGlassBorder(g, r, Height / 2f);
+
+            for (int i = 0; i < _items.Length; i++)
+            {
+                if (i == _index)
+                {
+                    RectangleF sr = SegRect(i);
+                    Theme.DrawRound(g, sr, sr.Height / 2f, Color.FromArgb(115, 255, 255, 255), 1f);
+                }
+            }
 
             for (int i = 0; i < _items.Length; i++)
             {
                 RectangleF sr = SegRect(i);
                 bool sel = i == _index;
-                if (sel) Theme.PaintGlassSurface(this, g, sr, sr.Height / 2f, Theme.GlassSurfacePressedAlpha);
-                else if (i == _hotIndex) Theme.FillRound(g, sr, sr.Height / 2f, Theme.RowHover);
-
-                Chrome.DrawText(g, _items[i], Font, Rectangle.Round(sr),
-                               sel ? Theme.Text : Theme.TextDim, Chrome.Center);
+                Color textColor = sel ? Theme.Text : (i == _hotIndex ? Theme.Text : Theme.TextDim);
+                Rectangle textRect = new Rectangle((int)Math.Round(sr.X), 0, (int)Math.Round(sr.Width), Height);
+                Chrome.DrawText(g, _items[i], Font, textRect, textColor, Chrome.Center);
             }
         }
     }
@@ -637,7 +1048,7 @@ namespace AbletonManager
         public IconToggle()
         {
             SetStyle(ControlStyles.StandardDoubleClick, false);
-            Height = Sc(38);
+            Height = Sc(Theme.ControlH);
             Cursor = Cursors.Hand;
         }
 
@@ -888,9 +1299,10 @@ namespace AbletonManager
             PaintSurface(g);
             Theme.Smooth(g);
 
-            RectangleF r = new RectangleF(0, 0, Width, Height);
-            Theme.FillRound(g, r, Height / 2f, Theme.Sunken);
-            if (_focused) Theme.DrawRound(g, r, Height / 2f, Theme.SurfacePressed, 1f);
+            float insetY = Sc(1);
+            RectangleF r = new RectangleF(0, insetY, Width, Height - insetY * 2);
+            Theme.FillRound(g, r, r.Height / 2f, Theme.Sunken);
+            if (_focused) Theme.DrawRound(g, r, r.Height / 2f, Theme.SurfacePressed, 1f);
 
             if (!string.IsNullOrEmpty(Glyph))
                 Chrome.DrawText(g, Glyph, Font, new Rectangle(Sc(12), 0, Sc(20), Height),
@@ -1099,7 +1511,7 @@ namespace AbletonManager
         }
     }
 
-    /// <summary>Полоса перемотки трека для мини-транспорта в футере.</summary>
+    /// <summary>Полоса перемотки трека для мини-транспорта в футере в стиле Apple Music.</summary>
     public sealed class SeekSlider : GlassControl
     {
         float _progress;
@@ -1107,7 +1519,11 @@ namespace AbletonManager
 
         public event Action<float> Seeked;
 
-        public SeekSlider() { Cursor = Cursors.Hand; Height = Theme.ControlH; }
+        public SeekSlider()
+        {
+            Cursor = Cursors.Hand;
+            Height = Theme.ControlH;
+        }
 
         public float Progress
         {
@@ -1116,29 +1532,61 @@ namespace AbletonManager
             {
                 float v = Math.Max(0f, Math.Min(1f, value));
                 if (Math.Abs(v - _progress) < 0.001f) return;
-                _progress = v; Invalidate();
+                _progress = v;
+                Invalidate();
             }
         }
 
-        Rectangle Track
+        RectangleF Track
         {
             get
             {
-                return new Rectangle(Sc(4), Height / 2 - Sc(2), Math.Max(Sc(20), Width - Sc(8)), Sc(4));
+                int trackH = Sc(5);
+                float padX = Sc(4);
+                // Ряд желобка целочисленный: на половине пикселя сглаживание размазывает
+                // крайние строки, и сыгранная часть выглядит подрезанной снизу.
+                return new RectangleF(padX, (Height - trackH) / 2, Math.Max(Sc(20), Width - padX * 2), trackH);
             }
         }
 
         void Grab(int x)
         {
-            Rectangle t = Track;
-            float p = (x - t.X) / (float)Math.Max(1, t.Width);
+            RectangleF t = Track;
+            float p = (x - t.X) / Math.Max(1f, t.Width);
             Progress = p;
-            if (Seeked != null) Seeked(p);
+            if (Seeked != null) Seeked(Progress);
         }
 
-        protected override void OnMouseDown(MouseEventArgs e) { _drag = true; Grab(e.X); base.OnMouseDown(e); }
-        protected override void OnMouseMove(MouseEventArgs e) { if (_drag) Grab(e.X); base.OnMouseMove(e); }
-        protected override void OnMouseUp(MouseEventArgs e) { _drag = false; base.OnMouseUp(e); }
+        protected override void OnMouseDown(MouseEventArgs e)
+        {
+            _drag = true;
+            Grab(e.X);
+            base.OnMouseDown(e);
+        }
+
+        protected override void OnMouseMove(MouseEventArgs e)
+        {
+            if (_drag) Grab(e.X);
+            base.OnMouseMove(e);
+        }
+
+        protected override void OnMouseUp(MouseEventArgs e)
+        {
+            _drag = false;
+            base.OnMouseUp(e);
+        }
+
+        protected override void OnMouseEnter(EventArgs e)
+        {
+            base.OnMouseEnter(e);
+            Invalidate();
+        }
+
+        protected override void OnMouseLeave(EventArgs e)
+        {
+            base.OnMouseLeave(e);
+            Invalidate();
+        }
 
         protected override void OnPaint(PaintEventArgs e)
         {
@@ -1146,15 +1594,189 @@ namespace AbletonManager
             Chrome.PaintBase(this, g, Surface);
             Theme.Smooth(g);
 
-            Rectangle t = Track;
-            Theme.FillRound(g, t, t.Height / 2f, Theme.Sunken);
-            int done = (int)(t.Width * _progress);
-            if (done > 0)
-                Theme.FillRound(g, new Rectangle(t.X, t.Y, done, t.Height), t.Height / 2f, Theme.Light);
+            RectangleF t = Track;
+            float r = t.Height / 2f;
 
-            float knob = Sc(10);
-            Theme.FillRound(g, new RectangleF(t.X + done - knob / 2f, Height / 2f - knob / 2f, knob, knob),
-                            knob / 2f, Hot || _drag ? Color.White : Theme.Light);
+            // Фоновый желобок с закруглёнными концами
+            Color trackBg = Hot || _drag
+                ? Color.FromArgb(0x50, 0xFF, 0xFF, 0xFF)
+                : Color.FromArgb(0x30, 0xFF, 0xFF, 0xFF);
+
+            Theme.FillRound(g, t, r, trackBg);
+
+            // Сыгранная часть — тот же скруглённый желобок, только короче. Клипа по
+            // GraphicsPath тут не было нужно: форма и так лежит внутри желобка, а
+            // Region однобитный и срезал сглаженный край ровной ступенькой.
+            float doneW = t.Width * _progress;
+            if (doneW > 0f)
+                Theme.FillRound(g, new RectangleF(t.X, t.Y, doneW, t.Height), r,
+                                Hot || _drag ? Color.White : Theme.Text);
+
+            // Ручка появляется только под курсором: в покое полоса читается как
+            // ровная линия прогресса, а тянуть её всё равно можно — курсор подскажет.
+            if (Hot || _drag)
+            {
+                float knob = Sc(11);
+                float kx = t.X + doneW;
+                float ky = t.Y + t.Height / 2f;
+                Theme.FillRound(g, new RectangleF(kx - knob / 2f, ky - knob / 2f, knob, knob),
+                                knob / 2f, Color.White);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Кликабельное название сета в мини-транспорте.
+    /// При наведении плавно подсвечивается белым, меняет курсор на руку, по клику переходит к сету.
+    /// </summary>
+    public sealed class PlayerSetLink : GlassControl
+    {
+        string _text = "";
+
+        public PlayerSetLink()
+        {
+            Cursor = Cursors.Hand;
+            Height = Theme.ControlH;
+        }
+
+        public string SetName
+        {
+            get { return _text; }
+            set
+            {
+                if (_text == value) return;
+                _text = value ?? "";
+                Invalidate();
+            }
+        }
+
+        protected override void OnPaint(PaintEventArgs e)
+        {
+            Graphics g = e.Graphics;
+            // Фон обязателен: без него контрол оставляет на стекле непрозрачный
+            // прямоугольник — свой BackColor, унаследованный от окна.
+            PaintSurface(g);
+            if (string.IsNullOrEmpty(_text)) return;
+            Theme.Smooth(g);
+
+            Color col = Theme.Interpolate(Theme.TextDim, Color.White, HoverFactor);
+            Font font = Theme.FTitle;
+
+            Chrome.DrawText(g, _text, font, ClientRectangle, col,
+                TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.SingleLine | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
+        }
+    }
+
+    /// <summary>
+    /// Вертикальный регулятор громкости в виде всплывающей капсулы над кнопкой громкости.
+    /// </summary>
+    public sealed class VolumePopupControl : GlassControl
+    {
+        float _value = 0.5f;
+        bool _dragging;
+
+        public event EventHandler ValueChanged;
+
+        public VolumePopupControl()
+        {
+            Cursor = Cursors.Hand;
+            Visible = false;
+        }
+
+        public float Value
+        {
+            get { return _value; }
+            set
+            {
+                float v = Math.Max(0f, Math.Min(1f, value));
+                if (Math.Abs(v - _value) < 0.001f) return;
+                _value = v;
+                Invalidate();
+                if (ValueChanged != null) ValueChanged(this, EventArgs.Empty);
+            }
+        }
+
+        void UpdateFromY(int y)
+        {
+            float padY = Sc(14);
+            float trackH = Height - padY * 2;
+            if (trackH <= 0f) return;
+            float v = 1f - (y - padY) / trackH;
+            Value = Math.Max(0f, Math.Min(1f, v));
+        }
+
+        protected override void OnMouseDown(MouseEventArgs e)
+        {
+            if (e.Button == MouseButtons.Left)
+            {
+                _dragging = true;
+                UpdateFromY(e.Y);
+            }
+            base.OnMouseDown(e);
+        }
+
+        protected override void OnMouseMove(MouseEventArgs e)
+        {
+            if (_dragging)
+                UpdateFromY(e.Y);
+            base.OnMouseMove(e);
+        }
+
+        protected override void OnMouseUp(MouseEventArgs e)
+        {
+            _dragging = false;
+            base.OnMouseUp(e);
+        }
+
+        protected override void OnMouseWheel(MouseEventArgs e)
+        {
+            if (e.Delta != 0)
+            {
+                int steps = e.Delta / 120;
+                if (steps == 0) steps = e.Delta > 0 ? 1 : -1;
+                float newVal = (float)Math.Round((_value + steps * 0.05f) / 0.05f) * 0.05f;
+                Value = Math.Max(0f, Math.Min(1f, newVal));
+            }
+            base.OnMouseWheel(e);
+        }
+
+        protected override void OnPaint(PaintEventArgs e)
+        {
+            Graphics g = e.Graphics;
+            Theme.Smooth(g);
+
+            RectangleF rect = new RectangleF(0.5f, 0.5f, Width - 1f, Height - 1f);
+            float cornerR = Width / 2f;
+
+            using (GraphicsPath path = Theme.Round(rect, cornerR))
+            {
+                using (SolidBrush b = new SolidBrush(Color.FromArgb(0xF4, 0x1A, 0x1A, 0x1D)))
+                    g.FillPath(b, path);
+                using (Pen p = new Pen(Color.FromArgb(30, 255, 255, 255), 1f))
+                    g.DrawPath(p, path);
+            }
+
+            float padY = Sc(14);
+            float trackH = Height - padY * 2;
+            float tx = Width / 2f;
+            float trackW = Sc(5);
+            float r = trackW / 2f;
+            float knobY = padY + (1f - _value) * trackH;
+
+            // Фоновый серый трек
+            RectangleF fullTrack = new RectangleF(tx - r, padY, trackW, trackH);
+            Theme.FillRound(g, fullTrack, r, Color.FromArgb(0x38, 0xFF, 0xFF, 0xFF));
+
+            // Заполненная белая часть снизу до ручки
+            if (knobY < padY + trackH)
+            {
+                RectangleF playedRect = new RectangleF(tx - r, knobY, trackW, (padY + trackH) - knobY);
+                Theme.FillRound(g, playedRect, r, Color.White);
+            }
+
+            // Белая круглая ручка
+            float knobR = Sc(6);
+            Theme.FillRound(g, new RectangleF(tx - knobR, knobY - knobR, knobR * 2, knobR * 2), knobR, Color.White);
         }
     }
 }

@@ -18,7 +18,7 @@ namespace AbletonManager
         /// Включена ли плавная вертикальная прокрутка (доводка таймером).
         /// При false прокрутка во всех списках и панелях происходит мгновенно.
         /// </summary>
-        public static bool SmoothScroll = true;
+        public static bool SmoothScroll;
 
         // ------------------------------------------------------------------- цвета
         public static readonly Color Bg      = Color.FromArgb(0xFF, 0x1B, 0x1B, 0x1D);
@@ -62,7 +62,12 @@ namespace AbletonManager
         public const int GlassSurfacePressedAlpha = 0xb0;   // ~23%, нажатие / выбрано
 
         public static readonly Color Sunken  = Color.FromArgb(0xFF, 0x15, 0x15, 0x19);  // поле поиска
-        public static readonly Color Light   = Color.FromArgb(0xFF, 0xCA, 0xCA, 0xCB);  // главная кнопка
+        // Главная кнопка. Плоский 0xCACACB рядом с обводочными кнопками выглядел
+        // выключенным, поэтому теперь это вертикальный градиент: LightTop сверху,
+        // Light снизу, LightPressed — при нажатии.
+        public static readonly Color Light        = Color.FromArgb(0xFF, 0xCA, 0xCA, 0xCB);
+        public static readonly Color LightTop     = Color.FromArgb(0xFF, 0xF2, 0xF2, 0xF4);
+        public static readonly Color LightPressed = Color.FromArgb(0xFF, 0x9E, 0x9E, 0xA2);
 
         public static readonly Color Text     = Color.FromArgb(0xFF, 0xE9, 0xE9, 0xEB);
 
@@ -78,11 +83,11 @@ namespace AbletonManager
 
         public static readonly Color RowHover = Color.FromArgb(0x14, 0xFF, 0xFF, 0xFF);
 
-        // Линейки: на стекле тёмная волосяная линия пропадала бы — фон под ней сам
-        // светлеет от обоев. Светлая полупрозрачная видна на любом фоне одинаково.
-        public static readonly Color Hairline = Glass.Enabled
-            ? Color.FromArgb(0x26, 0xFF, 0xFF, 0xFF)
-            : Color.FromArgb(0xFF, 0x28, 0x28, 0x2A);
+        // Линейки непрозрачные. Полупрозрачная линия на пересечении с другой такой же
+        // складывается сама с собой и даёт заметно более светлый пиксель на стыке —
+        // ровно это и было видно там, где вертикальный разделитель встречал шапку.
+        // Цвет подобран так, чтобы совпадать с прежним 15%-белым поверх Bg.
+        public static readonly Color Hairline = Color.FromArgb(0xFF, 0x3A, 0x3A, 0x3D);
 
         // ---------------------------------------------------------------- размеры
         public const int Pad        = 30;   // поле окна слева/справа/сверху
@@ -95,11 +100,12 @@ namespace AbletonManager
         public const int CellPadX   = 24;   // отступ текста от края строки
         public const int PanelW     = 332;  // панель подробностей
         public const int PanelPad   = 16;
-        public const int WindowR    = 30;
-        public const int CardR      = 18;
-        public const int ThumbR     = 10;
-        public const int StatusBarW = 5;    // цветная полоска у колонок Plugins/Files
-        public const int StatusBarH = 29;
+        // Радиусы вложены концентрически: внутренний = внешний − отступ, иначе угол
+        // читается как две разные дуги рядом. 30 на окне 1475×950 выглядело как
+        // телефон, а не как приложение.
+        public const int WindowR    = 18;
+        public const int CardR      = 14;
+        public const int ThumbR     = 6;
 
         // ---------------------------------------------------------------- шрифты
         // Кегли подобраны замером: высота знаков и ширина строк совпадают с макетом
@@ -142,13 +148,27 @@ namespace AbletonManager
             return false;
         }
 
-        public static readonly Font FTitle  = UISemibold(13f);    // имя сета, заголовок панели
-        public static readonly Font FBody   = UI(13f, FontStyle.Regular);
-        public static readonly Font FButton = UI(12f, FontStyle.Regular);
-        public static readonly Font FLabel  = UI(11.5f, FontStyle.Regular);   // шапка таблицы, подписи
-        public static readonly Font FSmall  = UI(11.5f, FontStyle.Regular);
-        public static readonly Font FBadge  = UI(10f, FontStyle.Regular);
-        public static readonly Font FHead   = UISemibold(15f);
+        public static readonly Font FTitle       = UISemibold(13f);    // имя сета, заголовок панели
+        public static readonly Font FBody        = UI(13f, FontStyle.Regular);
+        public static readonly Font FButton      = UI(13f, FontStyle.Regular);     // кнопка — не подпись
+        public static readonly Font FLabel       = UI(12f, FontStyle.Regular);     // шапка таблицы, подписи
+        public static readonly Font FSmall       = UI(12f, FontStyle.Regular);
+        public static readonly Font FBadge       = UI(11f, FontStyle.Regular);
+        public static readonly Font FMini        = UI(9.5f, FontStyle.Regular);
+        public static readonly Font FHead        = UISemibold(17f);
+        public static readonly Font FDialogTitle = UISemibold(22f);
+
+        /// <summary>
+        /// Отступ от верха строки до базовой линии, в пикселях. TextRenderer сажает
+        /// строку по верху коробки, а коробка у 13 и 9.5 пунктов разной высоты —
+        /// без этой поправки подписи разного кегля стоят на разных линиях.
+        /// </summary>
+        public static int Baseline(Font f)
+        {
+            FontFamily fam = f.FontFamily;
+            return (int)Math.Round(TextRenderer.MeasureText("Ag", f).Height
+                                   * fam.GetCellAscent(f.Style) / (float)fam.GetLineSpacing(f.Style));
+        }
 
         // ------------------------------------------------------------- рисование
 
@@ -275,20 +295,19 @@ namespace AbletonManager
             return gd == null || gd.UseGlass;
         }
 
-        public static void PaintGlassSurface(Control owner, Graphics g, RectangleF r, float radius, int fillAlpha)
+        /// <summary>
+        /// Стеклянная обводка — тонкий контур 1px белым 4% и блик по верхнему краю 1px белым 8%.
+        /// Точно такая же обводка, как у карточек, диалогов и окна свойств (DetailPanel).
+        /// </summary>
+        public static void PaintGlassBorder(Graphics g, RectangleF r, float radius, float k = 1.0f)
         {
-            Color fill = IsBlurred(owner) ? Color.FromArgb(fillAlpha, Bg) : Surface;
-            CompositingMode old = g.CompositingMode;
-            g.CompositingMode = CompositingMode.SourceCopy;
-            FillRound(g, r, radius, fill);
-            g.CompositingMode = old;
-
-            // Обводка и блик держат постоянную альфу, пока заливка не упадёт ниже
-            // состояния покоя. У Quiet-кнопок покоя нет: без этого затухания контур
-            // висел на полной силе весь хвост анимации и «отлипал» рывком в конце.
-            float k = Math.Min(1f, fillAlpha / (float)GlassSurfaceAlpha);
-            Pen borderPen = k < 1f ? new Pen(Color.FromArgb((int)Math.Round(10 * k), 255, 255, 255), 1.5f) : _borderPen;
-            Pen highlightPen = k < 1f ? new Pen(Color.FromArgb((int)Math.Round(20 * k), 255, 255, 255), 1.5f) : _highlightPen;
+            if (k <= 0.001f) return;
+            Pen borderPen = k < 0.999f
+                ? new Pen(Color.FromArgb((int)Math.Round(10 * k), 255, 255, 255), 1.5f)
+                : _borderPen;
+            Pen highlightPen = k < 0.999f
+                ? new Pen(Color.FromArgb((int)Math.Round(20 * k), 255, 255, 255), 1.5f)
+                : _highlightPen;
 
             RectangleF border = RectangleF.Inflate(r, -0.5f, -0.5f);
             DrawRoundCached(g, border, Math.Max(0f, radius - 0.5f), borderPen);                           // 4%
@@ -299,6 +318,22 @@ namespace AbletonManager
 
             if (borderPen != _borderPen) borderPen.Dispose();
             if (highlightPen != _highlightPen) highlightPen.Dispose();
+        }
+
+        public static void PaintGlassSurface(Control owner, Graphics g, RectangleF r, float radius, int fillAlpha)
+        {
+            bool blurred = IsBlurred(owner);
+            Color fill = blurred ? Color.FromArgb(fillAlpha, Bg) : Surface;
+            CompositingMode old = g.CompositingMode;
+            if (blurred) g.CompositingMode = CompositingMode.SourceCopy;
+            FillRound(g, r, radius, fill);
+            g.CompositingMode = old;
+
+            // Обводка и блик держат постоянную альфу, пока заливка не упадёт ниже
+            // состояния покоя. У Quiet-кнопок покоя нет: без этого затухания контур
+            // висел на полной силе весь хвост анимации и «отлипал» рывком в конце.
+            float k = Math.Min(1f, fillAlpha / (float)GlassSurfaceAlpha);
+            PaintGlassBorder(g, r, radius, k);
         }
 
         public static void Smooth(Graphics g)

@@ -16,6 +16,7 @@ namespace AbletonManager
         readonly GlassButton _action = new GlassButton();
         readonly GlassButton _rescue = new GlassButton();
         readonly GlassButton _forks = new GlassButton();
+        readonly GlassButton _showInList = new GlassButton();
 
         SetEntry _set;
         PluginStat _plugin;
@@ -23,13 +24,13 @@ namespace AbletonManager
         int _scroll;
         int _contentHeight;
         float _scrollTarget, _scrollCurrent;
-        Timer _scrollTimer;
+        readonly SmoothScroller _scroller;
 
         Arrangement _arr;
         Bitmap _thumb;
         Size _thumbSize;
-        Rectangle _thumbRect, _linkRect, _notesRect;
-        bool _thumbHot, _linkHot, _notesHot;
+        Rectangle _thumbRect, _linkRect, _notesRect, _topRect;
+        bool _thumbHot, _linkHot, _notesHot, _topHot;
         bool _thumbRendering;
 
         // Список «Sets» у плагина: строки кликабельны — переход к сету, но подчёркиваем
@@ -58,6 +59,21 @@ namespace AbletonManager
         /// </summary>
         public event Action ForksRequested;
 
+        Action _showInListRequested;
+        public event Action ShowInListRequested
+        {
+            add
+            {
+                _showInListRequested += value;
+                ApplyAction();
+            }
+            remove
+            {
+                _showInListRequested -= value;
+                ApplyAction();
+            }
+        }
+
         /// <summary>Клик по блоку тегов и заметки — открыть редактор.</summary>
         public event Action<SetEntry> NotesRequested;
         public event Action<SetEntry> SetRequested;
@@ -80,38 +96,47 @@ namespace AbletonManager
             Controls.Add(_action);
 
             // Второстепенные действия для сета — только для сета: у плагина своего .als
-            // нет, ни чинить, ни версионировать нечего. Оба Quiet, без заливки: панель
-            // уже говорит «Open in Live» громче всего, а эти две нужны далеко не на
-            // каждом сете, и пилюли рядом с главной кнопкой спорили бы с ней за взгляд.
-            // Никакой SurfaceOverlay: Quiet-кнопка — это текст-ссылка без заливки, а
-            // непрозрачная накладка при затухании ховера (PaintGlassSurface рисует
-            // SourceCopy) на миг пробивала кнопку в дыру и тут же возвращала плашку.
-            _rescue.Text = L.S("Rescue Project", "Восстановить проект");
-            _rescue.Quiet = true;
+            // нет, ни чинить, ни версионировать нечего. Обычные пилюли, не Quiet: рядом
+            // с заливной Open in Live «тихая» кнопка читалась как подпись к ней, а не
+            // как второе действие. Главная остаётся главной за счёт заливки, а не за
+            // счёт того, что у соседей отняли обводку.
+            // Никакой SurfaceOverlay: непрозрачная накладка при затухании ховера
+            // (PaintGlassSurface пишет SourceCopy) на миг пробивала кнопку в дыру.
+            _rescue.Text = "Rescue Project";
             _rescue.Surface = Theme.Backdrop;
             _rescue.Click += delegate { if (RescueRequested != null) RescueRequested(); };
             Controls.Add(_rescue);
 
-            _forks.Text = L.S("Forks", "Версии");
-            _forks.Quiet = true;
+            _forks.Text = "Forks";
             _forks.Surface = Theme.Backdrop;
             _forks.Click += delegate { if (ForksRequested != null) ForksRequested(); };
             Controls.Add(_forks);
 
-            _scrollTimer = new Timer();
-            _scrollTimer.Interval = 16;
-            _scrollTimer.Tick += delegate { ScrollTick(); };
+            _showInList.Text = "Show in List";
+            _showInList.Surface = Theme.Backdrop;
+            _showInList.Click += delegate { if (_showInListRequested != null) _showInListRequested(); };
+            Controls.Add(_showInList);
+
+            _scroller = new SmoothScroller(this,
+                delegate (int s) { _scroll = s; _scrollCurrent = s; ClampScroll(); },
+                delegate { return Math.Max(0, _contentHeight - BodyBottom); });
             ApplyAction();
         }
 
         int Pad { get { return Sc(Theme.PanelPad); } }
 
+        static readonly TextFormatFlags PanelLeft =
+            TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.SingleLine |
+            TextFormatFlags.NoPrefix | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPadding;
+
+        static readonly TextFormatFlags PanelRight =
+            TextFormatFlags.Right | TextFormatFlags.VerticalCenter | TextFormatFlags.SingleLine |
+            TextFormatFlags.NoPrefix | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPadding;
+
         /// <summary>
-        /// TextRenderer.DrawText без NoPadding сдвигает первый видимый пиксель буквы
-        /// примерно на 4px правее начала прямоугольника (замерено на FLabel) — подчёркивание,
-        /// проведённое от самого rr.X, из-за этого торчит левее текста, который оно подчёркивает.
+        /// С PanelLeft (TextFormatFlags.NoPadding) первый пиксель текста рисуется ровно от края rr.X.
         /// </summary>
-        int UnderlinePad { get { return Sc(4); } }
+        int UnderlinePad { get { return 0; } }
 
         // ------------------------------------------------------------- содержимое
 
@@ -123,6 +148,9 @@ namespace AbletonManager
             _set = s;
             _scroll = 0;
             _scrollTarget = _scrollCurrent = 0;
+            if (_scroller != null) _scroller.SyncPosition(0);
+            _topHot = false;
+            _topRect = Rectangle.Empty;
             _pluginRowHot = -1;
             if (!same)
             {
@@ -156,6 +184,9 @@ namespace AbletonManager
             DropThumb();
             _scroll = 0;
             _scrollTarget = _scrollCurrent = 0;
+            if (_scroller != null) _scroller.SyncPosition(0);
+            _topHot = false;
+            _topRect = Rectangle.Empty;
             _setRowHot = -1;
             _pluginRowHot = -1;
 
@@ -182,18 +213,22 @@ namespace AbletonManager
         {
             if (_pluginMode)
             {
-                _action.Text = L.S("Show in Explorer", "Показать в папке");
-                _action.Visible = _plugin != null && _plugin.Installed != null
-                                  && _plugin.Installed.Path.Length > 0;
+                // Кнопка «Show in Explorer» убрана: путь к плагину сам стал ссылкой,
+                // и кнопка внизу повторяла то, на что и так хочется нажать.
+                _action.Visible = false;
+                _rescue.Visible = false;
+                _forks.Visible = false;
+                _showInList.Visible = false;
             }
             else
             {
-                _action.Text = L.S("Open in Live", "Открыть в Live");
+                _action.Text = "Open in Live";
                 _action.Visible = _set != null;
+                bool inList = _showInListRequested != null;
+                _showInList.Visible = !_pluginMode && _set != null && inList;
+                _rescue.Visible = !_pluginMode && _set != null && !inList;
+                _forks.Visible = !_pluginMode && _set != null && !inList && ForksRequested != null;
             }
-
-            _rescue.Visible = !_pluginMode && _set != null;
-            _forks.Visible = !_pluginMode && _set != null && ForksRequested != null;
         }
 
         void DropThumb()
@@ -210,8 +245,9 @@ namespace AbletonManager
             int h = Sc(Theme.ControlH);
             int w = Math.Max(Sc(40), Width - Pad * 2);
             _action.SetBounds(Pad, Height - Pad - h, w, h);
-            _rescue.SetBounds(Pad, _action.Top - Sc(6) - h, w, h);
-            _forks.SetBounds(Pad, _rescue.Top - Sc(2) - h, w, h);
+            _showInList.SetBounds(Pad, _action.Top - Sc(8) - h, w, h);
+            _rescue.SetBounds(Pad, _action.Top - Sc(8) - h, w, h);
+            _forks.SetBounds(Pad, _rescue.Top - Sc(8) - h, w, h);
             ClampScroll();
         }
 
@@ -220,18 +256,18 @@ namespace AbletonManager
         /// список не прыгал, когда кнопка то есть, то нет, — но по-разному для двух
         /// режимов: у плагина кнопка всегда одна (Show in Explorer то есть, то нет,
         /// смотря установлен ли он), у сета их до трёх сразу (Open in Live, Rescue
-        /// Project и Forks). Переключение между режимами и так меняет содержимое панели
-        /// целиком, так что разная высота резерва здесь не приводит к дёрганью, которого
-        /// избегает сам резерв, — оно только внутри одного режима.
+        /// Project и Forks, либо Open in Live и Show in List). Переключение между режимами
+        /// и так меняет содержимое панели целиком, так что разная высота резерва здесь не
+        /// приводит к дёрганью, которого избегает сам резерв, — оно только внутри одного режима.
         /// </summary>
         int BodyBottom
         {
             get
             {
                 int h = Sc(Theme.ControlH);
-                int rows = _pluginMode ? 1 : (ForksRequested != null ? 3 : 2);
-                int buttons = h * rows + (rows > 1 ? Sc(8) : 0);
-                return Height - Pad - buttons - Sc(12);
+                int rows = _pluginMode ? 0 : (_showInListRequested != null ? 2 : (ForksRequested != null ? 3 : 2));
+                int buttons = rows == 0 ? 0 : h * rows + Sc(8) * (rows - 1);
+                return Height - Pad - buttons - Sc(16);
             }
         }
 
@@ -250,45 +286,8 @@ namespace AbletonManager
 
         protected override void OnMouseWheel(MouseEventArgs e)
         {
-            if (_contentHeight <= BodyBottom) return;
-            _scrollTarget -= (int)(e.Delta / 120f * Sc(60));
-            ClampScrollTarget();
-            if (!Theme.SmoothScroll)
-            {
-                _scroll = (int)_scrollTarget;
-                _scrollCurrent = _scrollTarget;
-                ClampScroll();
-                Invalidate();
-            }
-            else
-            {
-                if (!_scrollTimer.Enabled) _scrollTimer.Start();
-            }
+            _scroller.OnMouseWheel(e.Delta, Sc(60));
             base.OnMouseWheel(e);
-        }
-
-        void ClampScrollTarget()
-        {
-            int max = Math.Max(0, _contentHeight - BodyBottom);
-            if (_scrollTarget > max) _scrollTarget = max;
-            if (_scrollTarget < 0) _scrollTarget = 0;
-        }
-
-        void ScrollTick()
-        {
-            _scrollCurrent += (_scrollTarget - _scrollCurrent) * 0.35f;
-            if (Math.Abs(_scrollTarget - _scrollCurrent) < 0.5f)
-            {
-                _scrollCurrent = _scrollTarget;
-                _scrollTimer.Stop();
-            }
-            int newScroll = (int)Math.Round(_scrollCurrent);
-            if (newScroll != _scroll)
-            {
-                _scroll = newScroll;
-                ClampScroll();
-                Invalidate();
-            }
         }
 
         // ------------------------------------------------------------------- мышь
@@ -296,7 +295,7 @@ namespace AbletonManager
         protected override void OnMouseMove(MouseEventArgs e)
         {
             bool t = _arr != null && _arr.HasContent && _thumbRect.Contains(e.Location);
-            bool l = _set != null && _linkRect.Contains(e.Location);
+            bool l = !_linkRect.IsEmpty && _linkRect.Contains(e.Location);
 
             int rowHot = -1;
             for (int i = 0; i < _setRowRects.Count; i++)
@@ -307,13 +306,15 @@ namespace AbletonManager
                 if (_pluginRowRects[i].Contains(e.Location)) { pluginRowHot = i; break; }
 
             bool n = _set != null && !_pluginMode && _notesRect.Contains(e.Location);
+            bool up = !_topRect.IsEmpty && _topRect.Contains(e.Location);
+            if (up) { t = l = n = false; rowHot = pluginRowHot = -1; }
 
-            if (t != _thumbHot || l != _linkHot || n != _notesHot
+            if (t != _thumbHot || l != _linkHot || n != _notesHot || up != _topHot
                 || rowHot != _setRowHot || pluginRowHot != _pluginRowHot)
             {
-                _thumbHot = t; _linkHot = l; _notesHot = n;
+                _thumbHot = t; _linkHot = l; _notesHot = n; _topHot = up;
                 _setRowHot = rowHot; _pluginRowHot = pluginRowHot;
-                Cursor = (t || l || n || rowHot >= 0 || pluginRowHot >= 0) ? Cursors.Hand : Cursors.Default;
+                Cursor = (t || l || n || up || rowHot >= 0 || pluginRowHot >= 0) ? Cursors.Hand : Cursors.Default;
                 Invalidate();
             }
             base.OnMouseMove(e);
@@ -321,9 +322,9 @@ namespace AbletonManager
 
         protected override void OnMouseLeave(EventArgs e)
         {
-            if (_thumbHot || _linkHot || _notesHot || _setRowHot >= 0 || _pluginRowHot >= 0)
+            if (_thumbHot || _linkHot || _notesHot || _topHot || _setRowHot >= 0 || _pluginRowHot >= 0)
             {
-                _thumbHot = _linkHot = _notesHot = false;
+                _thumbHot = _linkHot = _notesHot = _topHot = false;
                 _setRowHot = -1;
                 _pluginRowHot = -1;
                 Cursor = Cursors.Default;
@@ -336,6 +337,15 @@ namespace AbletonManager
         {
             if (e.Button == MouseButtons.Left)
             {
+                if (_topHot)
+                {
+                    _scroll = 0;
+                    _scrollTarget = _scrollCurrent = 0;
+                    if (_scroller != null) _scroller.SyncPosition(0);
+                    _topHot = false;
+                    Invalidate();
+                    return;
+                }
                 if (_thumbHot && PreviewRequested != null) { PreviewRequested(); return; }
                 if (_linkHot && RevealRequested != null) { RevealRequested(); return; }
                 if (_notesHot && _set != null && NotesRequested != null)
@@ -377,9 +387,12 @@ namespace AbletonManager
             PaintCard(g);
 
             int w = Width - Pad * 2;
-            int y = Pad - _scroll;
 
-            if (_pluginMode) { PaintPlugin(g, Pad, y, w); return; }
+            // Резиновый перелёт за край — тот же, что в списке и на плитках.
+            int over = _scroller != null ? (int)Math.Round(_scroller.Overscroll) : 0;
+            int y = Pad - _scroll - over;
+
+            if (_pluginMode) { PaintPlugin(g, Pad, y, w, over); return; }
             _setRowRects.Clear();
             _setRowSets.Clear();
             _pluginRowRects.Clear();
@@ -387,71 +400,74 @@ namespace AbletonManager
 
             if (_set == null)
             {
-                _thumbRect = _linkRect = Rectangle.Empty;
-                Chrome.DrawText(g, L.S("Select a set to see details", "Выбери сет, чтобы увидеть детали"),
-                    Theme.FLabel, new Rectangle(Pad, Pad, w, Sc(60)), Theme.TextDim, Chrome.Wrap);
+                _thumbRect = _linkRect = _topRect = Rectangle.Empty;
+
+                // Раньше это была строка в левом верхнем углу пустой панели — читалась
+                // как забытая подпись. Значок и две строки по центру: заголовок и что
+                // делать дальше.
+                int gl = Sc(30);
+                float cy = Height / 2f - Sc(34);
+                Icons.Draw(g, Glyph.ViewList,
+                           new RectangleF(Pad + (w - gl) / 2f, cy, gl, gl),
+                           Color.FromArgb(0x4A, 0xFF, 0xFF, 0xFF), 1.3f);
+                Chrome.DrawText(g, "No set selected", Theme.FTitle,
+                    new Rectangle(Pad, (int)(cy + gl + Sc(12)), w, Sc(24)),
+                    Color.FromArgb(0xB4, 0xFF, 0xFF, 0xFF), Chrome.CellCenter);
+                Chrome.DrawText(g, "Pick one from the list", Theme.FLabel,
+                    new Rectangle(Pad, (int)(cy + gl + Sc(34)), w, Sc(22)),
+                    Theme.TextDim, Chrome.CellCenter);
                 return;
             }
 
             // Заголовок и вес всей папки проекта в одной строке — то же число, что и в
-            // колонке списка. Вес самого .als уехал строкой ниже: он почти всегда
-            // одинаковый и интересен куда реже, чем «сколько занимает проект».
+            // колонке списка.
             int titleH = Sc(26);
             string size = MainForm.SizeMB(_set.ProjectSize);
-            Size sw = TextRenderer.MeasureText(size, Theme.FLabel);
+            Size sw = TextRenderer.MeasureText(g, size, Theme.FLabel, new Size(w, titleH), PanelRight);
             Chrome.DrawText(g, _set.Name, Theme.FTitle,
-                new Rectangle(Pad, y, w - sw.Width - Sc(10), titleH), Theme.Text, Chrome.Left);
+                new Rectangle(Pad, y, w - sw.Width - Sc(10), titleH), Theme.Text, PanelLeft);
             Chrome.DrawText(g, size, Theme.FLabel,
-                new Rectangle(Pad, y, w, titleH), Theme.TextDim, Chrome.Right);
-            y += titleH + Sc(2);
-
-            string weights = _set.ProjectFiles > 0
-                ? _set.ProjectFiles + L.S(" files in the project folder · set ", " файлов в папке · сет ")
-                  + MainForm.SizeMB(_set.Size)
-                : L.S("set ", "сет ") + MainForm.SizeMB(_set.Size);
-            y = Wrapped(g, weights, Theme.FBadge, Theme.TextDim, Pad, y, w) + Sc(10);
+                new Rectangle(Pad, y, w, titleH), Theme.TextDim, PanelRight);
+            y += titleH + Sc(16);
 
             y = Thumb(g, Pad, y, w) + Sc(16);
 
-            y = Wrapped(g, _set.Path, Theme.FLabel, Theme.TextDim, Pad, y, w) + Sc(4);
-
-            // Ссылка «показать в папке» — подчёркнутая строка, как в макете.
-            Size ls = TextRenderer.MeasureText(L.S("Show in Explorer…", "Показать в папке…"), Theme.FLabel);
-            _linkRect = new Rectangle(Pad, y, ls.Width, ls.Height);
-            Chrome.DrawText(g, L.S("Show in Explorer…", "Показать в папке…"), Theme.FLabel,
-                            _linkRect, _linkHot ? Color.White : Theme.Text, Chrome.Left);
-            using (Pen p = new Pen(_linkHot ? Color.White : Theme.Text))
-                g.DrawLine(p, _linkRect.Left, _linkRect.Bottom - Sc(2),
-                              _linkRect.Right - Sc(3), _linkRect.Bottom - Sc(2));
-            y += ls.Height + Sc(20);
+            // Сам путь и есть ссылка: отдельная строка «Show in Explorer…» повторяла
+            // то, на что и так хочется нажать. Не подчёркиваем — просто светлеет.
+            int pathTop = y;
+            int pathBottom = Wrapped(g, _set.Path, Theme.FLabel,
+                                     _linkHot ? Theme.Text : Theme.TextDim, Pad, y, w);
+            _linkRect = new Rectangle(Pad, pathTop, w, pathBottom - pathTop);
+            y = pathBottom + Sc(24);
 
             y = TagsAndNote(g, y, w);
             y = Versions(g, y, w);
 
             // Файлы
-            y = Line(g, L.S("Files:", "Файлы:"), Theme.FLabel, Theme.TextDim, Pad, y, w) + Sc(4);
-            Chrome.DrawText(g, _set.TotalRefs + L.S(" references", " ссылок"), Theme.FLabel,
-                new Rectangle(Pad, y, w, Sc(28)), Theme.Text, Chrome.Left);
-            if (_set.TotalRefs > 0 || _set.MissingFiles > 0)
-                Chrome.DrawText(g, _set.MissingFiles + L.S(" missing", " потеряно"), Theme.FLabel,
-                    new Rectangle(Pad, y, w, Sc(28)),
-                    _set.MissingFiles > 0 ? Theme.Red : Theme.Green, Chrome.Right);
-            y += Sc(28) + Sc(16);
+            y = Line(g, "Files:", Theme.FLabel, Theme.TextDim, Pad, y, w) + Sc(8);
+            Chrome.DrawText(g, Plural(_set.TotalRefs, "reference"), Theme.FLabel,
+                new Rectangle(Pad, y, w, Sc(28)), Theme.Text, PanelLeft);
+            // Цвет — только когда плохо. Зелёный ноль обещал событие, которого нет,
+            // и красное среди него переставало бросаться в глаза.
+            if (_set.MissingFiles > 0)
+                Chrome.DrawText(g, _set.MissingFiles + " missing", Theme.FLabel,
+                    new Rectangle(Pad, y, w, Sc(28)), Theme.Red, PanelRight);
+            y += Sc(28) + Sc(24);
 
             if (_set.Error.Length > 0)
-                y = Wrapped(g, _set.Error, Theme.FLabel, Theme.Red, Pad, y, w) + Sc(16);
+                y = Wrapped(g, _set.Error, Theme.FLabel, Theme.Red, Pad, y, w) + Sc(24);
 
             // Плагины — счётчик пропавших напротив заголовка, тем же приёмом, что у Files.
             Rectangle plugHead = new Rectangle(Pad, y, w, Sc(28));
-            Chrome.DrawText(g, L.S("Plugins", "Плагины") + " (" + _set.Plugins.Length + "):",
-                            Theme.FLabel, plugHead, Theme.TextDim, Chrome.Left);
-            if (_set.Plugins.Length > 0)
-                Chrome.DrawText(g, _set.MissingPlugins + L.S(" missing", " нет"), Theme.FLabel,
-                    plugHead, _set.MissingPlugins > 0 ? Theme.Red : Theme.Green, Chrome.Right);
-            y += Sc(28) + Sc(6);
+            Chrome.DrawText(g, "Plugins" + " (" + _set.Plugins.Length + "):",
+                            Theme.FLabel, plugHead, Theme.TextDim, PanelLeft);
+            if (_set.MissingPlugins > 0)
+                Chrome.DrawText(g, _set.MissingPlugins + " missing", Theme.FLabel,
+                    plugHead, Theme.Red, PanelRight);
+            y += Sc(28) + Sc(8);
 
             if (_set.Plugins.Length == 0)
-                y = Line(g, L.S("only Live's own devices", "только встроенные устройства Live"),
+                y = Line(g, "only Live's own devices",
                          Theme.FLabel, Theme.TextDim, Pad, y, w);
             else
             {
@@ -474,15 +490,15 @@ namespace AbletonManager
                     bool hot = _pluginRowHot == shown;
                     Color c = m == MatchKind.Missing ? Theme.Red : Theme.Text;
                     Rectangle rr = new Rectangle(Pad, y, w, Sc(28));
-                    Chrome.DrawText(g, _set.Plugins[i], Theme.FLabel, rr, c, Chrome.Left);
+                    Chrome.DrawText(g, _set.Plugins[i], Theme.FLabel, rr, c, PanelLeft);
                     if (m == MatchKind.OtherFormat)
-                        Chrome.DrawText(g, L.S("other format", "другой формат"), Theme.FLabel,
-                                        rr, Theme.TextDim, Chrome.Right);
+                        Chrome.DrawText(g, "other format", Theme.FLabel,
+                                        rr, Theme.TextDim, PanelRight);
                     if (hot)
                     {
                         // Подчёркиваем только эту строку и только по ширине текста — та же
                         // подача, что у кликабельных сетов в панели плагина.
-                        Size ts = TextRenderer.MeasureText(_set.Plugins[i], Theme.FLabel);
+                        Size ts = TextRenderer.MeasureText(g, _set.Plugins[i], Theme.FLabel, new Size(rr.Width, rr.Height), PanelLeft);
                         int ly = rr.Y + (rr.Height + ts.Height) / 2;
                         int lx = rr.X + UnderlinePad;
                         using (Pen ln = new Pen(c))
@@ -498,15 +514,42 @@ namespace AbletonManager
                 if (_set.Plugins.Length > shown)
                 {
                     if (!Below(y + Sc(28)))
-                        y = Line(g, "… " + (_set.Plugins.Length - shown) + L.S(" more", " ещё"),
+                        y = Line(g, "… " + (_set.Plugins.Length - shown) + " more",
                                  Theme.FLabel, Theme.TextDim, Pad, y, w);
                     else
                         y += Sc(28) * (_set.Plugins.Length - shown);
                 }
             }
 
-            _contentHeight = y + _scroll + Pad;
+            _contentHeight = y + _scroll + over + Pad;
             ClampScroll();
+
+            PaintScrollTop(g);
+        }
+
+        /// <summary>
+        /// Кнопка «наверх» в правом нижнем углу тела панели. Список сетов у плагина
+        /// бывает на сотню строк, и возвращаться к шапке колесом — долго.
+        /// </summary>
+        void PaintScrollTop(Graphics g)
+        {
+            if (_scroll < Sc(120)) { _topRect = Rectangle.Empty; return; }
+
+            int d = Sc(30);
+            _topRect = new Rectangle(Width - Pad - d, BodyBottom - d, d, d);
+            Theme.PaintGlassSurface(this, g, _topRect, d / 2f,
+                _topHot ? Theme.GlassSurfacePressedAlpha : Theme.GlassSurfaceHotAlpha);
+
+            float cx = _topRect.X + d / 2f, cy = _topRect.Y + d / 2f, a = Sc(5);
+            using (Pen pen = new Pen(_topHot ? Theme.Text : Theme.TextDim, 1.6f))
+            {
+                pen.StartCap = LineCap.Round;
+                pen.EndCap = LineCap.Round;
+                g.DrawLines(pen, new PointF[] {
+                    new PointF(cx - a, cy + a * 0.45f),
+                    new PointF(cx, cy - a * 0.55f),
+                    new PointF(cx + a, cy + a * 0.45f) });
+            }
         }
 
         /// <summary>
@@ -522,19 +565,21 @@ namespace AbletonManager
             string note = ProjectMeta.NoteOf(dir);
 
             int icon = Sc(15);
-            int textX = Pad + icon + Sc(8);
-            int textW = w - icon - Sc(8);
+            int iconOffset = (int)Math.Round(icon * 0.16f);
+            int iconLeft = Pad - iconOffset;
+            int textX = Pad + icon - iconOffset * 2 + Sc(6);
+            int textW = w - (textX - Pad);
             int top = y;
 
             if (tags.Count == 0 && note.Length == 0)
             {
-                Rectangle line = new Rectangle(Pad, y, w, Sc(24));
+                Rectangle line = new Rectangle(iconLeft, y, w + iconOffset, Sc(24));
                 Icons.Draw(g, Glyph.Note,
-                           new RectangleF(Pad, y + (Sc(24) - icon) / 2f, icon, icon),
+                           new RectangleF(iconLeft, y + (Sc(24) - icon) / 2f - Sc(2), icon, icon),
                            _notesHot ? Theme.Text : Theme.TextDim, 1.3f);
-                Chrome.DrawText(g, L.S("Add tags or a note…", "Добавить теги или заметку…"),
+                Chrome.DrawText(g, "Add tags or a note…",
                                 Theme.FBadge, new Rectangle(textX, y, textW, Sc(24)),
-                                _notesHot ? Theme.Text : Theme.TextDim, Chrome.Left);
+                                _notesHot ? Theme.Text : Theme.TextDim, PanelLeft);
                 _notesRect = line;
                 return y + Sc(24) + Sc(14);
             }
@@ -560,7 +605,7 @@ namespace AbletonManager
             if (note.Length > 0)
             {
                 if (tags.Count == 0)
-                    Icons.Draw(g, Glyph.Note, new RectangleF(Pad, y + Sc(3), icon, icon),
+                    Icons.Draw(g, Glyph.Note, new RectangleF(iconLeft, y + Sc(1), icon, icon),
                                _notesHot ? Theme.Text : Theme.TextDim, 1.3f);
                 y = Wrapped(g, note, Theme.FBadge,
                             _notesHot ? Theme.Text : Theme.TextDim,
@@ -568,7 +613,7 @@ namespace AbletonManager
                             y, tags.Count == 0 ? textW : w);
             }
 
-            _notesRect = new Rectangle(Pad, top, w, Math.Max(Sc(24), y - top));
+            _notesRect = new Rectangle(iconLeft, top, w + iconOffset, Math.Max(Sc(24), y - top));
             return y + Sc(14);
         }
 
@@ -584,7 +629,7 @@ namespace AbletonManager
             List<SetEntry> all = Index.InSameFolder(_set);
             if (all.Count < 2) return y;
 
-            y = Line(g, L.S("Versions", "Версии") + " (" + all.Count + "):",
+            y = Line(g, "Versions" + " (" + all.Count + "):",
                      Theme.FLabel, Theme.TextDim, Pad, y, w) + Sc(4);
 
             foreach (SetEntry v in all)
@@ -595,17 +640,17 @@ namespace AbletonManager
                 Rectangle rr = new Rectangle(Pad, y, w, Sc(24));
 
                 Color c = current ? Theme.Text : Theme.TextDim;
-                Size ds = TextRenderer.MeasureText(v.Modified.ToLocalTime().ToString("yyyy-MM-dd"), Theme.FBadge);
+                Size ds = TextRenderer.MeasureText(g, v.Modified.ToLocalTime().ToString("yyyy-MM-dd"), Theme.FBadge, new Size(rr.Width, rr.Height), PanelRight);
                 Chrome.DrawText(g, v.Name, Theme.FBadge,
                                 new Rectangle(rr.X, rr.Y, rr.Width - ds.Width - Sc(8), rr.Height),
-                                hot ? Color.White : c, Chrome.Left);
+                                hot ? Color.White : c, PanelLeft);
                 Chrome.DrawText(g, v.Modified.ToLocalTime().ToString("yyyy-MM-dd"), Theme.FBadge,
-                                rr, Theme.TextDim, Chrome.Right);
+                                rr, Theme.TextDim, PanelRight);
 
                 // Текущую не подчёркиваем даже под курсором: щёлкать по ней незачем.
                 if (hot && !current)
                 {
-                    Size ts = TextRenderer.MeasureText(v.Name, Theme.FBadge);
+                    Size ts = TextRenderer.MeasureText(g, v.Name, Theme.FBadge, new Size(rr.Width, rr.Height), PanelLeft);
                     int ly = rr.Y + (rr.Height + ts.Height) / 2;
                     using (Pen ln = new Pen(Color.White))
                         g.DrawLine(ln, rr.X + UnderlinePad, ly,
@@ -619,9 +664,9 @@ namespace AbletonManager
             return y + Sc(14);
         }
 
-        void PaintPlugin(Graphics g, int pad, int y, int w)
+        void PaintPlugin(Graphics g, int pad, int y, int w, int over)
         {
-            _thumbRect = _linkRect = Rectangle.Empty;
+            _thumbRect = _linkRect = _topRect = Rectangle.Empty;
             _setRowRects.Clear();
             _setRowSets.Clear();
             _pluginRowRects.Clear();
@@ -629,62 +674,75 @@ namespace AbletonManager
             PluginStat p = _plugin;
             if (p == null)
             {
-                TextRenderer.DrawText(g, L.S("Select a plugin to see where it is used",
-                                             "Выбери плагин, чтобы увидеть, где он стоит"),
-                    Theme.FLabel, new Rectangle(pad, pad, w, Sc(60)), Theme.TextDim, Chrome.Wrap);
+                // Тот же пустой экран, что и у сетов: значок и две строки по центру.
+                int gl = Sc(30);
+                float cy = Height / 2f - Sc(34);
+                Icons.Draw(g, Glyph.ViewList,
+                           new RectangleF(pad + (w - gl) / 2f, cy, gl, gl),
+                           Color.FromArgb(0x4A, 0xFF, 0xFF, 0xFF), 1.3f);
+                Chrome.DrawText(g, "No plug-in selected", Theme.FTitle,
+                    new Rectangle(pad, (int)(cy + gl + Sc(12)), w, Sc(24)),
+                    Color.FromArgb(0xB4, 0xFF, 0xFF, 0xFF), Chrome.CellCenter);
+                Chrome.DrawText(g, "Pick one to see where it is used", Theme.FLabel,
+                    new Rectangle(pad, (int)(cy + gl + Sc(34)), w, Sc(22)),
+                    Theme.TextDim, Chrome.CellCenter);
                 return;
             }
             InstalledPlugin inst = p.Installed;
 
             y = Line(g, p.Name, Theme.FTitle, Theme.Text, pad, y, w) + Sc(2);
-            y = Line(g, p.Vendor.Length > 0 ? p.Vendor : L.S("unknown developer", "разработчик неизвестен"),
-                     Theme.FLabel, Theme.TextDim, pad, y, w) + Sc(18);
+            y = Line(g, p.Vendor.Length > 0 ? p.Vendor : "unknown developer",
+                     Theme.FLabel, Theme.TextDim, pad, y, w) + Sc(16);
 
             string state;
             Color stateColor;
-            if (p.Match == MatchKind.Exact)
+            if (p.Match == MatchKind.Exact && (inst == null || !inst.FileMissing))
             {
-                state = L.S("installed", "установлен");
+                state = "installed";
                 stateColor = Theme.Green;
-                if (inst != null && inst.FileMissing)
-                {
-                    state = L.S("file is gone", "файла нет на диске");
-                    stateColor = Theme.Red;
-                }
             }
             else if (p.Match == MatchKind.OtherFormat)
             {
-                state = L.S("installed as ", "установлен как ") + (inst != null ? inst.Format : "?");
+                state = "installed as " + (inst != null ? inst.Format : "?");
                 stateColor = Theme.TextDim;
             }
             else
             {
-                state = L.S("not installed", "не установлен");
+                state = "not installed";
                 stateColor = Theme.Red;
             }
 
-            y = Row(g, L.S("Status:", "Состояние:"), state, stateColor, pad, y, w);
-            y = Row(g, L.S("Format:", "Формат:"), p.Format, Theme.Text, pad, y, w);
+            y = Row(g, "Status:", state, stateColor, pad, y, w);
+            y = Row(g, "Format:", p.Format, Theme.Text, pad, y, w);
             if (inst != null)
             {
-                y = Row(g, L.S("Version:", "Версия:"), inst.Version, Theme.Text, pad, y, w);
-                y = Row(g, L.S("Category:", "Категория:"), inst.Category.Replace("|", " · "), Theme.Text, pad, y, w);
+                y = Row(g, "Version:", inst.Version, Theme.Text, pad, y, w);
+                y = Row(g, "Category:", inst.Category.Replace("|", " · "), Theme.Text, pad, y, w);
             }
-            y = Row(g, L.S("Used in:", "Используется:"),
-                    p.Sets + L.S(p.Sets == 1 ? " set" : " sets", " сетах"),
+            // Скобки обязательны: «+» связывает раньше «?:», и без них выражение
+            // сворачивалось в одно слово « sets», а число пропадало.
+            y = Row(g, "Used in:", Plural(p.Sets, "set"),
                     p.Sets == 0 ? Theme.TextDim : Theme.Text, pad, y, w);
-            y += Sc(10);
+            y += Sc(16);
 
+            // Путь к плагину — сам себе ссылка, как путь к сету у сетов.
             if (inst != null && inst.Path.Length > 0)
-                y = Wrapped(g, inst.Path, Theme.FSmall,
-                            inst.FileMissing ? Theme.Red : Theme.TextDim, pad, y, w) + Sc(16);
+            {
+                int pathTop = y;
+                int pathBottom = Wrapped(g, inst.Path, Theme.FSmall,
+                                         inst.FileMissing ? Theme.Red
+                                                          : (_linkHot ? Theme.Text : Theme.TextDim),
+                                         pad, y, w);
+                _linkRect = new Rectangle(pad, pathTop, w, pathBottom - pathTop);
+                y = pathBottom + Sc(24);
+            }
+            else _linkRect = Rectangle.Empty;
 
             List<SetEntry> users = _users;
 
-            y = Line(g, L.S("Sets", "Сеты") + " (" + p.Sets + "):", Theme.FLabel, Theme.TextDim, pad, y, w) + Sc(6);
+            y = Line(g, "Sets" + " (" + p.Sets + "):", Theme.FLabel, Theme.TextDim, pad, y, w) + Sc(8);
             // if (users.Count == 0)
-            //     y = Line(g, L.S("not used anywhere — safe to uninstall",
-            //                     "нигде не используется — можно сносить"),
+            //     y = Line(g, "not used anywhere — safe to uninstall",
             //              Theme.FLabel, Theme.TextDim, pad, y, w);
             int shown = 0;
             foreach (SetEntry s in users)
@@ -692,12 +750,12 @@ namespace AbletonManager
                 if (Below(y + Sc(28))) break;
                 Rectangle rr = new Rectangle(pad, y, w, Sc(28));
                 bool hot = _setRowHot == shown;
-                Chrome.DrawText(g, s.Name, Theme.FLabel, rr, hot ? Color.White : Theme.Text, Chrome.Left);
+                Chrome.DrawText(g, s.Name, Theme.FLabel, rr, hot ? Color.White : Theme.Text, PanelLeft);
                 if (hot)
                 {
                     // Подчёркиваем только эту строку и только по ширине текста — не всю
                     // строку целиком, иначе выглядит как кнопка, а не как ссылка.
-                    Size ts = TextRenderer.MeasureText(s.Name, Theme.FLabel);
+                    Size ts = TextRenderer.MeasureText(g, s.Name, Theme.FLabel, new Size(rr.Width, rr.Height), PanelLeft);
                     int ly = rr.Y + (rr.Height + ts.Height) / 2;
                     int lx = rr.X + UnderlinePad;
                     using (Pen ln = new Pen(Color.White))
@@ -713,7 +771,7 @@ namespace AbletonManager
             if (users.Count > shown)
             {
                 if (!Below(y + Sc(28)))
-                    y = Line(g, "… " + (users.Count - shown) + L.S(" more", " ещё"),
+                    y = Line(g, "… " + (users.Count - shown) + " more",
                              Theme.FLabel, Theme.TextDim, pad, y, w);
                 else
                     // Высоту недорисованных строк всё равно закладываем, иначе панель
@@ -721,8 +779,10 @@ namespace AbletonManager
                     y += Sc(28) * (users.Count - shown);
             }
 
-            _contentHeight = y + _scroll + pad;
+            _contentHeight = y + _scroll + over + pad;
             ClampScroll();
+
+            PaintScrollTop(g);
         }
 
         // ------------------------------------------------------------------ куски
@@ -734,9 +794,9 @@ namespace AbletonManager
             Theme.FillRound(g, _thumbRect, Sc(Theme.ThumbR), Theme.Bg);
 
             string hint = null;
-            if (_arr == null) hint = L.S("reading…", "читаю…");
-            else if (_arr.Error != null) hint = L.S("could not read the set", "сет не читается");
-            else if (!_arr.HasContent) hint = L.S("arrangement is empty", "аранжировка пуста");
+            if (_arr == null) hint = "reading…";
+            else if (_arr.Error != null) hint = "could not read the set";
+            else if (!_arr.HasContent) hint = "arrangement is empty";
 
             if (hint != null)
             {
@@ -788,11 +848,17 @@ namespace AbletonManager
             return y + h;
         }
 
+        /// <summary>«1 reference», «18 references» — согласование, а не «1 references».</summary>
+        static string Plural(int n, string word)
+        {
+            return n + " " + word + (n == 1 ? "" : "s");
+        }
+
         int Line(Graphics g, string text, Font f, Color c, int x, int y, int w)
         {
             if (string.IsNullOrEmpty(text)) return y;
             int h = Sc(28);
-            Chrome.DrawText(g, text, f, new Rectangle(x, y, w, h), c, Chrome.Left);
+            Chrome.DrawText(g, text, f, new Rectangle(x, y, w, h), c, PanelLeft);
             return y + h;
         }
 
@@ -804,12 +870,22 @@ namespace AbletonManager
             return y + h;
         }
 
+        /// <summary>
+        /// Строка «метка — значение». Значение прижато вправо, но не во всю ширину:
+        /// длинное значение накрывало метку собой (на «Category: Fx · Dynamics ·
+        /// Mastering» двоеточие исчезало под первым словом значения). Ширину под
+        /// значение считаем как остаток после метки, и если не влезло — многоточие.
+        /// </summary>
         int Row(Graphics g, string label, string value, Color valueColor, int x, int y, int w)
         {
             if (string.IsNullOrEmpty(value)) return y;
             int h = Sc(28);
-            Chrome.DrawText(g, label, Theme.FLabel, new Rectangle(x, y, w, h), Theme.TextDim, Chrome.Left);
-            Chrome.DrawText(g, value, Theme.FLabel, new Rectangle(x, y, w, h), valueColor, Chrome.Right);
+            Chrome.DrawText(g, label, Theme.FLabel, new Rectangle(x, y, w, h), Theme.TextDim, PanelLeft);
+
+            int lw = TextRenderer.MeasureText(g, label, Theme.FLabel, new Size(w, h), PanelLeft).Width;
+            int vx = x + lw + Sc(12);
+            int vw = Math.Max(Sc(24), x + w - vx);
+            Chrome.DrawText(g, value, Theme.FLabel, new Rectangle(vx, y, vw, h), valueColor, PanelRight);
             return y + h;
         }
 
@@ -817,7 +893,7 @@ namespace AbletonManager
         {
             if (disposing)
             {
-                if (_scrollTimer != null) _scrollTimer.Dispose();
+                if (_scroller != null) _scroller.Dispose();
                 DropThumb();
             }
             base.Dispose(disposing);

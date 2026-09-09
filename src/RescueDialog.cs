@@ -58,7 +58,7 @@ namespace AbletonManager
         {
             _s = new RescueSession(set, inv);
 
-            Caption = L.S("Rescue: ", "Восстановление: ") + set.Name;
+            Caption = "Rescue: " + set.Name;
 
             // Высота — по числу плагинов: у сета их бывает и один, и полсотни, а окно
             // постоянной высоты в первом случае наполовину пустое, во втором прокручивается
@@ -75,11 +75,11 @@ namespace AbletonManager
             // поэтому «All Off» снимает все галочки, а «All On» их все ставит —
             // кнопки названы по тому, что получится, а не по тому, что они делают
             // с галочками.
-            Quick(_all, L.S("All Off", "Выключить все"), delegate { _list.CheckAll(false); });
-            Quick(_none, L.S("All On", "Включить все"), delegate { _list.CheckAll(true); });
-            Quick(_suggested, L.S("Suggested", "Предложенные"), delegate { _list.SetDisabled(_s.Suggest()); });
+            Quick(_all, "All Off", delegate { _list.CheckAll(false); });
+            Quick(_none, "All On", delegate { _list.CheckAll(true); });
+            Quick(_suggested, "Suggested", delegate { _list.SetDisabled(_s.Suggest()); });
 
-            _rescued.Text = L.S("Save rescued copy", "Сохранить спасённую копию");
+            _rescued.Text = "Save rescued copy";
             _rescued.FitToText(16);
             _rescued.Click += delegate { SaveRescued(); };
             Controls.Add(_rescued);
@@ -122,17 +122,15 @@ namespace AbletonManager
         {
             if (_s.Error != null)
             {
-                _status = L.S("This .als cannot be read at all: ", "Файл .als не читается вовсе: ") + _s.Error
-                        + L.S(". That is damage to the file itself, not a plugin problem.",
-                              ". Это повреждение самого файла, плагины тут ни при чём.");
+                _status = "This .als cannot be read at all: " + _s.Error
+                        + ". That is damage to the file itself, not a plugin problem.";
                 return;
             }
 
             if (_s.Targets.Count == 0)
             {
-                _status = L.S("This set has no third-party plugins — there is nothing here to switch off. "
-                            + "Whatever stops it from opening is somewhere else.",
-                              "В сете нет сторонних плагинов — отключать нечего.");
+                _status = "This set has no third-party plugins — there is nothing here to switch off. "
+                            + "Whatever stops it from opening is somewhere else.";
                 return;
             }
 
@@ -145,10 +143,8 @@ namespace AbletonManager
 
             if (_s.History == null)
             {
-                _status = L.S("Live's log has no record of this set. Untick a plugin to test it, "
-                            + "or click “All Off” to disable everything at once.",
-                              "В журнале Live этого сета нет. Снимите галочку с плагина, чтобы проверить его, "
-                            + "или нажмите «Выключить все», чтобы отключить сразу всё.");
+                _status = "Live's log has no record of this set. Untick a plugin to test it, "
+                            + "or click “All Off” to disable everything at once.";
                 return;
             }
 
@@ -158,9 +154,8 @@ namespace AbletonManager
             if (_s.History.Result == LoadResult.Loaded)
             {
                 _status = string.Format(
-                    L.S("Live's log says this set opened normally on {0}, with {1} restored. "
+                    "Live's log says this set opened normally on {0}, with {1} restored. "
                       + "If it fails now, something changed since — a plugin update, most likely.",
-                        "По журналу Live сет нормально открывался {0}."),
                     when, Plural(_s.History.RestoredCount, "plugin", "plugins"));
                 return;
             }
@@ -168,17 +163,15 @@ namespace AbletonManager
             if (hung != null)
             {
                 _status = string.Format(
-                    L.S("Live's log stops inside {0} {1} on {2} — it restored {3} and never came back "
+                    "Live's log stops inside {0} {1} on {2} — it restored {3} and never came back "
                       + "from that one. Untick it below and probe.",
-                        "Журнал Live обрывается внутри {0} {1} — снимите с него галочку и начните пробу."),
                     hung.Format, hung.Name, when, Plural(_s.History.RestoredCount, "plugin", "plugins"));
                 return;
             }
 
             _status = string.Format(
-                L.S("Live's log has an unfinished attempt from {0}, with no plugin left pending — "
+                "Live's log has an unfinished attempt from {0}, with no plugin left pending — "
                   + "the set may be breaking before the plugins get their turn.",
-                    "В журнале Live есть незавершённая попытка от {0}."),
                 when);
         }
 
@@ -211,24 +204,24 @@ namespace AbletonManager
 
             if (_waiting)
             {
-                _run.Text = L.S("Waiting for Live…", "Ждём Live…");
+                _run.Text = "Waiting for Live…";
                 _run.Enabled = false;
             }
             else if (!usable)
             {
-                _run.Text = L.S("Close", "Закрыть");
+                _run.Text = "Close";
                 _run.Enabled = true;
             }
             else if (_s.Finished)
             {
-                _run.Text = L.S("Probe again", "Ещё проба");
+                _run.Text = "Probe again";
                 _run.Enabled = _list.Disabled.Count > 0 && !live;
             }
             else
             {
                 _run.Text = _s.Round == 0
-                          ? L.S("Open probe in Live", "Открыть пробу в Live")
-                          : L.S("Next probe", "Следующая проба");
+                          ? "Open probe in Live"
+                          : "Next probe";
                 _run.Enabled = _list.Disabled.Count > 0 && !live;
             }
 
@@ -243,19 +236,15 @@ namespace AbletonManager
         string Hint(bool usable, bool live)
         {
             if (_waiting)
-                return L.S("Live is opening the probe. Watch it, then close Live — the answer is read from Live's own log.",
-                           "Live открывает пробу. Посмотрите и закройте Live.");
+                return "Live is opening the probe. Watch it, then close Live — the answer is read from Live's own log.";
             if (!usable) return "";
             if (live)
-                return L.S("Close Ableton Live first — if the probe crashes it would take your open project with it.",
-                           "Сначала закройте Ableton Live.");
+                return "Close Ableton Live first — if the probe crashes it would take your open project with it.";
             if (_list.Disabled.Count == 0)
-                return L.S("Untick the plugins you want to switch off in the probe.",
-                           "Снимите галочки с плагинов, которые нужно отключить в пробе.");
+                return "Untick the plugins you want to switch off in the probe.";
 
             return string.Format(
-                L.S("The probe is a copy — “{0}” next to the original. Your set is never modified. Do not save the probe from Live.",
-                    "Проба — копия «{0}» рядом с оригиналом. Оригинал не меняется."),
+                "The probe is a copy — “{0}” next to the original. Your set is never modified. Do not save the probe from Live.",
                 Path.GetFileName(RescueProbe.PathFor(_s.Set)));
         }
 
@@ -272,7 +261,7 @@ namespace AbletonManager
             }
             catch (Exception ex)
             {
-                _status = L.S("Could not start the probe: ", "Не удалось начать пробу: ") + ex.Message;
+                _status = "Could not start the probe: " + ex.Message;
                 Diag.Fail("rescue: run", ex);
                 UpdateButtons();
                 return;
@@ -281,8 +270,7 @@ namespace AbletonManager
             _waiting = true;
             _waitingSince = DateTime.Now;
             _status = string.Format(
-                L.S("Probe {0}: {1} disabled. Waiting for Live to open it…",
-                    "Проба {0}: отключено {1}. Ждём Live…"),
+                "Probe {0}: {1} disabled. Waiting for Live to open it…",
                 _s.Round, RescueSession.Describe(_list.Disabled));
             UpdateButtons();
         }
@@ -307,8 +295,7 @@ namespace AbletonManager
                 {
                     _waiting = false;
                     _s.Cancel();
-                    _status = L.S("Live never opened the probe. Try again — or open it by hand from the project folder.",
-                                  "Live так и не открыла пробу.");
+                    _status = "Live never opened the probe. Try again — or open it by hand from the project folder.";
                     UpdateButtons();
                 }
                 return;
@@ -317,8 +304,7 @@ namespace AbletonManager
             if (a.Result == LoadResult.Running)
             {
                 _status = string.Format(
-                    L.S("Probe {0}: Live is loading it — {1} plugins restored so far…",
-                        "Проба {0}: Live грузит — восстановлено {1}…"),
+                    "Probe {0}: Live is loading it — {1} plugins restored so far…",
                     _s.Round, a.RestoredCount);
                 Invalidate();
                 return;
@@ -332,21 +318,19 @@ namespace AbletonManager
         void AfterProbe(LoadAttempt a)
         {
             _list.Notes.Clear();
-            foreach (AlsPluginSlot s in _s.Suspects) _list.Notes[s.Uid] = L.S("suspect", "под подозрением");
-            if (_s.Culprit != null) _list.Notes[_s.Culprit.Uid] = L.S("BREAKS THE SET", "ЛОМАЕТ СЕТ");
+            foreach (AlsPluginSlot s in _s.Suspects) _list.Notes[s.Uid] = "suspect";
+            if (_s.Culprit != null) _list.Notes[_s.Culprit.Uid] = "BREAKS THE SET";
 
             if (_s.Finished) Describe();
             else if (a.Result == LoadResult.Loaded)
                 _status = string.Format(
-                    L.S("Probe {0} opened. The culprit is among the {1} it had switched off. "
+                    "Probe {0} opened. The culprit is among the {1} it had switched off. "
                       + "Close Live and run the next probe.",
-                        "Проба {0} открылась — виновник среди отключённых ({1})."),
                     _s.Round, Plural(_s.Suspects.Count, "plugin", "plugins"));
             else
                 _status = string.Format(
-                    L.S("Probe {0} did not open{1} — the culprit was still enabled. {2} left to check. "
+                    "Probe {0} did not open{1} — the culprit was still enabled. {2} left to check. "
                       + "Close Live and run the next probe.",
-                        "Проба {0} не открылась. Осталось проверить: {2}."),
                     _s.Round,
                     a.Hung != null ? " (Live stopped inside " + a.Hung.Name + ")" : "",
                     Plural(_s.Suspects.Count, "plugin", "plugins"));
@@ -367,14 +351,13 @@ namespace AbletonManager
                 string made = _s.SaveRescued(pick);
                 Produced = made;
                 _status = string.Format(
-                    L.S("Saved “{0}”. It is your set with {1} disabled — everything else, automation included, is untouched. "
+                    "Saved “{0}”. It is your set with {1} disabled — everything else, automation included, is untouched. "
                       + "The original is unchanged.",
-                        "Сохранено «{0}»: тот же сет с отключённым {1}."),
                     Path.GetFileName(made), RescueSession.Describe(pick));
             }
             catch (Exception ex)
             {
-                _status = L.S("Could not save the copy: ", "Не удалось сохранить копию: ") + ex.Message;
+                _status = "Could not save the copy: " + ex.Message;
                 Diag.Fail("rescue: save", ex);
             }
             UpdateButtons();
@@ -477,10 +460,10 @@ namespace AbletonManager
             if (_s.HasTargets)
             {
                 string label = string.Format(
-                    L.S("Third-party plugins ({0})", "Сторонние плагины ({0})"), _s.Targets.Count);
+                    "Third-party plugins ({0})", _s.Targets.Count);
                 if (_s.Unaddressable > 0)
                     label += string.Format(
-                        L.S("  ·  {0} more cannot be identified", "  ·  ещё {0} не опознать"), _s.Unaddressable);
+                        "  ·  {0} more cannot be identified", _s.Unaddressable);
                 Chrome.DrawText(g, label, Theme.FLabel, _listLabel, Theme.TextDim,
                                 Chrome.Left | TextFormatFlags.NoClipping);
             }
@@ -718,7 +701,7 @@ namespace AbletonManager
             }
 
             if (Items.Count == 0)
-                Chrome.DrawText(g, L.S("no third-party plugins in this set", "сторонних плагинов нет"),
+                Chrome.DrawText(g, "no third-party plugins in this set",
                                 Theme.FBody, new Rectangle(0, 0, Width, Height), Theme.TextDim, Chrome.Center);
 
             // Полоска прокрутки — та же волосяная, что и в таблице сетов. Без неё в
