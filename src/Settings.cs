@@ -78,6 +78,18 @@ namespace AbletonManager
         public bool Vst3CustomOn;
         public string Vst3CustomPath = "";
 
+        // ------------------------------------------------------------- сборка проекта
+
+        /// <summary>
+        /// Галочки диалога Collect All — те же четыре, что у «Collect All and Save» в Live.
+        /// Паки выключены по умолчанию: они весят на порядок больше всего остального, а
+        /// есть у любого, кто их купил.
+        /// </summary>
+        public bool CollectElsewhere = true;
+        public bool CollectOtherProjects = true;
+        public bool CollectUserLibrary = true;
+        public bool CollectFactoryPacks;
+
         public static string Dir
         {
             get
@@ -124,6 +136,10 @@ namespace AbletonManager
                     else if (key == "vst3system") s.Vst3SystemOn = val == "1";
                     else if (key == "vst3custom") s.Vst3CustomOn = val == "1";
                     else if (key == "vst3path") s.Vst3CustomPath = val;
+                    else if (key == "collectelsewhere") s.CollectElsewhere = val == "1";
+                    else if (key == "collectotherprojects") s.CollectOtherProjects = val == "1";
+                    else if (key == "collectuserlibrary") s.CollectUserLibrary = val == "1";
+                    else if (key == "collectfactorypacks") s.CollectFactoryPacks = val == "1";
                 }
             }
             catch { }
@@ -180,6 +196,10 @@ namespace AbletonManager
                 sb.Append("vst3system=").AppendLine(Vst3SystemOn ? "1" : "0");
                 sb.Append("vst3custom=").AppendLine(Vst3CustomOn ? "1" : "0");
                 sb.Append("vst3path=").AppendLine(Vst3CustomPath);
+                sb.Append("collectelsewhere=").AppendLine(CollectElsewhere ? "1" : "0");
+                sb.Append("collectotherprojects=").AppendLine(CollectOtherProjects ? "1" : "0");
+                sb.Append("collectuserlibrary=").AppendLine(CollectUserLibrary ? "1" : "0");
+                sb.Append("collectfactorypacks=").AppendLine(CollectFactoryPacks ? "1" : "0");
                 if (SetColumns.Length > 0) sb.Append("setcolumns=").AppendLine(SetColumns);
                 if (PluginColumns.Length > 0) sb.Append("plugincolumns=").AppendLine(PluginColumns);
                 File.WriteAllText(FilePath, sb.ToString(), new UTF8Encoding(false));

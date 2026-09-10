@@ -26,6 +26,7 @@ namespace AliveTools
             Console.WriteLine("FAIL: " + what);
         }
 
+        [STAThread]
         static int Main(string[] args)
         {
             string cmd = args.Length > 0 ? args[0].ToLowerInvariant() : "";
@@ -34,11 +35,13 @@ namespace AliveTools
             if (cmd == "scan") Scan(arg);
             else if (cmd == "patch") Patch(arg);
             else if (cmd == "collect") Collect(arg);
+            else if (cmd == "show") Show(arg);
             else
             {
                 Console.WriteLine("usage: SampleTest.exe scan <folder or .als>");
                 Console.WriteLine("       SampleTest.exe patch <set.als>");
                 Console.WriteLine("       SampleTest.exe collect <set.als>");
+                Console.WriteLine("       SampleTest.exe show <set.als>");
                 return 2;
             }
 
@@ -339,6 +342,25 @@ namespace AliveTools
             Check(File.Exists(marker), "cancelled Run deleted someone else's file from a pre-existing folder");
 
             try { Directory.Delete(temp, true); } catch { }
+        }
+
+        /// <summary>
+        /// Открывает окно сборки и больше ничего не делает — чтобы его можно было снять
+        /// Shot.exe, не сидя за машиной. Собранный exe, который «компилируется без
+        /// ошибок», ещё ничего не говорит о том, что нарисовалось.
+        /// </summary>
+        static void Show(string file)
+        {
+            if (!File.Exists(file)) { Check(false, "no such set: " + file); return; }
+
+            SetEntry set = new SetEntry();
+            set.Path = file;
+            set.Name = Path.GetFileNameWithoutExtension(file);
+
+            System.Windows.Forms.Application.EnableVisualStyles();
+            System.Windows.Forms.Application.SetCompatibleTextRenderingDefault(false);
+            using (CollectDialog d = new CollectDialog(set, LiveEnvironment.Detect()))
+                System.Windows.Forms.Application.Run(d);
         }
 
         /// <summary>
