@@ -71,13 +71,29 @@ namespace AbletonManager
             }
         }
 
-        public static CollectPlan Plan(SetEntry set, AlsInfo info, List<SampleDep> deps, CollectOptions opt)
+        public static CollectPlan Plan(SetEntry set, List<SampleDep> deps, CollectOptions opt)
         {
             CollectPlan plan = new CollectPlan();
             plan.TargetDir = FreeTarget(set);
 
             string setDir = Path.GetDirectoryName(set.Path);
             HashSet<string> taken = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            // Первый проход — только застолбить имена внутрипроектных файлов. Раньше это
+            // делалось в одном проходе вместе с раздачей имён внешним через Unique(), и
+            // порядок в deps (это порядок FileRef в документе — его выбирает автор сета,
+            // не мы) решал, кто первым займёт «Samples/Imported/kick.wav»: встреться
+            // внешняя зависимость раньше одноимённой внутрипроектной, Unique() отдавал
+            // путь ей, а внутрипроектная тем же путём застолбляла его же во второй раз —
+            // обе оказывались с одним dst, и File.Copy в Run молча переписывал одну
+            // другой. Засеяв taken целиком до первого вызова Unique(), результат больше
+            // не зависит от того, кто раньше встретился в документе.
+            foreach (SampleDep seed in deps)
+            {
+                if (seed.Origin != SampleOrigin.InProject) continue;
+                string seedRel = Relative(setDir, seed.Path);
+                if (seedRel.Length > 0) taken.Add(seedRel);
+            }
 
             foreach (SampleDep d in deps)
             {
@@ -88,10 +104,10 @@ namespace AbletonManager
                 if (d.Origin == SampleOrigin.InProject)
                 {
                     // Структуру папки сета мы повторяем, поэтому путь в копии верен как
-                    // есть — ни переименования, ни правки ссылки не нужно.
+                    // есть — ни переименования, ни правки ссылки не нужно. taken уже
+                    // засеян им первым проходом выше.
                     rel = Relative(setDir, d.Path);
                     if (rel.Length == 0) { plan.Skipped.Add(d); continue; }
-                    taken.Add(rel);
                 }
                 else
                 {
@@ -154,6 +170,18 @@ namespace AbletonManager
                         // без сэмпла выглядит целой, а звучит не так.
                         plan.Failed.Add(d.Name);
                         Diag.Line("collect: cannot copy " + d.Path + ": " + ex.Message);
+
+                        // Не скопировался — ссылка обязана остаться как в оригинале, а не
+                        // указывать на файл, которого в копии нет: та же спека, что и для
+                        // «сэмпл не найден» — ссылка остаётся как была, число потерь идёт в отчёт.
+                        foreach (int i in d.RefIndexes) plan.Rewrites.Remove(i);
+
+                        // Бандл (.adg/.amxd — см. RefResolver.Probe) мог скопироваться
+                        // наполовину: CopyDir создаёт папку раньше, чем копирует файлы
+                        // внутрь. Недокопированный бандл на диске хуже отсутствующего —
+                        // выглядит устройством, а половины пресета внутри нет.
+                        if (Directory.Exists(d.Path))
+                        { try { Directory.Delete(dst, true); } catch { } }
                     }
 
                     done++;
