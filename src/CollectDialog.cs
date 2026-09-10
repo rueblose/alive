@@ -47,6 +47,10 @@ namespace AbletonManager
         bool _running;
         string _error = "";
 
+        // Своё поле, а не переиспользование _error: тот про чтение сета (не удалось
+        // разобрать .als), этот — про сбой самого копирования. Разные причины, разный текст.
+        string _collectError = "";
+
         // Прогресс пишется рабочим потоком, читается таймером окна. Простые поля:
         // int и long читаются и пишутся атомарно, а точность до одного файла тут
         // никому не нужна — это полоса, а не отчёт.
@@ -210,6 +214,7 @@ namespace AbletonManager
             _running = true;
             _ok.Enabled = false;
             foreach (Row r in _rows) r.Toggle.Enabled = false;
+            LayoutRows();            // пересинхронизировать Visible — иначе строки не прячутся
             _total = _plan.Copy.Count;
             _done = 0;
             _cts = new CancellationTokenSource();
@@ -244,9 +249,18 @@ namespace AbletonManager
                     }
                     else
                     {
-                        _error = error;
+                        _collectError = error;
                         if (error.Length == 0) Close();     // отменили — просто закрываемся
-                        else { _ok.Enabled = true; Invalidate(); }
+                        else
+                        {
+                            // Настоящий сбой копирования (не отмена) — окно остаётся
+                            // открытым, экран выбора должен вернуться полностью: и
+                            // Enabled, и Visible строк, иначе Collect бьёт в стену.
+                            _ok.Enabled = true;
+                            foreach (Row r in _rows) r.Toggle.Enabled = true;
+                            LayoutRows();
+                            Invalidate();
+                        }
                     }
                 });
             });
@@ -346,8 +360,13 @@ namespace AbletonManager
                 return;
             }
 
-            Chrome.DrawText(g, "Specify which used media files are to be copied into the project.",
-                            Theme.FBody, head, Theme.Text, Chrome.Left);
+            // Тот же заголовок показывает и сбой копирования — окно уже прочитало сет,
+            // строки внизу остаются на месте, меняется только эта строка и её цвет.
+            string intro = _collectError.Length > 0
+                ? "Could not collect: " + _collectError
+                : "Specify which used media files are to be copied into the project.";
+            Chrome.DrawText(g, intro, Theme.FBody, head,
+                            _collectError.Length > 0 ? Theme.Red : Theme.Text, Chrome.Left);
 
             foreach (Row r in _rows)
             {
