@@ -30,14 +30,15 @@ set ROOT=%~dp0..\..
 set REFS=/reference:System.dll /reference:System.Core.dll /reference:System.Drawing.dll /reference:System.Windows.Forms.dll /reference:System.Xml.dll
 
 rem Same source list as the app: the history window is built on Alive's own controls,
-rem so the console harness needs all of src too. Program.cs and AliveReelProgram.cs are
-rem both dropped - ProtoTest brings its own Main.
+rem so the console harness needs all of src too. proto\Program.cs is dropped - ProtoTest
+rem brings its own Main. (src\Program.cs is gone since the two builds became one; the
+rem filter over src stays harmless and guards against a Main reappearing there.)
 set LIST=%TEMP%\reel-test-sources.rsp
 if exist "%LIST%" del "%LIST%"
 for /f "delims=" %%F in ('dir /b "%ROOT%\src\*.cs" ^| findstr /v /i /x "Program.cs"') do (
   echo "%ROOT%\src\%%F">>"%LIST%"
 )
-for /f "delims=" %%F in ('dir /b "%ROOT%\proto\*.cs" ^| findstr /v /i /x "AliveReelProgram.cs"') do (
+for /f "delims=" %%F in ('dir /b "%ROOT%\proto\*.cs" ^| findstr /v /i /x "Program.cs"') do (
   echo "%ROOT%\proto\%%F">>"%LIST%"
 )
 

@@ -2,14 +2,15 @@
 
 Проверка Идеи 1 из ресёрча: «Git/Time Machine для Ableton» + проверка зависимостей.
 
-**Исходный Alive не тронут:** ни один файл в `src/` не изменён, `build.cmd` собирает
-`Alive.exe` ровно как раньше. Но собирается теперь и второй exe — `bin/AliveReel.exe`,
-в который Alive входит целиком, а история прицепляется снаружи.
+**Каталог не тронут:** ни один файл в `src/` ради версий не изменён — история прицепляется
+снаружи, через открытые события готового окна.
 
 ## Одно приложение
 
-`proto\build-proto.cmd` компилирует **весь** `src\*.cs`, кроме `Program.cs` (его `Main`
-заменён на `proto\AliveReelProgram.cs`), плюс `proto\*.cs`. Отсюда два следствия:
+Сборок было две — `Alive.exe` без Forks и Stat и `AliveReel.exe` с ними. Теперь одна:
+`build.cmd` компилирует **весь** `src\*.cs` плюс `proto\*.cs` плюс `nebula\*.cs` в единственный
+`bin\Alive.exe`, а `Main` живёт в [Program.cs](Program.cs) — он в дереве один. Отсюда два
+следствия:
 
 1. Окно версий построено на собственной оснастке Alive — `GlassDialog`, `Theme`,
    `Chrome`, `RowListView`, `Icons`, — а не на её копии. Когда версии переедут внутрь
@@ -17,7 +18,7 @@
 2. Разбор `.als` не продублирован: `AlsFile`, `RefResolver`, `LiveEnvironment`,
    `PluginInventory` — те же самые файлы, что собирает и `Alive.exe`.
 
-Прицеп живёт в [AliveReelProgram.cs](AliveReelProgram.cs) и состоит из трёх вещей:
+Прицеп живёт в [Program.cs](Program.cs) и состоит из трёх вещей:
 кнопка **Forks** появляется в инспекторе проекта над `Rescue Project` — `DetailPanel`
 показывает её, только если на `ForksRequested` кто-то подписался, а подписывается здесь;
 **Ctrl+H** ловится фильтром сообщений; нужный сет спрашивается у таблицы Alive через
@@ -28,8 +29,8 @@
 (`nebula\`): вид на каталог целиком, в отличие от версий, которые всегда про один сет.
 
 ```
-bin\AliveReel.exe                     каталог Alive + Forks в инспекторе + Stat в шапке
-bin\AliveReel.exe --reel сет.als      только окно версий, без каталога
+bin\Alive.exe                     каталог + Forks в инспекторе + Stat в шапке
+bin\Alive.exe --reel сет.als      только окно версий, без каталога
 ```
 
 ## Что умеет
@@ -162,7 +163,7 @@ Live (`rrobin [2025-12-31 221434].als`), чтобы папка читалась 
 ```
 proto\test\build-test.cmd %TEMP%\reel-test
 %TEMP%\reel-test\ReelTest.exe "путь\к\Project"
-%TEMP%\reel-test\Shot.exe bin\AliveReel.exe out.png --reel "сет.als" --click 170,79
+%TEMP%\reel-test\Shot.exe bin\Alive.exe out.png --reel "сет.als" --click 170,79
 ```
 
 `ReelTest` печатает историю, разницу между всеми соседними версиями, разобранную
