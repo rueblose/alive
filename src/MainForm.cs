@@ -2536,7 +2536,7 @@ namespace AbletonManager
                 return;
             }
 
-            using (CollectDialog d = new CollectDialog(s, _index.Env))
+            using (CollectDialog d = new CollectDialog(s, _index.Env, _settings))
             {
                 d.ShowDialog(this);
                 if (d.Produced.Length > 0)
@@ -2545,8 +2545,15 @@ namespace AbletonManager
                         ? string.Format("Collected to {0} — {1} file(s) could not be copied, see the log",
                                         Path.GetFileName(d.Produced), d.Failed)
                         : "Collected to " + Path.GetFileName(d.Produced));
-                    try { Process.Start("explorer.exe", "\"" + d.Produced + "\""); }
-                    catch (Exception ex) { Diag.Line("collect: explorer: " + ex.Message); }
+
+                    // Не открывать проводник на наполовину собранной папке: тост про
+                    // отказы уже отправил человека в журнал, а не смотреть на то, чего
+                    // там не хватает.
+                    if (d.Failed == 0)
+                    {
+                        try { Process.Start("explorer.exe", "\"" + d.Produced + "\""); }
+                        catch (Exception ex) { Diag.Line("collect: explorer: " + ex.Message); }
+                    }
                 }
             }
         }

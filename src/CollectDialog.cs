@@ -30,6 +30,7 @@ namespace AbletonManager
 
         readonly SetEntry _set;
         readonly LiveEnvironment _env;
+        readonly Settings _settings;
         readonly List<Row> _rows = new List<Row>();
         readonly GlassButton _ok = new GlassButton();
         readonly GlassButton _cancel = new GlassButton();
@@ -64,10 +65,11 @@ namespace AbletonManager
         /// <summary>Сколько файлов скопировать не вышло — занято, слишком длинный путь.</summary>
         public int Failed;
 
-        public CollectDialog(SetEntry set, LiveEnvironment env)
+        public CollectDialog(SetEntry set, LiveEnvironment env, Settings settings)
         {
             _set = set;
             _env = env;
+            _settings = settings;
 
             Caption = "Collect All: " + set.Name;
             // 640 обрезало подпись «Specify which used media files are to be copied into
@@ -76,11 +78,13 @@ namespace AbletonManager
             // проверено снимком (см. отчёт задачи).
             ClientSize = new Size(Sc(720), Sc(400));
 
-            Settings st = Settings.Load();
-            _opt.FromElsewhere = st.CollectElsewhere;
-            _opt.FromOtherProjects = st.CollectOtherProjects;
-            _opt.FromUserLibrary = st.CollectUserLibrary;
-            _opt.FromFactoryPacks = st.CollectFactoryPacks;
+            // Тот же экземпляр, что грузит и сохраняет MainForm, — не Settings.Load()
+            // заново: своя копия не видела бы изменений с других окон и, что хуже,
+            // затиралась бы следующим чужим Save() из устаревшего снимка на диске.
+            _opt.FromElsewhere = _settings.CollectElsewhere;
+            _opt.FromOtherProjects = _settings.CollectOtherProjects;
+            _opt.FromUserLibrary = _settings.CollectUserLibrary;
+            _opt.FromFactoryPacks = _settings.CollectFactoryPacks;
 
             AddRow("Files from elsewhere", SampleOrigin.Elsewhere, _opt.FromElsewhere);
             AddRow("Files from other Projects", SampleOrigin.OtherProject, _opt.FromOtherProjects);
@@ -188,12 +192,20 @@ namespace AbletonManager
         void Recount()
         {
             if (_deps == null || _info == null) return;
-            _opt.FromElsewhere = _rows[0].Toggle.Checked;
-            _opt.FromOtherProjects = _rows[1].Toggle.Checked;
-            _opt.FromUserLibrary = _rows[2].Toggle.Checked;
-            _opt.FromFactoryPacks = _rows[3].Toggle.Checked;
+            // По Origin, а не по индексу: индекс — это порядок AddRow в конструкторе,
+            // и молчаливая привязка к нему рвётся первой же перестановкой строк.
+            foreach (Row r in _rows)
+            {
+                switch (r.Origin)
+                {
+                    case SampleOrigin.Elsewhere: _opt.FromElsewhere = r.Toggle.Checked; break;
+                    case SampleOrigin.OtherProject: _opt.FromOtherProjects = r.Toggle.Checked; break;
+                    case SampleOrigin.UserLibrary: _opt.FromUserLibrary = r.Toggle.Checked; break;
+                    case SampleOrigin.FactoryPack: _opt.FromFactoryPacks = r.Toggle.Checked; break;
+                }
+            }
 
-            _plan = CollectAll.Plan(_set, _info, _deps, _opt);
+            _plan = CollectAll.Plan(_set, _deps, _opt);
             _ok.Enabled = !_running && _plan.TotalBytes < _plan.FreeBytes;
             Invalidate();
         }
@@ -204,12 +216,11 @@ namespace AbletonManager
         {
             if (_plan == null || _running) return;
 
-            Settings st = Settings.Load();
-            st.CollectElsewhere = _opt.FromElsewhere;
-            st.CollectOtherProjects = _opt.FromOtherProjects;
-            st.CollectUserLibrary = _opt.FromUserLibrary;
-            st.CollectFactoryPacks = _opt.FromFactoryPacks;
-            st.Save();
+            _settings.CollectElsewhere = _opt.FromElsewhere;
+            _settings.CollectOtherProjects = _opt.FromOtherProjects;
+            _settings.CollectUserLibrary = _opt.FromUserLibrary;
+            _settings.CollectFactoryPacks = _opt.FromFactoryPacks;
+            _settings.Save();
 
             _running = true;
             _ok.Enabled = false;
@@ -256,8 +267,12 @@ namespace AbletonManager
                             // Настоящий сбой копирования (не отмена) — окно остаётся
                             // открытым, экран выбора должен вернуться полностью: и
                             // Enabled, и Visible строк, иначе Collect бьёт в стену.
-                            _ok.Enabled = true;
+                            // Enabled считает Recount() — не «true» в лоб: место на диске
+                            // могло кончиться как раз за время неудачной попытки, и план
+                            // на устаревших цифрах включил бы Collect там, где он снова
+                            // не поместится.
                             foreach (Row r in _rows) r.Toggle.Enabled = true;
+                            Recount();
                             LayoutRows();
                             Invalidate();
                         }
@@ -376,17 +391,17 @@ namespace AbletonManager
 
                 Rectangle nums = new Rectangle(right - Sc(240), r.Rect.Y, Sc(240), r.Rect.Height);
                 string s = r.Files == 0 ? "—"
-                    : string.Format("{0} files    {1}", r.Files, Mb(r.Bytes));
+                    : string.Format("{0}    {1}", Chrome.Plural(r.Files, "file"), Mb(r.Bytes));
                 Chrome.DrawText(g, s, Theme.FLabel, nums,
                                 r.Toggle.Checked ? Theme.Text : Theme.TextDim, Chrome.Right);
             }
 
             int y = RowTop + _rows.Count * RowStep + Sc(14);
             Extra(g, left, right, ref y, "In project (always copied)",
-                  string.Format("{0} files    {1}", _inProjectFiles, Mb(_inProjectBytes)));
+                  string.Format("{0}    {1}", Chrome.Plural(_inProjectFiles, "file"), Mb(_inProjectBytes)));
             if (_notFound > 0)
                 Extra(g, left, right, ref y, "Not found — left as they are",
-                      string.Format("{0} files", _notFound));
+                      Chrome.Plural(_notFound, "file"));
 
             y += Sc(8);
             using (Pen p = new Pen(Theme.Hairline)) g.DrawLine(p, left, y, right, y);
@@ -396,7 +411,7 @@ namespace AbletonManager
             {
                 bool fits = _plan.TotalBytes < _plan.FreeBytes;
                 Extra(g, left, right, ref y,
-                      string.Format("Will copy {0} files, {1}", _plan.Copy.Count, Mb(_plan.TotalBytes)),
+                      string.Format("Will copy {0}, {1}", Chrome.Plural(_plan.Copy.Count, "file"), Mb(_plan.TotalBytes)),
                       fits ? "Free: " + Mb(_plan.FreeBytes) : "Not enough space",
                       fits ? Theme.Text : Theme.Red);
             }
