@@ -52,6 +52,18 @@ namespace AbletonManager
         public static readonly Color SolidSurface = Surface;
         public static readonly Color SolidPressed = SurfacePressed;
 
+        /// <summary>
+        /// Чем залита карточка панели подробностей — та же формула, что в
+        /// DetailPanel.PaintCard (PaintGlassSurface с GlassAlpha): на стекле почти
+        /// прозрачный тёмный тон, без стекла — сплошной Surface. Контрол, лежащий на
+        /// карточке, должен красить фон под своими скруглениями этим, а не Backdrop:
+        /// иначе в непрозрачном режиме углы уходят в фон окна и пилюлю обводит прямоугольник.
+        /// </summary>
+        public static Color CardFill
+        {
+            get { return Glass.Enabled ? Color.FromArgb(GlassAlpha, Bg) : Surface; }
+        }
+
         // Степень «начинки» у стеклянных карточек/кнопок (см. PaintGlassSurface) —
         // по нарастающей для покоя/наведения/нажатия-выбора, тем же тёмным тоном, что
         // и сам фон окна, просто плотнее. Числа не пропорция альфы к состоянию флэт-версии

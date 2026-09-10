@@ -100,20 +100,23 @@ namespace AbletonManager
             // с заливной Open in Live «тихая» кнопка читалась как подпись к ней, а не
             // как второе действие. Главная остаётся главной за счёт заливки, а не за
             // счёт того, что у соседей отняли обводку.
-            // Никакой SurfaceOverlay: непрозрачная накладка при затухании ховера
-            // (PaintGlassSurface пишет SourceCopy) на миг пробивала кнопку в дыру.
+            // Surface = цвет карточки (CardFill), не фон окна: пилюля лежит на карточке
+            // панели, и в непрозрачном режиме Backdrop красил её углы тёмным окном —
+            // вокруг кнопки висел прямоугольник. Двухслойный Backdrop+overlay (как у
+            // _action) не годится: на стекле SourceCopy в PaintGlassSurface пробивает
+            // непрозрачную накладку в дыру при затухании ховера.
             _rescue.Text = "Rescue Project";
-            _rescue.Surface = Theme.Backdrop;
+            _rescue.Surface = Theme.CardFill;
             _rescue.Click += delegate { if (RescueRequested != null) RescueRequested(); };
             Controls.Add(_rescue);
 
             _forks.Text = "Forks";
-            _forks.Surface = Theme.Backdrop;
+            _forks.Surface = Theme.CardFill;
             _forks.Click += delegate { if (ForksRequested != null) ForksRequested(); };
             Controls.Add(_forks);
 
             _showInList.Text = "Show in List";
-            _showInList.Surface = Theme.Backdrop;
+            _showInList.Surface = Theme.CardFill;
             _showInList.Click += delegate { if (_showInListRequested != null) _showInListRequested(); };
             Controls.Add(_showInList);
 
