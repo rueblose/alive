@@ -457,7 +457,7 @@ namespace AbletonManager
 
             // Файлы
             y = Line(g, "Files:", Theme.FLabel, Theme.TextDim, Pad, y, w) + Sc(8);
-            Chrome.DrawText(g, Plural(_set.TotalRefs, "reference"), Theme.FLabel,
+            Chrome.DrawText(g, Chrome.Plural(_set.TotalRefs, "reference"), Theme.FLabel,
                 new Rectangle(Pad, y, w, Sc(28)), Theme.Text, PanelLeft);
             // Цвет — только когда плохо. Зелёный ноль обещал событие, которого нет,
             // и красное среди него переставало бросаться в глаза.
@@ -733,7 +733,7 @@ namespace AbletonManager
             }
             // Скобки обязательны: «+» связывает раньше «?:», и без них выражение
             // сворачивалось в одно слово « sets», а число пропадало.
-            y = Row(g, "Used in:", Plural(p.Sets, "set"),
+            y = Row(g, "Used in:", Chrome.Plural(p.Sets, "set"),
                     p.Sets == 0 ? Theme.TextDim : Theme.Text, pad, y, w);
             y += Sc(16);
 
@@ -858,12 +858,6 @@ namespace AbletonManager
             RectangleF mr = new RectangleF(_thumbRect.Right - mg - Sc(8), _thumbRect.Bottom - mg - Sc(8), mg, mg);
             Icons.Draw(g, Glyph.Magnifier, mr, _thumbHot ? Color.White : Theme.TextDim, 1.6f);
             return y + h;
-        }
-
-        /// <summary>«1 reference», «18 references» — согласование, а не «1 references».</summary>
-        static string Plural(int n, string word)
-        {
-            return n + " " + word + (n == 1 ? "" : "s");
         }
 
         int Line(Graphics g, string text, Font f, Color c, int x, int y, int w)

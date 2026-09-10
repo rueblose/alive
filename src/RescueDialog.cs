@@ -156,7 +156,7 @@ namespace AbletonManager
                 _status = string.Format(
                     "Live's log says this set opened normally on {0}, with {1} restored. "
                       + "If it fails now, something changed since — a plugin update, most likely.",
-                    when, Plural(_s.History.RestoredCount, "plugin", "plugins"));
+                    when, Chrome.Plural(_s.History.RestoredCount, "plugin"));
                 return;
             }
 
@@ -165,7 +165,7 @@ namespace AbletonManager
                 _status = string.Format(
                     "Live's log stops inside {0} {1} on {2} — it restored {3} and never came back "
                       + "from that one. Untick it below and probe.",
-                    hung.Format, hung.Name, when, Plural(_s.History.RestoredCount, "plugin", "plugins"));
+                    hung.Format, hung.Name, when, Chrome.Plural(_s.History.RestoredCount, "plugin"));
                 return;
             }
 
@@ -183,11 +183,6 @@ namespace AbletonManager
         static string When(DateTime t)
         {
             return t.ToString("d MMM yyyy, HH:mm", CultureInfo.InvariantCulture);
-        }
-
-        static string Plural(int n, string one, string many)
-        {
-            return n.ToString(CultureInfo.InvariantCulture) + " " + (n == 1 ? one : many);
         }
 
         void UpdateButtons()
@@ -326,14 +321,14 @@ namespace AbletonManager
                 _status = string.Format(
                     "Probe {0} opened. The culprit is among the {1} it had switched off. "
                       + "Close Live and run the next probe.",
-                    _s.Round, Plural(_s.Suspects.Count, "plugin", "plugins"));
+                    _s.Round, Chrome.Plural(_s.Suspects.Count, "plugin"));
             else
                 _status = string.Format(
                     "Probe {0} did not open{1} — the culprit was still enabled. {2} left to check. "
                       + "Close Live and run the next probe.",
                     _s.Round,
                     a.Hung != null ? " (Live stopped inside " + a.Hung.Name + ")" : "",
-                    Plural(_s.Suspects.Count, "plugin", "plugins"));
+                    Chrome.Plural(_s.Suspects.Count, "plugin"));
 
             _list.SetDisabled(_s.Suggest());
             UpdateButtons();
