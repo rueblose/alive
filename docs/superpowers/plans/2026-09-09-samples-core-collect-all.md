@@ -1085,7 +1085,8 @@ namespace AbletonManager
 
                     NewRef nr = new NewRef();
                     nr.RelativePath = rel;
-                    nr.AbsolutePath = (plan.TargetDir.Replace('\\', '/') + "/" + rel);
+                    // AbsolutePath не заполняем: он производный от TargetDir, а тот ещё
+                    // может смениться между планом и сборкой. Достроим его в Run.
                     nr.RelativePathType = 3;
                     nr.ClearPack = true;
                     foreach (int i in d.RefIndexes) plan.Rewrites[i] = nr;
@@ -1134,6 +1135,12 @@ namespace AbletonManager
                     done++;
                     if (progress != null) progress(done, total, d.Name);
                 }
+
+                // Абсолютный путь достраиваем здесь, а не в Plan: TargetDir к этому
+                // моменту окончателен, и производное значение не разъедется с ним.
+                string root = plan.TargetDir.Replace('\\', '/');
+                foreach (KeyValuePair<int, NewRef> kv in plan.Rewrites)
+                    kv.Value.AbsolutePath = root + "/" + kv.Value.RelativePath;
 
                 // .als пишется последним: прерванная сборка не должна оставить папку,
                 // которая выглядит готовой.
@@ -1465,7 +1472,18 @@ namespace AbletonManager
             _tick.Interval = 100;
             _tick.Tick += delegate { Invalidate(); };
             _tick.Start();
+        }
 
+        bool _started;
+
+        protected override void OnShown(EventArgs e)
+        {
+            base.OnShown(e);
+            // Считать начинаем, только когда окно показано. BeginInvoke до создания
+            // хендла бросает InvalidOperationException, а подсчёт вполне успевает
+            // кончиться раньше, чем ShowDialog доберётся до показа окна.
+            if (_started) return;
+            _started = true;
             ThreadPool.QueueUserWorkItem(delegate { CountInBackground(); });
         }
 
@@ -1486,6 +1504,21 @@ namespace AbletonManager
 
         // ------------------------------------------------------------------ подсчёт
 
+        /// <summary>
+        /// Вернуться в поток окна из фонового. Окно могут закрыть, пока фоновая работа
+        /// идёт: тогда хендла уже нет и BeginInvoke бросает — ловим здесь, в одном месте,
+        /// а не проверкой IsDisposed в каждом обработчике (она всё равно гонка).
+        /// </summary>
+        void Post(MethodInvoker action)
+        {
+            try
+            {
+                if (IsDisposed || !IsHandleCreated) return;
+                BeginInvoke(action);
+            }
+            catch (Exception) { }
+        }
+
         void CountInBackground()
         {
             AlsInfo info = AlsFile.Read(_set.Path);
@@ -1493,9 +1526,8 @@ namespace AbletonManager
                 ? SampleScan.Of(info, Path.GetDirectoryName(_set.Path), _env)
                 : new List<SampleDep>();
 
-            BeginInvoke((MethodInvoker)delegate
+            Post(delegate
             {
-                if (IsDisposed) return;
                 _info = info;
                 _deps = deps;
                 _counting = false;
@@ -1574,9 +1606,8 @@ namespace AbletonManager
                 catch (OperationCanceledException) { }
                 catch (Exception ex) { error = ex.Message; }
 
-                BeginInvoke((MethodInvoker)delegate
+                Post(delegate
                 {
-                    if (IsDisposed) return;
                     _running = false;
                     if (done)
                     {

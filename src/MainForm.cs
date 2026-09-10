@@ -761,6 +761,7 @@ namespace AbletonManager
             _detail.RevealRequested += RevealSelected;
             _detail.OpenRequested += OpenSelected;
             _detail.RescueRequested += RescueSelected;
+            _detail.CollectRequested += CollectSelected;
             _detail.SetRequested += OnSetRequested;
             _detail.PluginRequested += OnPluginRequested;
             _detail.NotesRequested += EditNotes;
@@ -2513,6 +2514,47 @@ namespace AbletonManager
                 d.ShowDialog(this);
                 if (d.Produced.Length > 0)
                     Notify("Saved " + Path.GetFileName(d.Produced));
+            }
+        }
+
+        void CollectSelected()
+        {
+            SetEntry s = SelectedSet();
+            CollectSet(s);
+        }
+
+        /// <summary>
+        /// Собрать проект: все нужные ему медиафайлы в одну папку рядом с ним, плюс копия
+        /// сета с переписанными путями. Оригинал не трогается — см. CollectAll.
+        /// </summary>
+        void CollectSet(SetEntry s)
+        {
+            if (s == null) return;
+            if (!File.Exists(s.Path))
+            {
+                Status("File is gone: " + s.Path);
+                return;
+            }
+
+            using (CollectDialog d = new CollectDialog(s, _index.Env, _settings))
+            {
+                d.ShowDialog(this);
+                if (d.Produced.Length > 0)
+                {
+                    Notify(d.Failed > 0
+                        ? string.Format("Collected to {0} — {1} file(s) could not be copied, see the log",
+                                        Path.GetFileName(d.Produced), d.Failed)
+                        : "Collected to " + Path.GetFileName(d.Produced));
+
+                    // Не открывать проводник на наполовину собранной папке: тост про
+                    // отказы уже отправил человека в журнал, а не смотреть на то, чего
+                    // там не хватает.
+                    if (d.Failed == 0)
+                    {
+                        try { Process.Start("explorer.exe", "\"" + d.Produced + "\""); }
+                        catch (Exception ex) { Diag.Line("collect: explorer: " + ex.Message); }
+                    }
+                }
             }
         }
 

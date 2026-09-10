@@ -140,6 +140,15 @@ namespace AbletonManager
                 rect.Y -= (int)Math.Round(2 * (g.DpiY / 96f));
             TextRenderer.DrawText(g, text, font, rect, color, flags);
         }
+
+        /// <summary>
+        /// «1 reference», «18 references» — согласование, а не «1 references». Один
+        /// общий помощник вместо копии в каждом окне, которое считает что-нибудь.
+        /// </summary>
+        public static string Plural(int n, string word)
+        {
+            return n + " " + word + (n == 1 ? "" : "s");
+        }
     }
 
     public interface IAnimatable

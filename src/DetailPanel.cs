@@ -15,6 +15,7 @@ namespace AbletonManager
     {
         readonly GlassButton _action = new GlassButton();
         readonly GlassButton _rescue = new GlassButton();
+        readonly GlassButton _collect = new GlassButton();
         readonly GlassButton _forks = new GlassButton();
         readonly GlassButton _showInList = new GlassButton();
 
@@ -51,6 +52,9 @@ namespace AbletonManager
         public event Action RevealRequested;
         public event Action OpenRequested;
         public event Action RescueRequested;
+
+        /// <summary>Собрать проект в переносимую папку — см. CollectDialog.</summary>
+        public event Action CollectRequested;
 
         /// <summary>
         /// Версии этого проекта. Живут не в самом Alive, а в сборке AliveReel, поэтому
@@ -109,6 +113,11 @@ namespace AbletonManager
             _rescue.Surface = Theme.CardFill;
             _rescue.Click += delegate { if (RescueRequested != null) RescueRequested(); };
             Controls.Add(_rescue);
+
+            _collect.Text = "Collect All";
+            _collect.Surface = Theme.Backdrop;
+            _collect.Click += delegate { if (CollectRequested != null) CollectRequested(); };
+            Controls.Add(_collect);
 
             _forks.Text = "Forks";
             _forks.Surface = Theme.CardFill;
@@ -220,6 +229,7 @@ namespace AbletonManager
                 // и кнопка внизу повторяла то, на что и так хочется нажать.
                 _action.Visible = false;
                 _rescue.Visible = false;
+                _collect.Visible = false;
                 _forks.Visible = false;
                 _showInList.Visible = false;
             }
@@ -230,6 +240,7 @@ namespace AbletonManager
                 bool inList = _showInListRequested != null;
                 _showInList.Visible = !_pluginMode && _set != null && inList;
                 _rescue.Visible = !_pluginMode && _set != null && !inList;
+                _collect.Visible = !_pluginMode && _set != null && !inList;
                 _forks.Visible = !_pluginMode && _set != null && !inList && ForksRequested != null;
             }
         }
@@ -250,7 +261,8 @@ namespace AbletonManager
             _action.SetBounds(Pad, Height - Pad - h, w, h);
             _showInList.SetBounds(Pad, _action.Top - Sc(8) - h, w, h);
             _rescue.SetBounds(Pad, _action.Top - Sc(8) - h, w, h);
-            _forks.SetBounds(Pad, _rescue.Top - Sc(8) - h, w, h);
+            _collect.SetBounds(Pad, _rescue.Top - Sc(8) - h, w, h);
+            _forks.SetBounds(Pad, _collect.Top - Sc(8) - h, w, h);
             ClampScroll();
         }
 
@@ -258,8 +270,8 @@ namespace AbletonManager
         /// Докуда можно рисовать содержимое. Место под кнопки резервируем всегда, чтобы
         /// список не прыгал, когда кнопка то есть, то нет, — но по-разному для двух
         /// режимов: у плагина кнопка всегда одна (Show in Explorer то есть, то нет,
-        /// смотря установлен ли он), у сета их до трёх сразу (Open in Live, Rescue
-        /// Project и Forks, либо Open in Live и Show in List). Переключение между режимами
+        /// смотря установлен ли он), у сета их до четырёх сразу (Open in Live, Rescue
+        /// Project, Collect All и Forks, либо Open in Live и Show in List). Переключение между режимами
         /// и так меняет содержимое панели целиком, так что разная высота резерва здесь не
         /// приводит к дёрганью, которого избегает сам резерв, — оно только внутри одного режима.
         /// </summary>
@@ -268,7 +280,7 @@ namespace AbletonManager
             get
             {
                 int h = Sc(Theme.ControlH);
-                int rows = _pluginMode ? 0 : (_showInListRequested != null ? 2 : (ForksRequested != null ? 3 : 2));
+                int rows = _pluginMode ? 0 : (_showInListRequested != null ? 2 : (ForksRequested != null ? 4 : 3));
                 int buttons = rows == 0 ? 0 : h * rows + Sc(8) * (rows - 1);
                 return Height - Pad - buttons - Sc(16);
             }
@@ -448,7 +460,7 @@ namespace AbletonManager
 
             // Файлы
             y = Line(g, "Files:", Theme.FLabel, Theme.TextDim, Pad, y, w) + Sc(8);
-            Chrome.DrawText(g, Plural(_set.TotalRefs, "reference"), Theme.FLabel,
+            Chrome.DrawText(g, Chrome.Plural(_set.TotalRefs, "reference"), Theme.FLabel,
                 new Rectangle(Pad, y, w, Sc(28)), Theme.Text, PanelLeft);
             // Цвет — только когда плохо. Зелёный ноль обещал событие, которого нет,
             // и красное среди него переставало бросаться в глаза.
@@ -724,7 +736,7 @@ namespace AbletonManager
             }
             // Скобки обязательны: «+» связывает раньше «?:», и без них выражение
             // сворачивалось в одно слово « sets», а число пропадало.
-            y = Row(g, "Used in:", Plural(p.Sets, "set"),
+            y = Row(g, "Used in:", Chrome.Plural(p.Sets, "set"),
                     p.Sets == 0 ? Theme.TextDim : Theme.Text, pad, y, w);
             y += Sc(16);
 
@@ -849,12 +861,6 @@ namespace AbletonManager
             RectangleF mr = new RectangleF(_thumbRect.Right - mg - Sc(8), _thumbRect.Bottom - mg - Sc(8), mg, mg);
             Icons.Draw(g, Glyph.Magnifier, mr, _thumbHot ? Color.White : Theme.TextDim, 1.6f);
             return y + h;
-        }
-
-        /// <summary>«1 reference», «18 references» — согласование, а не «1 references».</summary>
-        static string Plural(int n, string word)
-        {
-            return n + " " + word + (n == 1 ? "" : "s");
         }
 
         int Line(Graphics g, string text, Font f, Color c, int x, int y, int w)
