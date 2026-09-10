@@ -117,7 +117,7 @@ namespace AbletonManager
             Controls.Add(_rescue);
 
             _collect.Text = "Collect All";
-            _collect.Surface = Theme.Backdrop;
+            _collect.Surface = Theme.CardFill;
             _collect.Click += delegate { if (CollectRequested != null) CollectRequested(); };
             Controls.Add(_collect);
 
