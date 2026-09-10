@@ -226,8 +226,9 @@ namespace AbletonManager
         /// пришлось бы угадывать, что там было: в .als это «\r\n», в других файлах Live
         /// (журнал) — одиночный «\n», а копия обязана совпадать с оригиналом байт в байт
         /// везде, кроме подменённых значений.
+        ///
+        /// Внутренний, а не приватный: тем же чтением пользуется AlsSamplePatch.
         /// </summary>
-        /// <summary>Внутренний, а не приватный: тем же чтением пользуется AlsSamplePatch.</summary>
         internal sealed class LineReader
         {
             readonly TextReader _r;

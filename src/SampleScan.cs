@@ -221,9 +221,20 @@ namespace AbletonManager
         /// недоступная подпапка обрывает счёт только для себя — берём максимум того,
         /// что смогли посчитать.
         /// </summary>
-        static long DirSize(string dir)
+        static long DirSize(string dir) { return DirSize(dir, 0); }
+
+        /// <summary>
+        /// Предел глубины — тем же числом, что RenderIndex.Walk. Без него junction-цикл
+        /// в файловой системе (а бандлы .adg/.amxd — обычные папки, никто не мешает
+        /// смонтировать внутрь себя) раздувает сумму: обход не отличает повторный визит
+        /// в ту же папку от новой, только глубину. Крах это не ловит — на реальном цикле
+        /// его обрывает PathTooLongException внутри try выше, — но без предела число
+        /// успевает завыситься в разы, пока путь не дорастёт до этой длины.
+        /// </summary>
+        static long DirSize(string dir, int depth)
         {
             long total = 0L;
+            if (depth > 4) return total;
 
             string[] files;
             try { files = Directory.GetFiles(dir); }
@@ -238,7 +249,7 @@ namespace AbletonManager
             try { subdirs = Directory.GetDirectories(dir); }
             catch { return total; }
             foreach (string d in subdirs)
-                total += DirSize(d);
+                total += DirSize(d, depth + 1);
 
             return total;
         }
