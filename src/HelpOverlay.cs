@@ -123,6 +123,7 @@ namespace AbletonManager
 
         protected override void OnMouseDown(MouseEventArgs e)
         {
+            if (e.Button != MouseButtons.Left) return;
             // Клик по крестику или мимо карточки — закрыть. Внутри карточки клик ничего
             // не делает: там текст, который читают, и случайно закрывать его обидно.
             if (_closeRect.Contains(e.Location) || !_card.Contains(e.Location))
@@ -414,6 +415,7 @@ namespace AbletonManager
                 Key("F", "Open filters dialog"),
                 Key("Shift F", "Open scan folders window"),
                 Key("Ctrl F", "Focus search field"),
+                Key("Ctrl ,", "Open settings"),
                 Key("F11", "Toggle fullscreen"),
                 Key("Ctrl M", "Minimize window"),
                 Key("Ctrl Q", "Quit application"),

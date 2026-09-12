@@ -17,7 +17,7 @@ namespace AbletonManager
         Volume1_50 = VolumeLow, Volume51_100 = VolumeHigh,
         Star, StarFill, Plus,
         NextSet, PrevSet, NextTrack, PrevTrack, OpenPlaylist, ViewTiles, ViewList,
-        Note, Tag, Dice, Nebula
+        Note, Tag, Dice, Nebula, HiddenBtnsOpen, HiddenBtnsClose
     }
 
     public static class Icons
@@ -104,8 +104,8 @@ namespace AbletonManager
                     break;
 
                 case Glyph.CloseFullscreen:
-                    DrawSvg(g, p, null, r, 16, 16, () => {
-                        g.DrawPath(p, GetSvgPath("M4.6631 14.2666V10.6H0.8M10.9536 0.8V4.4666H14.8166"));
+                    DrawSvg(g, p, null, r, 18, 17, () => {
+                        g.DrawPath(p, GetSvgPath("M5.82887 15.8333V11.25H1M11.692 1V5.58333H16.5208"));
                     });
                     break;
 
@@ -171,6 +171,21 @@ namespace AbletonManager
                         new PointF(cx - w * 0.26f, cy - h * 0.12f),
                         new PointF(cx, cy + h * 0.14f),
                         new PointF(cx + w * 0.26f, cy - h * 0.12f) });
+                    break;
+
+                case Glyph.HiddenBtnsOpen:
+                    DrawSvg(g, p, null, r, 15, 8, () => {
+                        g.DrawLine(p, 1f, 7.00002f, 7f, 1.00002f);
+                        g.DrawLine(p, 7f, 1.00002f, 14f, 7.00002f);
+                    });
+                    break;
+
+                case Glyph.HiddenBtnsClose:
+                    DrawSvg(g, p, null, r, 15, 12, () => {
+                        g.DrawLine(p, 1f, 1.00002f, 8f, 7.00002f);
+                        g.DrawLine(p, 8f, 7.00002f, 14f, 1.00001f);
+                        g.DrawLine(p, 1f, 11f, 14f, 11f);
+                    });
                     break;
 
                 case Glyph.SortUp:

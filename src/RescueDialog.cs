@@ -65,7 +65,7 @@ namespace AbletonManager
             // там, где могло бы показать всё сразу. Двенадцать строк — потолок, дальше
             // окно упёрлось бы в невысокие экраны.
             int rows = Math.Max(3, Math.Min(12, _s.Targets.Count));
-            ClientSize = new Size(Sc(780), Sc(300) + HintHeight + rows * _list.RowHeight);
+            ClientSize = new Size(Sc(780), Sc(280) + HintHeight + rows * _list.RowHeight);
 
             _list.Items.AddRange(_s.Targets);
             _list.Changed += delegate { UpdateButtons(); };
@@ -378,10 +378,14 @@ namespace AbletonManager
         Rectangle _statusRect, _listLabel, _hintRect;
 
         /// <summary>
-        /// Три строки FSmall — столько занимает самая длинная подсказка: в ней
-        /// разворачивается имя пробного файла, а оно длиной с имя сета.
+        /// Две строки FSmall — под обычную подсказку. Самая длинная (в ней разворачивается
+        /// имя пробного файла) изредка занимает три; NoClipping в OnPaint даёт третьей
+        /// строке вылезти в зазор над кнопкой, а не срезаться. Резервировать три строки
+        /// всегда — значило оставлять под однострочной подсказкой пустую полосу над кнопкой.
+        /// ponytail: окно под 3-ю строку не растёт. Короткое имя файла в неё не упирается;
+        /// если начнёт — считать высоту от реального переноса текста.
         /// </summary>
-        int HintHeight { get { return Theme.FSmall.Height * 3 + Sc(4); } }
+        int HintHeight { get { return Theme.FSmall.Height * 2 + Sc(4); } }
 
         protected override void OnResize(EventArgs e)
         {
@@ -421,7 +425,9 @@ namespace AbletonManager
                 b.SetBounds(qx, qy, b.Width, Sc(26));
                 qx -= Sc(6);
             }
-            y += Sc(26);
+            // Воздух между строкой кнопок (All Off / All On / Suggested) и списком: без него
+            // кнопки садятся вплотную к таблице и читаются как шапка столбцов, которой нет.
+            y += Sc(26) + Sc(16);
 
             int by = Card.Bottom - pad - _run.Height;
 
@@ -436,6 +442,9 @@ namespace AbletonManager
             // опускаем, но и не поднимаем принудительно: высота окна уже посчитана под
             // нужное число строк, и любой «минимум» здесь налез бы на подсказку под списком.
             int room = Math.Max(_list.RowHeight, _hintRect.Top - Sc(12) - y);
+            // Не выше, чем нужно самим строкам: лишнюю высоту список показывал пустой
+            // полосой фона под последним плагином — она читалась как обрыв отрисовки.
+            room = Math.Min(room, _list.Items.Count * _list.RowHeight);
             _list.SetBounds(x, y, w, room - room % _list.RowHeight);
 
             _run.Location = new Point(Card.Right - pad - _run.Width, by);
@@ -464,7 +473,8 @@ namespace AbletonManager
             }
 
             if (_hint.Length > 0)
-                Chrome.DrawText(g, _hint, Theme.FSmall, _hintRect, Theme.TextDim, Chrome.Wrap);
+                Chrome.DrawText(g, _hint, Theme.FSmall, _hintRect, Theme.TextDim,
+                                Chrome.Wrap | TextFormatFlags.NoClipping);
         }
     }
 
@@ -503,7 +513,7 @@ namespace AbletonManager
         }
 
         /// <summary>Шаг строки. Открыт наружу — по нему окно подгоняет высоту списка под целые строки.</summary>
-        public int RowHeight { get { return Sc(30); } }
+        public int RowHeight { get { return Sc(36); } }
 
         int RowH { get { return RowHeight; } }
         int Inner { get { return Items.Count * RowH; } }
@@ -639,6 +649,11 @@ namespace AbletonManager
             int pad = Sc(12);
             int box = Sc(15);
 
+            // Ширину столбца формата меряем по шрифту, а не берём Sc(): в Alive Sc — ×1,
+            // а текст рисуется крупнее (см. RescueDialog.HintHeight), и «VST3» в фиксированные
+            // 52 пикселя не влезал — на снимке от него оставалось «VS…».
+            int fmtW = TextRenderer.MeasureText("VST3", Theme.FBadge).Width + Sc(4);
+
             for (int i = 0; i < Items.Count; i++)
             {
                 int top = i * RowH - _scroll;
@@ -671,9 +686,9 @@ namespace AbletonManager
                 }
 
                 int x = mark.Right + Sc(12);
-                Chrome.DrawText(g, s.Format, Theme.FBadge, new Rectangle(x, top, Sc(52), RowH),
+                Chrome.DrawText(g, s.Format, Theme.FBadge, new Rectangle(x, top, fmtW, RowH),
                                 Theme.TextDim, Chrome.Left);
-                x += Sc(58);
+                x += fmtW + Sc(10);
 
                 string note;
                 bool flagged = Notes.TryGetValue(s.Uid, out note);

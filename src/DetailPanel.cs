@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.Drawing.Drawing2D;
@@ -14,10 +14,10 @@ namespace AbletonManager
     public sealed class DetailPanel : GlassControl
     {
         readonly GlassButton _action = new GlassButton();
-        readonly GlassButton _rescue = new GlassButton();
-        readonly GlassButton _collect = new GlassButton();
-        readonly GlassButton _forks = new GlassButton();
-        readonly GlassButton _showInList = new GlassButton();
+        readonly IconButton _toggle = new IconButton();
+
+        ContextMenuStrip _openMenu;   // попап второстепенных действий, пока он открыт
+        int _menuClosedTick;          // когда он закрылся — см. ShowActionMenu
 
         SetEntry _set;
         PluginStat _plugin;
@@ -102,34 +102,12 @@ namespace AbletonManager
             Controls.Add(_action);
 
             // Второстепенные действия для сета — только для сета: у плагина своего .als
-            // нет, ни чинить, ни версионировать нечего. Обычные пилюли, не Quiet: рядом
-            // с заливной Open in Live «тихая» кнопка читалась как подпись к ней, а не
-            // как второе действие. Главная остаётся главной за счёт заливки, а не за
-            // счёт того, что у соседей отняли обводку.
-            // Surface = цвет карточки (CardFill), не фон окна: пилюля лежит на карточке
-            // панели, и в непрозрачном режиме Backdrop красил её углы тёмным окном —
-            // вокруг кнопки висел прямоугольник. Двухслойный Backdrop+overlay (как у
-            // _action) не годится: на стекле SourceCopy в PaintGlassSurface пробивает
-            // непрозрачную накладку в дыру при затухании ховера.
-            _rescue.Text = "Rescue Project";
-            _rescue.Surface = Theme.CardFill;
-            _rescue.Click += delegate { if (RescueRequested != null) RescueRequested(); };
-            Controls.Add(_rescue);
-
-            _collect.Text = "Collect All";
-            _collect.Surface = Theme.CardFill;
-            _collect.Click += delegate { if (CollectRequested != null) CollectRequested(); };
-            Controls.Add(_collect);
-
-            _forks.Text = "Forks";
-            _forks.Surface = Theme.CardFill;
-            _forks.Click += delegate { if (ForksRequested != null) ForksRequested(); };
-            Controls.Add(_forks);
-
-            _showInList.Text = "Show in List";
-            _showInList.Surface = Theme.CardFill;
-            _showInList.Click += delegate { if (_showInListRequested != null) _showInListRequested(); };
-            Controls.Add(_showInList);
+            // нет, ни чинить, ни версионировать нечего. Лежат в попапе, который встаёт
+            // вверх от этой кнопки — там же, где раньше стояли отдельными пилюлями.
+            _toggle.Icon = Glyph.HiddenBtnsOpen;
+            _toggle.Surface = Theme.CardFill;
+            _toggle.Click += delegate { ShowActionMenu(); };
+            Controls.Add(_toggle);
 
             _scroller = new SmoothScroller(this,
                 delegate (int s) { _scroll = s; _scrollCurrent = s; ClampScroll(); },
@@ -230,21 +208,71 @@ namespace AbletonManager
                 // Кнопка «Show in Explorer» убрана: путь к плагину сам стал ссылкой,
                 // и кнопка внизу повторяла то, на что и так хочется нажать.
                 _action.Visible = false;
-                _rescue.Visible = false;
-                _collect.Visible = false;
-                _forks.Visible = false;
-                _showInList.Visible = false;
+                _toggle.Visible = false;
             }
             else
             {
                 _action.Text = "Open in Live";
                 _action.Visible = _set != null;
-                bool inList = _showInListRequested != null;
-                _showInList.Visible = !_pluginMode && _set != null && inList;
-                _rescue.Visible = !_pluginMode && _set != null && !inList;
-                _collect.Visible = !_pluginMode && _set != null && !inList;
-                _forks.Visible = !_pluginMode && _set != null && !inList && ForksRequested != null;
+                _toggle.Visible = _set != null;
             }
+        }
+
+        /// <summary>
+        /// Второстепенные действия — попапом вверх от кнопки, ровно там, где раньше
+        /// стояли отдельные пилюли. Набор зависит от того, показан ли сет уже в списке
+        /// слева: там «Show in List», иначе починка, сборка и версии.
+        /// </summary>
+        void ShowActionMenu()
+        {
+            if (_set == null || _pluginMode) return;
+
+            // Клик по кнопке при открытом попапе сначала закрывает его — попап сам
+            // уходит от любого клика мимо себя, и только потом клик доходит до кнопки.
+            // Без этой проверки кнопка тут же открывала бы его заново, и попап выглядел
+            // бы незакрываемым.
+            if (Environment.TickCount - _menuClosedTick < 250) return;
+
+            ContextMenuStrip m = DarkMenu.Create();
+            if (_showInListRequested != null)
+            {
+                ToolStripMenuItem show = new ToolStripMenuItem("Show in List");
+                show.Click += delegate { if (_showInListRequested != null) _showInListRequested(); };
+                m.Items.Add(show);
+            }
+            else
+            {
+                // Порядок как у прежнего столбика пилюль: Collect All сверху.
+                ToolStripMenuItem collect = new ToolStripMenuItem("Collect All");
+                collect.Click += delegate { if (CollectRequested != null) CollectRequested(); };
+                m.Items.Add(collect);
+
+                ToolStripMenuItem rescue = new ToolStripMenuItem("Rescue Project");
+                rescue.ShortcutKeyDisplayString = "Ctrl+R";
+                rescue.Click += delegate { if (RescueRequested != null) RescueRequested(); };
+                m.Items.Add(rescue);
+
+                if (ForksRequested != null)
+                {
+                    ToolStripMenuItem forks = new ToolStripMenuItem("Forks");
+                    forks.Click += delegate { if (ForksRequested != null) ForksRequested(); };
+                    m.Items.Add(forks);
+                }
+            }
+
+            // Пока попап открыт, значок кнопки перевёрнут — как у раскрытого списка.
+            _openMenu = m;
+            _toggle.Icon = Glyph.HiddenBtnsClose;
+            _toggle.Invalidate();
+            m.Closed += delegate
+            {
+                _openMenu = null;
+                _menuClosedTick = Environment.TickCount;
+                _toggle.Icon = Glyph.HiddenBtnsOpen;
+                _toggle.Invalidate();
+            };
+
+            m.Show(_toggle, new Point(0, 0), ToolStripDropDownDirection.AboveRight);
         }
 
         void DropThumb()
@@ -259,31 +287,24 @@ namespace AbletonManager
         {
             base.OnResize(e);
             int h = Sc(Theme.ControlH);
-            int w = Math.Max(Sc(40), Width - Pad * 2);
-            _action.SetBounds(Pad, Height - Pad - h, w, h);
-            _showInList.SetBounds(Pad, _action.Top - Sc(8) - h, w, h);
-            _rescue.SetBounds(Pad, _action.Top - Sc(8) - h, w, h);
-            _collect.SetBounds(Pad, _rescue.Top - Sc(8) - h, w, h);
-            _forks.SetBounds(Pad, _collect.Top - Sc(8) - h, w, h);
+            int gap = Sc(8);
+            _toggle.SetBounds(Pad, Height - Pad - h, h, h);
+            _action.SetBounds(Pad + h + gap, Height - Pad - h, Math.Max(Sc(40), Width - Pad * 2) - h - gap, h);
             ClampScroll();
         }
 
         /// <summary>
-        /// Докуда можно рисовать содержимое. Место под кнопки резервируем всегда, чтобы
-        /// список не прыгал, когда кнопка то есть, то нет, — но по-разному для двух
-        /// режимов: у плагина кнопка всегда одна (Show in Explorer то есть, то нет,
-        /// смотря установлен ли он), у сета их до четырёх сразу (Open in Live, Rescue
-        /// Project, Collect All и Forks, либо Open in Live и Show in List). Переключение между режимами
-        /// и так меняет содержимое панели целиком, так что разная высота резерва здесь не
-        /// приводит к дёрганью, которого избегает сам резерв, — оно только внутри одного режима.
+        /// Докуда можно рисовать содержимое (и где стоит кнопка «наверх», см.
+        /// PaintScrollTop). Место под кнопки резервируем всегда, чтобы список не прыгал,
+        /// когда кнопка то есть, то нет: у плагина ряда нет вовсе, у сета — один ряд
+        /// (Open in Live и кнопка второстепенных действий). Второстепенные действия
+        /// живут в попапе и места в панели не занимают.
         /// </summary>
         int BodyBottom
         {
             get
             {
-                int h = Sc(Theme.ControlH);
-                int rows = _pluginMode ? 0 : (_showInListRequested != null ? 2 : (ForksRequested != null ? 4 : 3));
-                int buttons = rows == 0 ? 0 : h * rows + Sc(8) * (rows - 1);
+                int buttons = _pluginMode ? 0 : Sc(Theme.ControlH);
                 return Height - Pad - buttons - Sc(16);
             }
         }
@@ -911,3 +932,5 @@ namespace AbletonManager
         }
     }
 }
+
+

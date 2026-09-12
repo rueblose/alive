@@ -644,6 +644,9 @@ namespace AbletonManager
 
         const int WM_MOUSEHWHEEL = 0x020E;
 
+        // Список живёт с ПКМ: меню строки и меню шапки. Разбор — в OnMouseDown.
+        protected override bool WantsRightClick { get { return true; } }
+
         protected override void WndProc(ref Message m)
         {
             if (m.Msg == WM_MOUSEHWHEEL)
@@ -1121,16 +1124,16 @@ namespace AbletonManager
         /// Двойной клик активирует строку — но только если он пришёлся на саму строку,
         /// а не на одну из её независимых кнопок (хвостик «+N», звёздочка, play,
         /// чекбокс). У Windows второй клик быстрого двойного тапа не идёт через
-        /// OnMouseDown второй раз — он приходит сюда, минуя те же проверки, и без этой
-        /// защиты быстрый повторный тап по «+N» успевал не только раскрыть строку, но
-        /// и открыть сет в Live между первым и вторым кликом.
+        /// OnMouseDown второй раз — он приходит сюда, минуя те же проверки. Кнопки строки
+        /// все переключатели (пин, play/pause, раскрытие версий, чекбокс), поэтому второй
+        /// клик тут просто проглатывается — иначе он повторял бы то же действие и гасил
+        /// первое: пин закреплял и тут же открепял, play запускал и тут же ставил на паузу.
         /// </summary>
         protected override void OnMouseDoubleClick(MouseEventArgs e)
         {
             int idx = RowAt(e.Y);
             if (idx >= 0 && OnRowAccessory(idx, e.Location))
             {
-                OnMouseDown(e);
                 base.OnMouseDoubleClick(e);
                 return;
             }
@@ -1458,24 +1461,9 @@ namespace AbletonManager
             }
         }
 
-        /// <summary>
-        /// Полоса прокрутки поверх содержимого: Sc(4) в покое, Sc(8) под курсором,
-        /// растёт от дальнего края, чтобы не наползать на текст.
-        /// </summary>
         void PaintFadingBar(Graphics g, Rectangle bar, ScrollFade fade, bool dragging, bool vertical)
         {
-            if (bar.IsEmpty) return;
-            float a = dragging ? 1f : fade.Alpha;
-            if (a <= 0.01f) return;
-
-            float thick = dragging ? 1f : fade.Thick;
-            int grow = (int)Math.Round(Sc(4) * thick);
-            if (vertical) bar = new Rectangle(bar.Right - bar.Width - grow, bar.Y, bar.Width + grow, bar.Height);
-            else bar = new Rectangle(bar.X, bar.Bottom - bar.Height - grow, bar.Width, bar.Height + grow);
-
-            int alpha = (int)Math.Round((0x4A + 0x50 * thick) * a);
-            float r = (vertical ? bar.Width : bar.Height) / 2f;
-            Theme.FillRound(g, bar, r, Color.FromArgb(alpha, 0xFF, 0xFF, 0xFF));
+            Chrome.PaintFadingBar(g, bar, dragging ? 1f : fade.Alpha, dragging ? 1f : fade.Thick, vertical, Sc(4));
         }
 
         void PaintCell(Graphics g, int[] widths, int topAnim, int rowH, float entrance, bool dim, bool bright, RowData row, int c, bool countHot, int rowIndex)

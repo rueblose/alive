@@ -55,6 +55,24 @@ namespace AbletonManager
             g.CompositingMode = old;
         }
 
+        /// <summary>
+        /// Оверлейная полоса прокрутки: тонкая в покое, толще под курсором, растёт от
+        /// дальнего края, чтобы не наползать на текст. Геометрию и затухание считает
+        /// владелец (см. ScrollFade), здесь только общий вид — он один на весь проект.
+        /// </summary>
+        public static void PaintFadingBar(Graphics g, Rectangle bar, float alpha, float thick, bool vertical, int grow)
+        {
+            if (bar.IsEmpty || alpha <= 0.01f) return;
+
+            grow = (int)Math.Round(grow * thick);
+            if (vertical) bar = new Rectangle(bar.Right - bar.Width - grow, bar.Y, bar.Width + grow, bar.Height);
+            else bar = new Rectangle(bar.X, bar.Bottom - bar.Height - grow, bar.Width, bar.Height + grow);
+
+            int a = (int)Math.Round((0x4A + 0x50 * thick) * alpha);
+            float r = (vertical ? bar.Width : bar.Height) / 2f;
+            Theme.FillRound(g, bar, r, Color.FromArgb(a, 0xFF, 0xFF, 0xFF));
+        }
+
         public static readonly TextFormatFlags Left =
             TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.SingleLine |
             TextFormatFlags.NoPrefix | TextFormatFlags.EndEllipsis | TextFormatFlags.NoClipping;
@@ -366,6 +384,37 @@ namespace AbletonManager
         }
 
         protected int Sc(int v) { return (int)Math.Round(v * (DeviceDpi / 96f)); }
+
+        /// <summary>
+        /// Нужна ли контролу правая (и средняя) кнопка мыши. По умолчанию нет: голый
+        /// Control поднимает Click на любой кнопке — фильтрует левую только Button, —
+        /// и от этого ПКМ по нашим пилюлям и иконкам срабатывала как ЛКМ. Списки с
+        /// контекстным меню переопределяют свойство и разбирают e.Button сами.
+        /// </summary>
+        protected virtual bool WantsRightClick { get { return false; } }
+
+        // WM_RBUTTONDOWN..WM_MBUTTONDBLCLK — правая и средняя кнопки со всеми их
+        // down/up/dblclk. Съедаем целиком, чтобы до Click-логики Control они не дошли.
+        const int WM_RBUTTONDOWN = 0x0204, WM_RBUTTONDBLCLK = 0x0206;
+        const int WM_MBUTTONDBLCLK = 0x0209;
+
+        protected override void WndProc(ref Message m)
+        {
+            if (m.Msg >= WM_RBUTTONDOWN && m.Msg <= WM_MBUTTONDBLCLK)
+            {
+                // Двойной клик правой (и средней) не нужен никому: даже списки, которым
+                // правая кнопка нужна для меню, от второго тычка открывали строку, как
+                // от двойного левого. Поэтому dblclk глушим всегда, а остальное — только
+                // тем, кто правую кнопку не просил.
+                bool dbl = m.Msg == WM_RBUTTONDBLCLK || m.Msg == WM_MBUTTONDBLCLK;
+                if (dbl || !WantsRightClick)
+                {
+                    m.Result = IntPtr.Zero;
+                    return;
+                }
+            }
+            base.WndProc(ref m);
+        }
 
         /// <summary>
         /// Насколько контрол «продавлен» при нажатии — на столько пикселей всё его
@@ -1474,10 +1523,15 @@ namespace AbletonManager
         /// Ставим на Opening: к этому моменту меню уже разложено по своим пунктам
         /// и Width/Height окончательные.
         /// </summary>
+        /// <summary>Радиус скругления меню — общий для региона и обводки.</summary>
+        internal static float Radius(ToolStrip t)
+        {
+            return 10f * (t.DeviceDpi / 96f);
+        }
+
         static void RoundCorners(ContextMenuStrip m)
         {
-            float scale = m.DeviceDpi / 96f;
-            float r = 10f * scale;
+            float r = Radius(m);
             using (GraphicsPath p = Theme.Round(new RectangleF(0, 0, m.Width, m.Height), r))
                 m.Region = new Region(p);
         }
@@ -1500,10 +1554,36 @@ namespace AbletonManager
         {
             public DarkRenderer() : base(new DarkColors()) { }
 
+            /// <summary>
+            /// Хоткей пункта WinForms рисует этим же вызовом, что и название, — отличаем
+            /// по тексту и притеняем, чтобы правая колонка не спорила с самим пунктом.
+            /// </summary>
             protected override void OnRenderItemText(ToolStripItemTextRenderEventArgs e)
             {
-                e.TextColor = Theme.Text;
+                ToolStripMenuItem mi = e.Item as ToolStripMenuItem;
+                bool shortcut = mi != null && !string.IsNullOrEmpty(mi.ShortcutKeyDisplayString)
+                                && e.Text == mi.ShortcutKeyDisplayString;
+                e.TextColor = shortcut ? Theme.TextDim : Theme.Text;
                 base.OnRenderItemText(e);
+            }
+
+            /// <summary>
+            /// Своя обводка вместо штатной. Штатная — прямоугольник по краю меню, а меню
+            /// скруглено регионом (см. DarkMenu.RoundCorners): прямые стороны обрывались
+            /// на срезанных углах, и рамка выглядела рваной. Рисуем 1px по той же дуге.
+            /// </summary>
+            protected override void OnRenderToolStripBorder(ToolStripRenderEventArgs e)
+            {
+                Graphics g = e.Graphics;
+                SmoothingMode old = g.SmoothingMode;
+                g.SmoothingMode = SmoothingMode.AntiAlias;
+
+                RectangleF b = new RectangleF(0.5f, 0.5f, e.ToolStrip.Width - 1f, e.ToolStrip.Height - 1f);
+                using (GraphicsPath p = Theme.Round(b, Math.Max(0f, DarkMenu.Radius(e.ToolStrip) - 0.5f)))
+                using (Pen pen = new Pen(Theme.Hairline, 1f))
+                    g.DrawPath(pen, p);
+
+                g.SmoothingMode = old;
             }
 
             /// <summary>
@@ -1692,6 +1772,27 @@ namespace AbletonManager
             Visible = false;
         }
 
+        // Попап висит над списком, а не над фоном окна, поэтому закрасить углы
+        // «правильным» цветом нельзя — под ними строки. Вырезаем контрол по форме
+        // пилюли, тогда за скруглениями остаётся то, что было. Приём как у Toast.
+        protected override void OnResize(EventArgs e)
+        {
+            base.OnResize(e);
+            if (Width <= 0 || Height <= 0) return;
+            using (GraphicsPath p = Theme.Round(new RectangleF(0, 0, Width, Height), Width / 2f))
+            {
+                Region old = Region;
+                Region = new Region(p);
+                if (old != null) old.Dispose();
+            }
+        }
+
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing && Region != null) { Region.Dispose(); Region = null; }
+            base.Dispose(disposing);
+        }
+
         public float Value
         {
             get { return _value; }
@@ -1757,13 +1858,13 @@ namespace AbletonManager
             RectangleF rect = new RectangleF(0.5f, 0.5f, Width - 1f, Height - 1f);
             float cornerR = Width / 2f;
 
+            // Заливка во всю коробку, а не по контуру: форму держит Region, а
+            // сглаженный край заливки внутри него дал бы тёмную кромку от BackColor.
+            using (SolidBrush b = new SolidBrush(Color.FromArgb(0xF4, 0x1A, 0x1A, 0x1D)))
+                g.FillRectangle(b, ClientRectangle);
             using (GraphicsPath path = Theme.Round(rect, cornerR))
-            {
-                using (SolidBrush b = new SolidBrush(Color.FromArgb(0xF4, 0x1A, 0x1A, 0x1D)))
-                    g.FillPath(b, path);
-                using (Pen p = new Pen(Color.FromArgb(30, 255, 255, 255), 1f))
-                    g.DrawPath(p, path);
-            }
+            using (Pen p = new Pen(Color.FromArgb(30, 255, 255, 255), 1f))
+                g.DrawPath(p, path);
 
             float padY = Sc(14);
             float trackH = Height - padY * 2;

@@ -46,12 +46,6 @@ namespace AbletonManager
         /// ещё и обязательный ответ на случайное нажатие.</summary>
         bool _restartPending;
 
-        /// <summary>Разойдётся ли картинка с настройкой, если не перезапускаться. От
-        /// этого зависит только пояснение под строкой: сама строка остаётся, пока
-        /// тумблер в этом сеансе трогали, — иначе, вернув тумблер обратно, человек
-        /// оставался без способа применить хоть что-нибудь.</summary>
-        bool _restartChanges;
-
         /// <summary>Пересобрать каталог: настройки плагинов поменялись.</summary>
         public bool RescanWanted;
 
@@ -60,11 +54,17 @@ namespace AbletonManager
 
         readonly List<string> _installs = new List<string>();
 
+        /// <summary>Прокручиваемая середина окна — всё, что ниже заголовка.</summary>
+        readonly Body _body;
+
         public SettingsDialog(Settings s)
         {
             _s = s;
             Caption = "Settings";
-            ClientSize = new Size(Sc(700), Sc(660));
+            ClientSize = new Size(Sc(700), WindowH);
+
+            _body = new Body(this);
+            Controls.Add(_body);
 
             _smooth.Checked = _s.SmoothScroll;
             _smooth.CheckedChanged += delegate
@@ -87,7 +87,7 @@ namespace AbletonManager
                 Relayout();
                 DescribeInventoryAsync();
             };
-            Controls.Add(_source);
+            _body.Controls.Add(_source);
 
             // «All installs» первым пунктом: список плагинов складывается из всех сразу,
             // и это правильное умолчание — см. PluginInventory.Load. Список пунктов тут
@@ -105,7 +105,7 @@ namespace AbletonManager
                 RescanWanted = true;
                 DescribeInventoryAsync();
             };
-            Controls.Add(_install);
+            _body.Controls.Add(_install);
 
             Toggle(_vst2On, _s.Vst2CustomOn, delegate { _s.Vst2CustomOn = _vst2On.Checked; });
             Toggle(_vst3SysOn, _s.Vst3SystemOn, delegate { _s.Vst3SystemOn = _vst3SysOn.Checked; });
@@ -125,18 +125,18 @@ namespace AbletonManager
             _rescan.Text = "Rescan";
             _rescan.FitToText(16);
             _rescan.Click += delegate { RescanWanted = true; Close(); };
-            Controls.Add(_rescan);
+            _body.Controls.Add(_rescan);
 
             _shortcuts.Text = "Shortcuts…";
             _shortcuts.FitToText(16);
             _shortcuts.Click += delegate { ShortcutsWanted = true; Close(); };
-            Controls.Add(_shortcuts);
+            _body.Controls.Add(_shortcuts);
 
             _restart.Text = "Restart now";
             _restart.Primary = true;
             _restart.Visible = false;
             _restart.Click += delegate { _s.Save(); Application.Restart(); };
-            Controls.Add(_restart);
+            _body.Controls.Add(_restart);
 
             _openCache.Text = "Open folder";
             _openCache.FitToText(16);
@@ -149,7 +149,7 @@ namespace AbletonManager
                 }
                 catch { }
             };
-            Controls.Add(_openCache);
+            _body.Controls.Add(_openCache);
 
             // Одна ширина на все кнопки правого столбца: три разные ширины давали
             // три разных левых края в одной колонке, и правый столбец рассыпался.
@@ -177,7 +177,7 @@ namespace AbletonManager
         {
             t.IsSwitch = true;
             t.Size = new Size(Sc(42), Sc(24));
-            Controls.Add(t);
+            _body.Controls.Add(t);
         }
 
         void Browse(GlassButton b, MethodInvoker click)
@@ -185,7 +185,7 @@ namespace AbletonManager
             b.Text = "Browse";
             b.FitToText(16);
             b.Click += delegate { click(); RescanWanted = true; Relayout(); DescribeInventoryAsync(); };
-            Controls.Add(b);
+            _body.Controls.Add(b);
         }
 
         string Pick(string title, string current)
@@ -204,14 +204,11 @@ namespace AbletonManager
             _s.Save();
 
             // Предложение перезапуститься живёт строкой в этом же окне: случайно
-            // щёлкнутый тумблер не должен требовать ответа в чужом диалоге.
-            //
-            // Строка появляется от любого щелчка и больше не прячется: раньше она
-            // считалась по «настройка разошлась с текущим окном» и в обратную сторону
-            // исчезала — тумблер вернули на место, и перезапуститься стало нечем,
-            // хотя окно так и осталось нарисованным по-старому.
-            _restartPending = Glass.Supported();
-            _restartChanges = _s.DisableGlass == Glass.Enabled;
+            // щёлкнутый тумблер не должен требовать ответа в чужом диалоге. Строка
+            // видна, только пока настройка разошлась с текущим сеансом (DisableGlass
+            // и Glass.Enabled противоположной полярности, поэтому сравнение на ==):
+            // вернул тумблер на место — перезапускаться не за чем, строка ушла.
+            _restartPending = Glass.Supported() && _s.DisableGlass == Glass.Enabled;
             Relayout();
         }
 
@@ -337,20 +334,37 @@ namespace AbletonManager
             public bool Separator;
         }
 
-        void Relayout() { OnResize(EventArgs.Empty); Invalidate(true); }
+        void Relayout()
+        {
+            if (_body == null) return;
+            _body.Rebuild();
+            FitHeight(_body.Top + _body.ContentHeight + Sc(16));
+            Invalidate(true);
+        }
 
         protected override void OnResize(EventArgs e)
         {
             base.OnResize(e);
+            if (_body == null) return;
+            int top = Card.Top + Sc(92);
+            _body.SetBounds(Card.Left, top, Card.Width, Math.Max(0, Card.Bottom - top - Sc(16)));
+            Relayout();
+        }
 
+        /// <summary>
+        /// Разложить строки внутри панели: подпись слева, контрол справа. Координаты
+        /// панельные, сдвинутые на прокрутку; возвращает полную высоту содержимого.
+        /// </summary>
+        internal int BuildRows(int scroll)
+        {
             _rows.Clear();
+            _rail = Rectangle.Empty;
 
             int pad = Sc(Theme.Pad);
-            int x = Card.Left + pad;
-            int right = Card.Right - pad;
-            int w = right - x;
+            int x = pad;
+            int w = Math.Max(0, _body.Width - pad * 2);
             int h = Sc(Theme.ControlH);
-            int y = Card.Top + Sc(92);
+            int y = -scroll;
 
             Section(x, ref y, w, "General");
             Line(x, ref y, w, h, _shortcuts, "Keyboard shortcuts", "");
@@ -367,13 +381,14 @@ namespace AbletonManager
                  "Disable transparency (Win10 Compatible)",
                  "Turns off glass effect if window dragging lags. Applies after restart.");
 
+            // Кнопка без подписи: строка выше уже сказала, что перезапуск нужен, а
+            // повторять это ещё и заголовком с пояснением — три раза об одном.
             _restart.Visible = _restartPending;
             if (_restartPending)
-                Line(x, ref y, w, h, _restart,
-                     "Restart to apply",
-                     _restartChanges
-                     ? "Transparency changes only take effect on a fresh start."
-                     : "The switch is back where it started — restart only if you want to be sure.");
+            {
+                y -= Sc(12);   // прижать к строке тумблера — это одно целое
+                Line(x, ref y, w, h, _restart, "", "");
+            }
 
             Separator(x, ref y, w);
             Section(x, ref y, w, "Plug-ins");
@@ -383,47 +398,61 @@ namespace AbletonManager
                  ? "Direct folder scan (VST2 / VST3 files)."
                  : "Uses internal database from installed Live versions.");
 
+            // Дочерние строки источника: о чём вообще спрашивать, решает строка выше,
+            // поэтому они с отступом и на общем рельсе — как версии под сетом в списке.
+            int cx = x + Sc(20);
+            int cw = Math.Max(0, w - Sc(20));
+            int railTop = y;
+
             _install.Visible = !Folders;
             if (!Folders)
-                Line(x, ref y, w, h, _install, "Live install", "");
+                Line(cx, ref y, cw, h, _install, "Live install", "");
 
             foreach (Control c in new Control[] { _vst2On, _vst2Browse, _vst3SysOn, _vst3On, _vst3Browse })
                 c.Visible = Folders;
 
             if (Folders)
             {
-                Line(x, ref y, w, h, _vst2On,
+                Line(cx, ref y, cw, h, _vst2On,
                      "Custom VST2 folder", "");
-                Line(x, ref y, w, h, _vst2Browse,
+                Line(cx, ref y, cw, h, _vst2Browse,
                      "VST2 folder path",
                      _s.Vst2CustomPath.Length > 0 ? _s.Vst2CustomPath : "not set");
 
-                Line(x, ref y, w, h, _vst3SysOn,
+                Line(cx, ref y, cw, h, _vst3SysOn,
                      "System VST3 folders", "");
-                Line(x, ref y, w, h, _vst3On,
+                Line(cx, ref y, cw, h, _vst3On,
                      "Custom VST3 folder", "");
-                Line(x, ref y, w, h, _vst3Browse,
+                Line(cx, ref y, cw, h, _vst3Browse,
                      "VST3 folder path",
                      _s.Vst3CustomPath.Length > 0 ? _s.Vst3CustomPath : "not set");
             }
+
+            _rail = new Rectangle(x + Sc(6), railTop + Sc(2), Sc(2),
+                                  Math.Max(0, (y - Sc(20)) - railTop - Sc(4)));
 
             Line(x, ref y, w, h, _rescan, "Installed right now", "");
             _statusRect = new Rectangle(x, y - Sc(6), w - _rescan.Width - Sc(16), Sc(28));
             y += Sc(32);
 
-            FitHeight(y + Sc(16) + pad);
-            Invalidate();
+            return y + scroll;
         }
 
         bool _sizing;
 
         /// <summary>
-        /// Подогнать высоту окна под содержимое.
+        /// Высота окна под полный список у источника «Live's database» — он же
+        /// умолчание. Окно её и держит: переключение источника меняет число строк
+        /// втрое, и прыгающая от этого рамка читается как другое окно, а не как
+        /// другое содержимое. Что не влезло — прокручивается внутри панели.
         /// </summary>
+        int WindowH { get { return Sc(760); } }
+
+        /// <summary>Подогнать высоту окна под содержимое, но не выше WindowH.</summary>
         void FitHeight(int need)
         {
             if (_sizing) return;
-            int max = Screen.FromControl(this).WorkingArea.Height - Sc(80);
+            int max = Math.Min(WindowH, Screen.FromControl(this).WorkingArea.Height - Sc(80));
             need = Math.Min(need, max);
             if (Math.Abs(ClientSize.Height - need) <= Sc(2)) return;
 
@@ -433,6 +462,9 @@ namespace AbletonManager
         }
 
         Rectangle _statusRect;
+
+        /// <summary>Рельс слева от дочерних строк источника плагинов.</summary>
+        Rectangle _rail;
 
         int DetailHeight(string text, int width)
         {
@@ -460,7 +492,7 @@ namespace AbletonManager
             r.Separator = true;
             r.Rect = new Rectangle(x, y, w, Sc(1));
             _rows.Add(r);
-            y += Sc(16);
+            y += Sc(8);
         }
 
         /// <summary>Строка настройки: подпись слева, контрол прижат к правому краю.</summary>
@@ -485,18 +517,18 @@ namespace AbletonManager
             y += Sc(20);
         }
 
-        protected override void OnPaint(PaintEventArgs e)
+        /// <summary>Строки рисует панель — она же их и обрезает по своему краю.</summary>
+        internal void PaintRows(Graphics g)
         {
-            base.OnPaint(e);
-            Graphics g = e.Graphics;
-            Theme.Smooth(g);
-
             const TextFormatFlags leftFlags = TextFormatFlags.Left | TextFormatFlags.VerticalCenter |
                                               TextFormatFlags.SingleLine | TextFormatFlags.NoPrefix |
                                               TextFormatFlags.NoPadding | TextFormatFlags.NoClipping;
             const TextFormatFlags wrapFlags = TextFormatFlags.Left | TextFormatFlags.Top |
                                               TextFormatFlags.WordBreak | TextFormatFlags.NoPrefix |
                                               TextFormatFlags.NoPadding | TextFormatFlags.NoClipping;
+
+            if (_rail.Height > 0)
+                g.FillRectangle(Theme.GetBrush(Color.FromArgb(120, Theme.TextDim)), _rail);
 
             foreach (Row r in _rows)
             {
@@ -522,6 +554,132 @@ namespace AbletonManager
             }
 
             Chrome.DrawText(g, _inventory, Theme.FSmall, _statusRect, Theme.TextDim, leftFlags);
+        }
+
+        /// <summary>Колесо над заголовком или кнопкой закрытия — тоже прокрутка.</summary>
+        protected override void OnMouseWheel(MouseEventArgs e)
+        {
+            if (_body != null) _body.Scroll(e.Delta);
+            base.OnMouseWheel(e);
+        }
+
+        /// <summary>
+        /// Прокручиваемая середина окна. Настоящий дочерний контрол, а не сдвиг
+        /// координат: он сам обрезает уехавшие за край кнопки (подписи пишет
+        /// TextRenderer, а он никакого Clip не слушает — см. RowListView), и колесо
+        /// над любой из них приходит сюда же.
+        /// </summary>
+        sealed class Body : GlassControl
+        {
+            readonly SettingsDialog _d;
+            readonly ScrollFade _fade;
+            int _scroll, _contentH;
+            bool _building, _dragging;
+            int _dragOffset;
+
+            public Body(SettingsDialog d)
+            {
+                _d = d;
+                _fade = new ScrollFade(this, BarRect);
+            }
+
+            public int ContentHeight { get { return _contentH; } }
+
+            int MaxScroll { get { return Math.Max(0, _contentH - Height); } }
+
+            /// <summary>Пересобрать строки под текущую прокрутку и размер.</summary>
+            public void Rebuild()
+            {
+                if (_building) return;
+                _building = true;
+                try
+                {
+                    _contentH = _d.BuildRows(_scroll);
+                    // Содержимое укоротилось (сменили источник) — прокрутка повисла бы
+                    // за концом списка, и снизу зияла пустота.
+                    if (_scroll > MaxScroll) { _scroll = MaxScroll; _contentH = _d.BuildRows(_scroll); }
+                }
+                finally { _building = false; }
+                Invalidate();
+            }
+
+            /// <summary>Прокрутить на щелчок колеса.</summary>
+            public void Scroll(int delta)
+            {
+                if (delta == 0 || MaxScroll <= 0) return;
+                int steps = delta / 120;
+                if (steps == 0) steps = delta > 0 ? 1 : -1;
+                SetScroll(_scroll - steps * Sc(60));
+            }
+
+            void SetScroll(int v)
+            {
+                v = Math.Max(0, Math.Min(MaxScroll, v));
+                if (v == _scroll) return;
+                _scroll = v;
+                _fade.Ping();
+                Rebuild();
+            }
+
+            Rectangle BarRect()
+            {
+                if (_contentH <= Height || Height <= 0) return Rectangle.Empty;
+                int track = Height - Sc(10);
+                int h = Math.Max(Sc(40), (int)(track * (float)Height / _contentH));
+                int max = Math.Max(1, _contentH - Height);
+                int y = Sc(5) + (int)((track - h) * (_scroll / (float)max));
+                return new Rectangle(Width - Sc(8), y, Sc(4), h);
+            }
+
+            protected override void OnResize(EventArgs e) { base.OnResize(e); Rebuild(); }
+
+            protected override void OnMouseWheel(MouseEventArgs e) { Scroll(e.Delta); base.OnMouseWheel(e); }
+
+            protected override void OnMouseDown(MouseEventArgs e)
+            {
+                Rectangle bar = BarRect();
+                if (!bar.IsEmpty &&
+                    new Rectangle(bar.X - Sc(6), bar.Y, bar.Width + Sc(10), bar.Height).Contains(e.Location))
+                {
+                    _dragging = true;
+                    _dragOffset = e.Y - bar.Y;
+                    _fade.Ping();
+                }
+                base.OnMouseDown(e);
+            }
+
+            protected override void OnMouseMove(MouseEventArgs e)
+            {
+                Rectangle bar = BarRect();
+                if (_dragging && !bar.IsEmpty)
+                {
+                    int track = Height - Sc(10) - bar.Height;
+                    if (track > 0)
+                        SetScroll((int)Math.Round((e.Y - _dragOffset - Sc(5)) * (MaxScroll / (float)track)));
+                }
+                else _fade.SetHot(!bar.IsEmpty && e.X >= bar.X - Sc(8));
+                base.OnMouseMove(e);
+            }
+
+            protected override void OnMouseUp(MouseEventArgs e) { _dragging = false; base.OnMouseUp(e); }
+
+            protected override void OnMouseLeave(EventArgs e) { _fade.SetHot(false); base.OnMouseLeave(e); }
+
+            protected override void OnPaint(PaintEventArgs e)
+            {
+                Graphics g = e.Graphics;
+                PaintSurface(g);
+                Theme.Smooth(g);
+                _d.PaintRows(g);
+                Chrome.PaintFadingBar(g, BarRect(), _dragging ? 1f : _fade.Alpha,
+                                      _dragging ? 1f : _fade.Thick, true, Sc(4));
+            }
+
+            protected override void Dispose(bool disposing)
+            {
+                if (disposing) _fade.Dispose();
+                base.Dispose(disposing);
+            }
         }
     }
 }

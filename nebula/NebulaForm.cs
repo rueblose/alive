@@ -893,7 +893,7 @@ namespace AbletonManager.Nebula
 
         protected override void OnMouseDoubleClick(MouseEventArgs e)
         {
-            if (e.Y < Sc(Theme.ContentY) - Sc(10)) ToggleMaximize();
+            if (e.Button == MouseButtons.Left && e.Y < Sc(Theme.ContentY) - Sc(10)) ToggleMaximize();
             base.OnMouseDoubleClick(e);
         }
 

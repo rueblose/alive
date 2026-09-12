@@ -71,7 +71,6 @@ namespace AbletonManager
         int _scanDone, _scanTotal;
         int _lastScanInvalidate;
 
-        string _pluginFilter = "";
         string _status = "";
 
         // Путь последнего выбранного сета — уход на вкладку Plugins (например, клик по
@@ -666,7 +665,6 @@ namespace AbletonManager
 
             _mode.SelectedChanged += delegate
             {
-                _pluginFilter = "";
                 _list.ScrollOffsetX = 0;
                 _list.ScrollOffset = 0;
                 _pluginView = -1;
@@ -1259,7 +1257,7 @@ namespace AbletonManager
 
         protected override void OnMouseDoubleClick(MouseEventArgs e)
         {
-            if (e.Y < Sc(Theme.ContentY) - Sc(10)) ToggleMaximize();
+            if (e.Button == MouseButtons.Left && e.Y < Sc(Theme.ContentY) - Sc(10)) ToggleMaximize();
             base.OnMouseDoubleClick(e);
         }
 
@@ -1379,6 +1377,13 @@ namespace AbletonManager
                 e.Handled = e.SuppressKeyPress = true;
             }
             else if (e.KeyCode == Keys.F1) { ShowHelp(); e.Handled = true; }
+            // Ctrl+, — как в любой другой программе; на русской раскладке это та же
+            // клавиша «б», код у неё от раскладки не зависит.
+            else if (e.Control && e.KeyCode == Keys.Oemcomma)
+            {
+                ShowSettings();
+                e.Handled = e.SuppressKeyPress = true;
+            }
             else if (e.Control && e.KeyCode == Keys.N) { NewProject(); e.Handled = true; }
             else if (e.Control && e.KeyCode == Keys.T && !typing && _mode.SelectedIndex == ModeSets)
             {
@@ -1420,7 +1425,7 @@ namespace AbletonManager
                 TogglePlaySelected();
                 e.Handled = e.SuppressKeyPress = true;
             }
-            else if (e.KeyCode == Keys.Enter && _list.Selected != null)
+            else if (e.KeyCode == Keys.Enter && (_list.Selected != null || SelectedSet() != null))
             {
                 // Работает и из поля поиска: пока ничего не выбрано, Enter просто ничего
                 // не делает, так что случайно открыть проект при наборе нельзя.
@@ -1645,7 +1650,6 @@ namespace AbletonManager
             foreach (SetEntry s in _index.Sets)
             {
                 if (!_filter.Matches(s)) continue;
-                if (_pluginFilter.Length > 0 && !HasPlugin(s, _pluginFilter)) continue;
                 if (q.Length > 0 && !MatchesSet(s, q)) continue;
                 matched.Add(s);
             }
@@ -2199,13 +2203,6 @@ namespace AbletonManager
             _list.ScrollOffsetX = scrollX;
         }
 
-        static bool HasPlugin(SetEntry s, string name)
-        {
-            foreach (string p in s.Plugins)
-                if (string.Equals(p, name, StringComparison.OrdinalIgnoreCase)) return true;
-            return false;
-        }
-
         static bool MatchesSet(SetEntry s, string q)
         {
             if (s.Name.IndexOf(q, StringComparison.CurrentCultureIgnoreCase) >= 0) return true;
@@ -2264,17 +2261,10 @@ namespace AbletonManager
 
         void ActivateSelected()
         {
-            if (_mode.SelectedIndex == ModePlugins)
-            {
-                PluginStat st = SelectedPlugin();
-                if (st == null || st.Sets == 0) return;
-                _pluginFilter = st.Name;              // двойной клик по плагину -> его сеты
-                _mode.SelectedIndex = ModeSets;
-                _search.Box.Text = "";
-                Refill();
-                Status("Filtered by plugin: " + _pluginFilter);
-                return;
-            }
+            // По плагину активировать нечего: раньше двойной клик утаскивал на вкладку
+            // Sets с фильтром по этому плагину — неожиданный прыжок вместо действия над
+            // тем, по чему ткнули. Сеты плагина и так перечислены в панели сведений.
+            if (_mode.SelectedIndex == ModePlugins) return;
             OpenSelected();
         }
 
@@ -2283,7 +2273,6 @@ namespace AbletonManager
         void OnSetRequested(SetEntry set)
         {
             if (set == null) return;
-            _pluginFilter = "";
             _search.Box.Text = "";
             _mode.SelectedIndex = ModeSets;
             if (_viewToggle.SelectedIndex != ViewList)
@@ -2330,7 +2319,6 @@ namespace AbletonManager
             if (WindowState == FormWindowState.Minimized)
                 WindowState = FormWindowState.Normal;
 
-            _pluginFilter = "";
             _search.Box.Text = "";
             if (!_filter.IsEmpty)
             {
@@ -2814,12 +2802,14 @@ namespace AbletonManager
             ContextMenuStrip m = DarkMenu.Create();
 
             ToolStripMenuItem open = new ToolStripMenuItem("Open in Live");
+            open.ShortcutKeyDisplayString = "Enter";
             open.Click += delegate { OpenSet(s); };
             m.Items.Add(open);
 
             if (s.HasRenders)
             {
                 ToolStripMenuItem play = new ToolStripMenuItem("Play render");
+                play.ShortcutKeyDisplayString = "Space";
                 play.Click += delegate { OnRowPlay(idx); };
                 m.Items.Add(play);
             }
@@ -2834,14 +2824,17 @@ namespace AbletonManager
                 ProjectMeta.HasAnything(s.ProjectDir)
                     ? "Tags and notes…"
                     : "Add tags or a note…");
+            notes.ShortcutKeyDisplayString = "Ctrl+T";
             notes.Click += delegate { EditNotes(s); };
             m.Items.Add(notes);
 
             ToolStripMenuItem rescue = new ToolStripMenuItem("Rescue project…");
+            rescue.ShortcutKeyDisplayString = "Ctrl+R";
             rescue.Click += delegate { RescueSet(s); };
             m.Items.Add(rescue);
 
             ToolStripMenuItem reveal = new ToolStripMenuItem("Show in Explorer");
+            reveal.ShortcutKeyDisplayString = "Shift+Enter";
             reveal.Click += delegate { RevealSet(s); };
             m.Items.Add(reveal);
 

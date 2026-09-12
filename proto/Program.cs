@@ -83,7 +83,13 @@ namespace Reel
                 else
                 {
                     MainForm main = new MainForm();
-                    AttachHistory(main, startPath);
+                    // Forks убран из интерфейса: DetailPanel рисует кнопку только при
+                    // подписчике на ForksRequested, поэтому без этой строки её нет — и
+                    // Ctrl+H с автооткрытием по пути из аргументов тоже отпадают. Весь код
+                    // версий (AttachHistory, ReelWindow, SnapshotStore) на месте; вернуть
+                    // строку — вернётся и кнопка. --reel по-прежнему открывает окно версий
+                    // напрямую, им пользуется проверочный Shot.exe.
+                    // AttachHistory(main, startPath);
                     AttachStat(main);
                     Application.Run(main);
                 }

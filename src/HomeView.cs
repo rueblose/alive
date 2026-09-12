@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.Drawing.Drawing2D;
@@ -34,7 +34,6 @@ namespace AbletonManager
         /// <summary>Одна плитка на папку, а не на каждую версию сета. См. настройки.</summary>
         public bool GroupByFolder = true;
 
-        const int RecentMax = 39;
         const int PinnedMax = 16;
 
         // Рамка вокруг картинки внутри превью и сама картинка внутри рамки — снизу
@@ -139,8 +138,6 @@ namespace AbletonManager
         readonly List<Header> _heads = new List<Header>();
         readonly List<Header> _leavingHeads = new List<Header>();
         bool _layoutTransitioning;
-        Rectangle _allBar;                 // полоса «All projects» в самом низу
-        float _allBarAnimY, _allBarTargetY;
 
         int _scroll, _contentHeight;
         float _scrollTarget, _scrollCurrent;
@@ -148,8 +145,7 @@ namespace AbletonManager
         bool _draggingBar;
         int _dragOffset;
         int _hot = -1;
-        bool _playHot, _pinHot, _allHot;
-        bool _showAllRecent = true;
+        bool _playHot, _pinHot;
         SetEntry _selected;
 
         static readonly string[] Splashes = new string[]
@@ -205,7 +201,6 @@ namespace AbletonManager
         float[] _tileHoverFactors;
         float[] _tileEntrance;
         int _entranceStartTick;
-        float _allBarHoverFactor;
         float _playHoverFactor;
         float _pinHoverFactor;
 
@@ -307,10 +302,6 @@ namespace AbletonManager
                     }
                 }
 
-                float dBarY = _allBarTargetY - _allBarAnimY;
-                if (Math.Abs(dBarY) > 0.5f) { _allBarAnimY += dBarY * speed; anyMoved = true; }
-                else _allBarAnimY = _allBarTargetY;
-
                 if (anyMoved) anim = true;
                 else _layoutTransitioning = false;
             }
@@ -342,15 +333,6 @@ namespace AbletonManager
                     anim = true;
                 }
             }
-
-            float targetAll = _allHot ? 1.0f : 0.0f;
-            float diffAll = targetAll - _allBarHoverFactor;
-            if (Math.Abs(diffAll) > 0.01f)
-            {
-                _allBarHoverFactor += diffAll * 0.35f;
-                anim = true;
-            }
-            else _allBarHoverFactor = targetAll;
 
             float targetPlay = _playHot ? 1.0f : 0.0f;
             float diffPlay = targetPlay - _playHoverFactor;
@@ -640,13 +622,9 @@ namespace AbletonManager
                 if (!skip) all.Add(s);
             }
 
-            // Схлопывание — до обрезки по RecentMax: иначе девять «недавних» окажутся
-            // девятью версиями одного и того же проекта, сохранёнными за один вечер.
             if (GroupByFolder) all = ProjectIndex.CollapseByFolder(all);
 
             all.Sort(delegate (SetEntry a, SetEntry b) { return b.Modified.CompareTo(a.Modified); });
-
-            if (!_showAllRecent && all.Count > RecentMax) all.RemoveRange(RecentMax, all.Count - RecentMax);
             return all;
         }
 
@@ -679,13 +657,6 @@ namespace AbletonManager
             List<SetEntry> recent = Recent(pinned);
             y = Section("Recent", "", recent, y, cols, tileW, tileH, thumbH, gap, true);
 
-            y += Sc(24);                           // S5 — перед строкой «Show all»
-            _allBar = new Rectangle(0, y, Width, Sc(58));
-            _allBarTargetY = _allBar.Y;
-            if (_allBarAnimY <= 0 || !_layoutTransitioning)
-                _allBarAnimY = _allBarTargetY;
-            y += _allBar.Height;
-
             _contentHeight = y;
             ClampScroll();
         }
@@ -697,7 +668,6 @@ namespace AbletonManager
             _layoutTransitioning = false;
             _tiles.Clear();
             _heads.Clear();
-            _allBar = Rectangle.Empty;
             _hot = -1; _playHot = _pinHot = false;
             _pinHoverFactor = _playHoverFactor = 0f;
             if (Width <= 0) return;
@@ -744,7 +714,6 @@ namespace AbletonManager
             _leavingHeads.Clear();
             _tiles.Clear();
             _heads.Clear();
-            _allBar = Rectangle.Empty;
 
             _hot = -1; _playHot = _pinHot = false;
             _pinHoverFactor = _playHoverFactor = 0f;
@@ -1018,21 +987,18 @@ namespace AbletonManager
                 }
             }
 
-            int over = _scroller != null ? (int)Math.Round(_scroller.Overscroll) : 0;
             bool play, pin;
             int hot = TileAt(e.Location, out play, out pin);
-            int barY = (int)Math.Round(_allBarAnimY) - _scroll - over;
-            bool all = !_allBar.IsEmpty && new Rectangle(_allBar.X, barY, _allBar.Width, _allBar.Height).Contains(e.Location);
 
-            if (hot != _hot || play != _playHot || pin != _pinHot || all != _allHot)
+            if (hot != _hot || play != _playHot || pin != _pinHot)
             {
                 bool isNewHot = hot >= 0 && hot < _tiles.Count && _tiles[hot].IsNewProject;
                 bool wasNewHot = _hot >= 0 && _hot < _tiles.Count && _tiles[_hot].IsNewProject;
                 if (isNewHot && !wasNewHot)
                     PickNextSplash();
 
-                _hot = hot; _playHot = play; _pinHot = pin; _allHot = all;
-                Cursor = (hot >= 0 || all) ? Cursors.Hand : Cursors.Default;
+                _hot = hot; _playHot = play; _pinHot = pin;
+                Cursor = hot >= 0 ? Cursors.Hand : Cursors.Default;
                 AnimEngine.Register(this);
                 Invalidate();
             }
@@ -1041,9 +1007,9 @@ namespace AbletonManager
 
         protected override void OnMouseLeave(EventArgs e)
         {
-            if (_hot >= 0 || _allHot)
+            if (_hot >= 0)
             {
-                _hot = -1; _playHot = _pinHot = _allHot = false;
+                _hot = -1; _playHot = _pinHot = false;
                 Cursor = Cursors.Default;
                 AnimEngine.Register(this);
                 Invalidate();
@@ -1053,6 +1019,9 @@ namespace AbletonManager
 
         Point _lastPinPos;
         int _lastPinTime;
+
+        // ПКМ по плитке открывает её меню — см. OnMouseDown.
+        protected override bool WantsRightClick { get { return true; } }
 
         protected override void OnMouseDown(MouseEventArgs e)
         {
@@ -1075,13 +1044,6 @@ namespace AbletonManager
             if (e.Button == MouseButtons.Right)
             {
                 if (hit >= 0 && !_tiles[hit].IsNewProject) ShowMenu(_tiles[hit].Set, e.Location);
-                return;
-            }
-
-            if (_allHot)
-            {
-                _showAllRecent = !_showAllRecent;
-                RebuildTransition();
                 return;
             }
 
@@ -1151,13 +1113,6 @@ namespace AbletonManager
                 base.OnMouseDoubleClick(e);
                 return;
             }
-            if (_allHot)
-            {
-                OnMouseDown(e);
-                base.OnMouseDoubleClick(e);
-                return;
-            }
-
             if (Math.Abs(Environment.TickCount - _lastPinTime) < SystemInformation.DoubleClickTime + 150)
                 return;
 
@@ -1177,12 +1132,14 @@ namespace AbletonManager
             ContextMenuStrip m = DarkMenu.Create();
 
             ToolStripMenuItem open = new ToolStripMenuItem("Open in Live");
+            open.ShortcutKeyDisplayString = "Enter";
             open.Click += delegate { if (Activated != null) Activated(s); };
             m.Items.Add(open);
 
             if (s.HasRenders)
             {
                 ToolStripMenuItem play = new ToolStripMenuItem("Play render");
+                play.ShortcutKeyDisplayString = "Space";
                 play.Click += delegate { if (PlayRequested != null) PlayRequested(s); };
                 m.Items.Add(play);
             }
@@ -1210,10 +1167,12 @@ namespace AbletonManager
             m.Items.Add(details);
 
             ToolStripMenuItem rescue = new ToolStripMenuItem("Rescue project…");
+            rescue.ShortcutKeyDisplayString = "Ctrl+R";
             rescue.Click += delegate { if (RescueRequested != null) RescueRequested(s); };
             m.Items.Add(rescue);
 
             ToolStripMenuItem reveal = new ToolStripMenuItem("Show in Explorer");
+            reveal.ShortcutKeyDisplayString = "Shift+Enter";
             reveal.Click += delegate { if (RevealRequested != null) RevealRequested(s); };
             m.Items.Add(reveal);
 
@@ -1497,23 +1456,10 @@ namespace AbletonManager
                 PaintOneTile(g, _tiles[i], i, false, scroll, bufferTop, bufferBottom);
             }
 
-            if (!_allBar.IsEmpty) PaintAllBar(g);
-
             // Полоса прокрутки поверх сетки: Sc(4) в покое, Sc(8) под курсором,
             // гаснет через секунду после последней прокрутки.
-            Rectangle bar = BarRect();
-            if (!bar.IsEmpty)
-            {
-                float a = _draggingBar ? 1f : _barFade.Alpha;
-                if (a > 0.01f)
-                {
-                    float thick = _draggingBar ? 1f : _barFade.Thick;
-                    int grow = (int)Math.Round(Sc(4) * thick);
-                    Rectangle b = new Rectangle(bar.Right - bar.Width - grow, bar.Y, bar.Width + grow, bar.Height);
-                    int alpha = (int)Math.Round((0x4A + 0x50 * thick) * a);
-                    Theme.FillRound(g, b, b.Width / 2f, Color.FromArgb(alpha, 0xFF, 0xFF, 0xFF));
-                }
-            }
+            Chrome.PaintFadingBar(g, BarRect(), _draggingBar ? 1f : _barFade.Alpha,
+                                  _draggingBar ? 1f : _barFade.Thick, true, Sc(4));
         }
 
         void PaintHeader(Graphics g, Header h, int scroll)
@@ -1776,50 +1722,6 @@ namespace AbletonManager
                 if (entrance < 0.99f) starC = Color.FromArgb((int)Math.Round(starC.A * entrance), starC);
                 Icons.Draw(g, pinned ? Glyph.StarFill : Glyph.Star, RectangleF.Inflate(nb, -Sc(6), -Sc(6)),
                            starC, 1.2f);
-            }
-        }
-
-        void PaintAllBar(Graphics g)
-        {
-            int over = _scroller != null ? (int)Math.Round(_scroller.Overscroll) : 0;
-            int barY = (int)Math.Round(_allBarAnimY) - _scroll - over;
-            Rectangle r = new Rectangle(_allBar.X, barY, _allBar.Width, _allBar.Height);
-            if (r.Bottom < 0 || r.Top > Height) return;
-
-            int barAlpha = _allHot ? Theme.GlassSurfaceHotAlpha : Theme.GlassSurfaceAlpha;
-            PaintCard(g, r, Sc(Theme.CardR), barAlpha);
-
-            Rectangle text = new Rectangle(r.X + Sc(20), r.Y, r.Width - Sc(70), r.Height);
-            string title = _showAllRecent
-                ? "Show less"
-                : "Show all projects";
-            Chrome.DrawText(g, title, Theme.FTitle, text,
-                            _allHot ? Color.White : Theme.Text, Chrome.Left);
-
-            int total = Index != null ? Index.Sets.Count : 0;
-            Chrome.DrawText(g, total + " sets indexed", Theme.FLabel, text,
-                            Theme.TextDim, Chrome.Right);
-
-            float cx = r.Right - Sc(26), cy = r.Y + r.Height / 2f, s = Sc(5);
-            using (Pen p = new Pen(_allHot ? Color.White : Theme.TextDim, 1.6f))
-            {
-                p.StartCap = System.Drawing.Drawing2D.LineCap.Round;
-                p.EndCap = System.Drawing.Drawing2D.LineCap.Round;
-                if (_showAllRecent)
-                {
-                    g.DrawLines(p, new PointF[] {
-                        new PointF(cx - s, cy + s * 0.4f),
-                        new PointF(cx, cy - s * 0.4f),
-                        new PointF(cx + s, cy + s * 0.4f) });
-                }
-                else
-                {
-                    g.DrawLine(p, cx - s, cy, cx + s, cy);
-                    g.DrawLines(p, new PointF[] {
-                        new PointF(cx + s - s * 0.8f, cy - s * 0.8f),
-                        new PointF(cx + s, cy),
-                        new PointF(cx + s - s * 0.8f, cy + s * 0.8f) });
-                }
             }
         }
 
