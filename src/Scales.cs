@@ -1,14 +1,15 @@
 namespace AbletonManager
 {
     /// <summary>
-    /// Общая тональность сета: в .als она лежит как два числа —
-    /// &lt;ScaleInformation&gt;&lt;Root Value="0"/&gt;&lt;Name Value="0"/&gt;&lt;/ScaleInformation&gt;
-    /// прямо в LiveSet (такие же узлы есть у каждого клипа, их брать нельзя).
+    /// The set's overall key: in the .als it sits as two numbers —
+    /// &lt;ScaleInformation&gt;&lt;Root Value="0"/&gt;&lt;Name
+    /// Value="0"/&gt;&lt;/ScaleInformation&gt; right inside LiveSet (every clip has nodes like
+    /// these too, and those must not be taken).
     ///
-    /// Порядок ладов не выдуман: он взят из документации LOM, вшитой в сам
-    /// Ableton Live 12 Suite.exe, где перечислены «default scale names that can be saved
-    /// with a set and recalled». Оттуда же: «The root can be a number between 0 and 11,
-    /// with 0 corresponding to C and 11 corresponding to B».
+    /// The order of the scales is not invented: it comes from the LOM documentation baked into
+    /// Ableton Live 12 Suite.exe itself, which lists the "default scale names that can be saved
+    /// with a set and recalled". From the same place: "The root can be a number between 0 and
+    /// 11, with 0 corresponding to C and 11 corresponding to B".
     /// </summary>
     public static class Scales
     {
@@ -28,8 +29,8 @@ namespace AbletonManager
         static readonly string[] Flat  = { "C", "Db", "D", "Eb", "E", "F", "Gb", "G", "Ab", "A", "Bb", "B" };
 
         /// <summary>
-        /// Ноты для выбора в фильтре. Обе записи сразу: как ноту напишут в сете, зависит
-        /// от PreferFlatRootNote, а нота при этом одна и та же.
+        /// Note names offered by the filter. Both spellings at once: how a note gets written
+        /// into a set depends on PreferFlatRootNote, while the note itself is one and the same.
         /// </summary>
         public static readonly string[] RootChoices =
         {
@@ -50,7 +51,8 @@ namespace AbletonManager
             return index >= 0 && index < Names.Length ? Names[index] : "";
         }
 
-        /// <summary>«C Major». Пусто, если сет сохранён версией Live без общей тональности.</summary>
+        /// <summary>"C Major". Empty when the set was saved by a Live version without an
+        /// overall key.</summary>
         public static string Format(int root, int scaleIndex, bool preferFlat)
         {
             string r = RootName(root, preferFlat);

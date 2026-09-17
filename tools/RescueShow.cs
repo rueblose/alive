@@ -7,13 +7,13 @@ using AbletonManager;
 namespace AliveTools
 {
     /// <summary>
-    /// Открывает окно восстановления на заданном сете и больше ничего не делает. Нужен
-    /// затем же, зачем Reel'у нужен Shot: собранный exe ещё ничего не говорит о том, что
-    /// нарисовалось, а раскладка тут посчитана руками. Снимок снимается так:
+    /// Opens the rescue window on a given set and does nothing else. Needed for the same reason
+    /// Shot is needed: a compiled exe still says nothing about what got drawn, and the layout
+    /// here is computed by hand. A shot is taken like this:
     ///
-    ///     Shot.exe RescueShow.exe out.png "сет.als"
+    ///     Shot.exe RescueShow.exe out.png "set.als"
     ///
-    /// Сборка: tools\build-rescue-test.cmd. В bin не попадает.
+    /// Build: tools\build-rescue-test.cmd. Does not go into bin.
     /// </summary>
     internal static class RescueShow
     {
@@ -37,14 +37,15 @@ namespace AliveTools
             SetEntry set = new SetEntry();
             set.Path = args[0];
             set.Name = System.IO.Path.GetFileNameWithoutExtension(args[0]);
-            // Creator дочитывает сам RescueSession — второй проход по файлу не нужен.
+            // RescueSession reads Creator itself — a second pass over the file is not needed.
 
             using (RescueDialog d = new RescueDialog(set, PluginInventory.Load()))
             {
                 d.StartPosition = FormStartPosition.CenterScreen;
-                // Диалог программы прячется из панели задач (ShowInTaskbar = false у
-                // GlassDialog), а Process.MainWindowHandle такое окно не находит — и
-                // Shot.exe снимать нечего. Здесь окно единственное, прятать его незачем.
+                // The program's own dialog hides from the taskbar (ShowInTaskbar = false on
+                // GlassDialog), and Process.MainWindowHandle does not find such a window —
+                // leaving Shot.exe nothing to capture. Here the window is the only one, so
+                // hiding it is pointless.
                 d.ShowInTaskbar = true;
                 d.Shown += delegate
                 {

@@ -60,7 +60,7 @@ namespace AbletonManager
         {
             if (st == null) return false;
 
-            // Статус (Установлены / Другой формат / Не установлены)
+            // Status (Installed / Other format / Not installed)
             if (!ignoreStatus && (StatusInstalled || StatusOtherFormat || StatusMissing))
             {
                 bool statusPass = false;
@@ -70,7 +70,7 @@ namespace AbletonManager
                 if (!statusPass) return false;
             }
 
-            // Формат
+            // Format
             if (!ignoreFormats && Formats.Count > 0)
             {
                 bool match = false;
@@ -84,21 +84,21 @@ namespace AbletonManager
                 if (!match) return false;
             }
 
-            // Разработчик
+            // Developer
             if (!ignoreVendors && Vendors.Count > 0)
             {
                 string v = st.Vendor.Length > 0 ? st.Vendor : "Unknown";
                 if (!Vendors.Contains(v)) return false;
             }
 
-            // Категория / Тип FX
+            // Category / FX type
             if (!ignoreCategories && Categories.Count > 0)
             {
                 string cat = st.FxType.Length > 0 ? st.FxType : "Other";
                 if (!Categories.Contains(cat)) return false;
             }
 
-            // Число сетов
+            // Set count
             if (SetsMin >= 0 && st.Sets < SetsMin) return false;
             if (SetsMax >= 0 && st.Sets > SetsMax) return false;
 

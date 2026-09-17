@@ -5,14 +5,15 @@ using System.Runtime.InteropServices;
 namespace AbletonManager
 {
     /// <summary>
-    /// Огибающая для всего, что не разобрал наш RIFF-парсер. Своего декодера у нас нет
-    /// и взять его неоткуда — проект собирается голым csc без пакетов, — поэтому
-    /// декодирует сама Windows через Media Foundation: mp3, m4a, wma, flac и wav
-    /// любого вида, то есть всё, что вообще попадается среди рендеров.
+    /// The envelope for everything our own RIFF parser could not read. We have no decoder of
+    /// our own and nowhere to take one from — the project builds with bare csc and no packages
+    /// — so Windows decodes it through Media Foundation: mp3, m4a, wma, flac and wav of any
+    /// flavour, which is everything that ever turns up among renders.
     /// </summary>
     static class MediaDecoder
     {
-        /// <summary>Сколько кадров сворачивается в один пик — исходное разрешение огибающей.</summary>
+        /// <summary>How many frames collapse into one peak — the envelope's source
+        /// resolution.</summary>
         const int Block = 1024;
 
         public static Waveform Read(string path, int buckets)
@@ -32,8 +33,8 @@ namespace AbletonManager
                 if (!Mf.OpenPcm(path, out reader, out channels, out bits, out rate, out durationMs))
                 { w.Note = "cannot decode"; return w; }
 
-                // OpenPcm всегда конвертирует в float32 — фиксированная раскладка без
-                // вариаций упаковки, никаких «bits» из атрибутов тут не нужно.
+                // OpenPcm always converts to float32 — a fixed layout with no packing variants,
+                // so none of the "bits" from the attributes are needed here.
                 const int bytesPerSample = 4;
                 int frameSize = bytesPerSample * channels;
                 if (frameSize <= 0) return w;
@@ -101,7 +102,8 @@ namespace AbletonManager
             }
         }
 
-        /// <summary>Сводит пики блоков к числу столбцов картинки — берём крайние значения диапазона.</summary>
+        /// <summary>Folds block peaks down to the number of columns in the picture — we take
+        /// the extremes of each range.</summary>
         static void Resample(List<float> mins, List<float> maxs, int buckets, Waveform w)
         {
             int n = mins.Count;

@@ -6,10 +6,10 @@ using System.Windows.Forms;
 namespace AbletonManager
 {
     /// <summary>
-    /// Короткое сообщение в углу содержимого: показали, подержали пару секунд, погасили.
-    /// Ничего не спрашивает и ответа не ждёт, поэтому это контрол на форме, а не диалог:
-    /// модальное окно ради «идёт запуск» перекрыло бы работу ровно там, где прерывать её
-    /// незачем, и требовало бы закрыть себя руками.
+    /// A short message in the corner of the content: shown, held for a couple of seconds, faded
+    /// out. It asks nothing and waits for no answer, which is why it is a control on the form
+    /// rather than a dialog: a modal window for "launching" would block work exactly where
+    /// there is no reason to interrupt it, and would demand to be dismissed by hand.
     /// </summary>
     public sealed class Toast : GlassControl
     {
@@ -21,15 +21,16 @@ namespace AbletonManager
         int InnerPad { get { return Sc(16); } }
         int TextLeft { get { return InnerPad; } }
 
-        // Вырезает контрол по форме пилюли — без этого за скруглёнными углами
-        // оставался бы прямоугольник, закрывающий содержимое под контролом.
+        // Clips the control to the pill shape — without it a rectangle would remain behind the
+        // rounded corners, covering the content underneath.
         protected override float PillRadius { get { return Sc(Theme.CardR); } }
 
         public Toast()
         {
             Visible = false;
-            // Мышь сквозь него проходит к тому, что под ним: сообщение появляется само,
-            // поверх плиток, и ловить клики, которых ему не адресовали, ему нечего.
+            // The mouse passes through to whatever is below: the message appears on its own,
+            // over the tiles, and has no business catching clicks that were not addressed to
+            // it.
             Enabled = false;
             Font = Theme.FBody;
 
@@ -64,7 +65,7 @@ namespace AbletonManager
             }
         }
 
-        /// <summary>Показать текст и погасить через ms миллисекунд.</summary>
+        /// <summary>Show the text and fade it out after ms milliseconds.</summary>
         public void Post(string text, int ms)
         {
             _text = text ?? "";
@@ -81,11 +82,10 @@ namespace AbletonManager
         }
 
         /// <summary>
-        /// Встать в левый нижний угол переданной области, с отступом от нижнего края —
-        /// впритык к футеру плашка выглядела бы приклеенной к нему, а не отдельным
-        /// плавающим сообщением. Размер по ширине — по самому тексту: сообщение короткое
-        /// и заранее неизвестное, а коробка фиксированной ширины либо обрезала бы его,
-        /// либо зияла пустотой.
+        /// Sit in the bottom-left corner of the given area, with a gap from the bottom edge —
+        /// flush against the footer the pill would look glued to it rather than like a separate
+        /// floating message. The width comes from the text itself: the message is short and not
+        /// known in advance, and a fixed-width box would either clip it or gape with emptiness.
         /// </summary>
         public void PlaceIn(Rectangle content)
         {
@@ -111,8 +111,8 @@ namespace AbletonManager
                 _alpha = target;
                 Invalidate();
                 if (_alpha <= 0f) { Visible = false; return false; }
-                // Полностью показан — дальше плашка неподвижна до срабатывания
-                // _hideTimer; тикать впустую незачем.
+                // Fully shown — from here the pill sits still until _hideTimer fires; ticking
+                // for nothing is pointless.
                 return false;
             }
 

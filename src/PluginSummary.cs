@@ -6,9 +6,9 @@ using System.Windows.Forms;
 namespace AbletonManager
 {
     /// <summary>
-    /// Сводка по плагинам карточками над списком. Карточка — это ещё и фильтр: клик по
-    /// «не установлено» оставляет в списке ровно те плагины, о которых карточка говорит,
-    /// иначе число само по себе ничего не даёт.
+    /// Plugin summary cards above the list. A card is also a filter: clicking "not installed"
+    /// leaves exactly the plugins the card is talking about in the list — otherwise the number
+    /// on its own tells you nothing.
     /// </summary>
     public sealed class PluginSummary : GlassControl
     {
@@ -25,12 +25,12 @@ namespace AbletonManager
         readonly List<Card> _cards = new List<Card>();
         int _hot = -1;
 
-        /// <summary>Какая карточка сейчас задаёт фильтр списка; -1 — никакая.</summary>
+        /// <summary>Which card currently drives the list filter; -1 — none.</summary>
         public int Selected = -1;
 
         public event Action<int> CardClicked;
 
-        public const int PreferredHeight = 50;    // однострочные карточки
+        public const int PreferredHeight = 50;    // single-line cards
 
         public PluginSummary() { Cursor = Cursors.Default; Height = PreferredHeight; }
 
@@ -109,8 +109,8 @@ namespace AbletonManager
                 Theme.PaintGlassSurface(this, g, c.Rect, Sc(Theme.CardR),
                                 on ? Theme.GlassSurfacePressedAlpha : i == _hot ? Theme.GlassSurfaceHotAlpha : Theme.GlassSurfaceAlpha);
 
-                // Число и подпись в одну строку, не столбиком — значение по своей
-                // ширине, подпись сразу за ним.
+                // The number and its caption on one line rather than stacked — the value takes
+                // its own width and the caption follows right after it.
                 Rectangle content = new Rectangle(c.Rect.X + Sc(18), c.Rect.Y,
                                                   Math.Max(0, c.Rect.Width - Sc(26)), c.Rect.Height);
                 Size vs = TextRenderer.MeasureText(c.Value, Theme.FHead);

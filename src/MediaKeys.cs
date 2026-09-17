@@ -3,14 +3,14 @@ using System.Windows.Forms;
 namespace AbletonManager
 {
     /// <summary>
-    /// Медиаклавиши клавиатуры — Windows шлёт их окну с фокусом сообщением
-    /// WM_APPCOMMAND. Обработать его надо самим и вернуть 1: необработанное DefWindowProc
-    /// передаёт дальше по цепочке и в итоге отдаёт системному медиасеансу, то есть
-    /// нажатие уедет в чужой плеер, хотя человек смотрит в наше окно.
+    /// Keyboard media keys — Windows sends them to the focused window as WM_APPCOMMAND. We have
+    /// to handle it ourselves and return 1: left unhandled, DefWindowProc passes it further
+    /// down the chain and eventually hands it to the system media session, so the keypress
+    /// lands in somebody else's player while the person is looking at our window.
     ///
-    /// Работает, пока окно программы в фокусе. Глобальный перехват (на всю систему)
-    /// потребовал бы RegisterHotKey на эти клавиши и отобрал бы их у всех остальных
-    /// плееров — этого мы сознательно не делаем.
+    /// This works while our window has focus. Catching them globally, across the system, would
+    /// mean RegisterHotKey on those keys and taking them away from every other player — which
+    /// we deliberately do not do.
     /// </summary>
     internal static class MediaKeys
     {
@@ -22,7 +22,7 @@ namespace AbletonManager
         {
             if (m.Msg != WM_APPCOMMAND) return Cmd.None;
 
-            // GET_APPCOMMAND_LPARAM: старшее слово младшего DWORD без флагов устройства.
+            // GET_APPCOMMAND_LPARAM: the high word of the low DWORD, without the device flags.
             int cmd = (int)(((long)m.LParam >> 16) & 0xFFFF) & 0x0FFF;
             switch (cmd)
             {

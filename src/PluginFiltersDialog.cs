@@ -6,8 +6,8 @@ using System.Windows.Forms;
 namespace AbletonManager
 {
     /// <summary>
-    /// Окно фильтров для вкладки плагинов: по состоянию, формату, категории/типу FX,
-    /// разработчику и числу сетов, где плагин используется.
+    /// The filter window for the plugins tab: by state, format, category/FX type, developer,
+    /// and the number of sets a plugin is used in.
     /// </summary>
     public sealed class PluginFiltersDialog : GlassDialog
     {
@@ -32,7 +32,7 @@ namespace AbletonManager
         readonly GlassButton _apply = new GlassButton();
 
         /// <summary>
-        /// Условия применяются на лету: список плагинов за окном обновляется сразу при любых изменениях.
+        /// Conditions apply live: the plugin list behind the window refreshes on every change.
         /// </summary>
         public event Action Changed;
 
@@ -297,7 +297,7 @@ namespace AbletonManager
                 int rowGap = Sc(14);
                 int ch = Sc(Theme.ControlH);
 
-                // Состояние
+                // State
                 Label("Status", pad, y, labelW);
                 int sx = left;
                 foreach (PillToggle p in new PillToggle[] { _statusInstalled, _statusMissing, _statusOtherFormat })
@@ -307,7 +307,7 @@ namespace AbletonManager
                 }
                 y += ch + rowGap;
 
-                // Формат
+                // Format
                 Label("Format", pad, y, labelW);
                 int fx = left;
                 foreach (PillToggle p in new PillToggle[] { _fmtVst3, _fmtVst2, _fmtOther })
@@ -317,22 +317,22 @@ namespace AbletonManager
                 }
                 y += ch + rowGap;
 
-                // Тип FX / Категория
+                // FX type / category
                 Label("FX Type", pad, y, labelW);
                 y = TagRow(_categoriesTag, left, y, contentW) + rowGap;
 
-                // Разработчик
+                // Developer
                 Label("Developer", pad, y, labelW);
                 y = TagRow(_vendorsTag, left, y, contentW) + rowGap;
 
-                // Число сетов
+                // Set count
                 Label("Sets Count", pad, y, labelW);
                 int numW = Sc(120);
                 _setsMin.SetBounds(left, y, numW, ch);
                 _setsMax.SetBounds(left + numW + Sc(12), y, numW, ch);
                 y += ch + Sc(24);
 
-                // Кнопки сброса и применения
+                // Reset and apply buttons
                 int by = y + Sc(4);
                 _apply.Location = new Point(right - _apply.Width, by);
                 _reset.Location = new Point(_apply.Left - Sc(10) - _reset.Width, by);

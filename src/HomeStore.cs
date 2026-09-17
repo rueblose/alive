@@ -6,13 +6,11 @@ using System.Text;
 namespace AbletonManager
 {
     /// <summary>
-    /// Что помнит главная страница: закреплённые проекты. Отдельный файл, а не
-    /// settings.cfg — по духу это пользовательские данные о конкретных проектах, а не
-    /// настройка программы.
+    /// What the home page remembers: pinned projects. A separate file rather than settings.cfg
+    /// — in spirit this is user data about specific projects, not a program setting.
     ///
-    /// Намеренно не заводим ни теги, ни рейтинги, ни коллекции: закрепление одним
-    /// нажатием закрывает 90% потребности «держать под рукой», а всё остальное
-    /// требовало бы ухода за собой.
+    /// No tags, no ratings, no collections, on purpose: pinning with one press covers 90% of
+    /// "keep this within reach", and everything beyond that would need looking after.
     /// </summary>
     public static class HomeStore
     {
@@ -63,7 +61,7 @@ namespace AbletonManager
             catch { }
         }
 
-        // ------------------------------------------------------------- закрепление
+        // ------------------------------------------------------------------ pinning
 
         public static bool IsPinned(string path)
         {
@@ -86,7 +84,7 @@ namespace AbletonManager
             Save();
         }
 
-        /// <summary>Порядок закрепления сохраняем: первым закрепили — первым и показываем.</summary>
+        /// <summary>Pin order is kept: pinned first, shown first.</summary>
         public static List<string> Pins { get { Load(); return new List<string>(_pins); } }
     }
 }

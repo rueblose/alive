@@ -31,8 +31,9 @@ namespace AbletonManager
     }
 
     /// <summary>
-    /// Контроллер плавного скролла (GameLoop через Application.Idle и 1ms timeBeginPeriod).
-    /// Обеспечивает максимальную плавность на частоте монитора (120–144Hz+) с нулевой нагрузкой в покое.
+    /// The smooth scrolling controller (a game loop over Application.Idle with a 1 ms
+    /// timeBeginPeriod). Gives maximum smoothness at the monitor's refresh rate (120–144 Hz and
+    /// up) at zero cost when idle.
     /// </summary>
     public sealed class SmoothScroller : IDisposable
     {
@@ -44,10 +45,10 @@ namespace AbletonManager
         float _target;
 
         /// <summary>
-        /// Перелёт за край, со знаком: отрицательный — вверху, положительный — внизу.
-        /// Владелец сдвигает содержимое на -Overscroll и получает резиновый конец.
-        /// Колесо у края добавляет сюда импульс с сопротивлением, а Step() возвращает
-        /// значение к нулю пружиной.
+        /// Overshoot past the edge, signed: negative at the top, positive at the bottom. The
+        /// owner shifts its content by -Overscroll and gets a rubber-band end. The wheel at an
+        /// edge adds impulse here against resistance, and Step() springs the value back to
+        /// zero.
         /// </summary>
         public float Overscroll { get { return _over; } }
         float _over;
@@ -75,7 +76,7 @@ namespace AbletonManager
             if (_running) Stop();
         }
 
-        /// <summary>Предел перелёта — дальше резинка не тянется.</summary>
+        /// <summary>The overshoot limit — the rubber band stretches no further.</summary>
         float MaxOver { get { return 54f * (_owner.DeviceDpi / 96f); } }
 
         public void OnMouseWheel(int delta, int stepPixels)
@@ -94,15 +95,15 @@ namespace AbletonManager
                 return;
             }
 
-            // Если прокручивать нечего — не резинить: список, который весь на экране,
-            // от колеса дёргаться не должен, а под закреплённой шапкой это ещё и
-            // читается как сползший вёрстку, а не как отклик.
+            // Nothing to scroll means no rubber band: a list that fits on screen entirely must
+            // not twitch under the wheel, and beneath a pinned header that reads as broken
+            // layout rather than as a response.
             if (max <= 0) return;
 
             float want = _target - (delta / 120f) * stepPixels;
 
-            // То, что не влезло в диапазон, уходит в резинку — с сопротивлением и
-            // упором, чтобы список нельзя было утянуть на пол-экрана.
+            // Whatever did not fit into the range goes into the rubber band — with resistance
+            // and a hard stop, so the list cannot be dragged half a screen away.
             float excess = want < 0 ? want : (want > max ? want - max : 0f);
             _target = Math.Max(0, Math.Min(max, want));
             if (excess != 0f)
@@ -171,7 +172,7 @@ namespace AbletonManager
             bool posDone = Math.Abs(_target - _current) < 0.25f;
             if (posDone) _current = _target;
 
-            // Резинка всегда тянет к нулю — она держится только пока колесо крутят.
+            // The band always pulls back to zero — it holds only while the wheel keeps turning.
             _over += (0f - _over) * (1.0f - (float)Math.Exp(-11.0f * dt));
             bool overDone = Math.Abs(_over) < 0.4f;
             if (overDone) _over = 0f;

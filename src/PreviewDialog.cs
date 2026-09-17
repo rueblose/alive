@@ -4,7 +4,8 @@ using System.Windows.Forms;
 
 namespace AbletonManager
 {
-    /// <summary>Аранжировка во весь экран: дорожки, их цвета и клипы на линейке времени.</summary>
+    /// <summary>The arrangement full screen: tracks, their colours and clips on a time
+    /// ruler.</summary>
     public sealed class PreviewDialog : GlassDialog
     {
         readonly ArrangementView _view = new ArrangementView();
@@ -44,10 +45,10 @@ namespace AbletonManager
         }
 
         /// <summary>
-        /// Ctrl+Пробел закрывает превью тем же сочетанием, каким его открыли, — окно
-        /// без рамки на весь экран, и переключать его одной клавишей туда-обратно
-        /// удобнее, чем открывать с клавиатуры, а закрывать мышью. Esc по-прежнему
-        /// работает — он у всех диалогов в GlassDialog.
+        /// Ctrl+Space closes the preview with the same combination that opened it — the window
+        /// is borderless and full screen, and toggling it with one key is nicer than opening
+        /// from the keyboard and closing with the mouse. Esc still works — every GlassDialog
+        /// has it.
         /// </summary>
         protected override void OnKeyDown(KeyEventArgs e)
         {
@@ -69,9 +70,9 @@ namespace AbletonManager
         protected override void OnResize(EventArgs e)
         {
             base.OnResize(e);
-            // Между подписью (кончается на Sc(76)) и карточкой раньше было каких-то
-            // Sc(2) — на деле почти впритык, и на части DPI карточка своей заливкой
-            // перекрывала нижний край текста подписи. Даём настоящий отступ.
+            // Between the caption (ending at Sc(76)) and the card there used to be some Sc(2) —
+            // practically touching, and at certain DPI the card's fill covered the bottom edge
+            // of the caption text. Give it a real gap.
             int pad = Sc(22);
             int top = Sc(92);
             _view.SetBounds(pad, top, Math.Max(Sc(80), ClientSize.Width - pad * 2),
@@ -102,7 +103,8 @@ namespace AbletonManager
         }
     }
 
-    /// <summary>Собственно холст с аранжировкой. Картинка кэшируется — нот бывают десятки тысяч.</summary>
+    /// <summary>The arrangement canvas itself. The picture is cached — there can be tens of
+    /// thousands of notes.</summary>
     public sealed class ArrangementView : GlassControl
     {
         public readonly RenderOptions Options = new RenderOptions();

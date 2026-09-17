@@ -8,15 +8,15 @@ using Microsoft.Win32;
 namespace AbletonManager
 {
     /// <summary>
-    /// Журнал одного запуска: %APPDATA%\Alive\alive.log.
+    /// A log of one run: %APPDATA%\Alive\alive.log.
     ///
-    /// Программа портативная и уезжает к людям одним exe-файлом, а всё интересное в ней
-    /// зависит от чужой машины: какая стоит Live, куда она пишет настройки, есть ли у
-    /// неё вообще база плагинов. Любая такая осечка тонула в catch { } и снаружи
-    /// выглядела одинаково — «ничего не сканит», и разбираться было не с чем. Поэтому
-    /// пишем короткий журнал: снимок окружения при старте, результат чтения базы
-    /// плагинов и всякое пойманное исключение. Файл один и переписывается при каждом
-    /// запуске — нужен ровно тот прогон, который сломался.
+    /// The program is portable and reaches people as a single exe, while everything interesting
+    /// about it depends on someone else's machine: which Live is installed, where it writes its
+    /// settings, whether it even has a plugin database. Every such slip used to drown in a
+    /// catch { } and looked the same from outside — "it does not scan anything" — with nothing
+    /// to go on. So we write a short log: a snapshot of the environment at startup, the result
+    /// of reading the plugin database, and every exception caught. There is one file and it is
+    /// overwritten on each run — what is needed is exactly the run that broke.
     /// </summary>
     public static class Diag
     {
@@ -40,7 +40,7 @@ namespace AbletonManager
             Block(Snapshot());
         }
 
-        /// <summary>Строка события — со временем, чтобы было видно порядок.</summary>
+        /// <summary>An event line — with a timestamp, so the order is visible.</summary>
         public static void Line(string text)
         {
             Block(DateTime.Now.ToString("HH:mm:ss", CultureInfo.InvariantCulture) + "  " + text);
@@ -61,9 +61,10 @@ namespace AbletonManager
             }
         }
 
-        // ------------------------------------------------------------------ окружение
+        // ------------------------------------------------------------------ environment
 
-        /// <summary>Всё, что нужно знать про чужую машину, одним куском.</summary>
+        /// <summary>Everything worth knowing about someone else's machine, in one
+        /// piece.</summary>
         public static string Snapshot()
         {
             StringBuilder sb = new StringBuilder();
@@ -85,9 +86,9 @@ namespace AbletonManager
         }
 
         /// <summary>
-        /// Версия рантайма, под которым нас реально запустили. Environment.Version у
-        /// всей ветки 4.x одинаковый (4.0.30319), а разница между 4.6 и 4.8 нам важна —
-        /// точное значение лежит только в реестре.
+        /// The runtime version we were actually started under. Environment.Version is the same
+        /// across the whole 4.x branch (4.0.30319), while the difference between 4.6 and 4.8
+        /// matters to us — and the exact value lives only in the registry.
         /// </summary>
         static string FrameworkVersion()
         {
@@ -107,9 +108,9 @@ namespace AbletonManager
         }
 
         /// <summary>
-        /// Где на этой машине Live и её база плагинов. Именно здесь ломается чаще всего:
-        /// база — это файл, который пишет сама Live, и до её первого запуска (а у старых
-        /// версий и вовсе никогда) его просто нет.
+        /// Where Live and its plugin database are on this machine. This is exactly where things
+        /// break most often: the database is a file Live writes itself, and before its first
+        /// run — or, on older versions, ever — it simply does not exist.
         /// </summary>
         public static string Ableton()
         {
