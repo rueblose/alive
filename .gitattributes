@@ -1,5 +1,5 @@
-# Репозиторий держит LF, рабочая копия тоже: иначе редактор на Windows незаметно
-# переводит файл в CRLF, и в diff попадает весь файл целиком вместо трёх правок.
+# The repository keeps LF and so does the working copy: otherwise an editor on Windows
+# quietly converts a file to CRLF and the whole file lands in the diff instead of three edits.
 * text=auto eol=lf
 
 *.png  binary

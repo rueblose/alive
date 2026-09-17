@@ -23,8 +23,8 @@ scratch/
 # Export output (tools/export-svg.cmd)
 export/
 
-# Внутренние планы разработки — не для публичного репозитория
+# Internal development plans - not for the public repository
 docs/superpowers/
 
-# Локальное: Forks, планы, каталог Options.txt — в репозиторий не идут
+# Local only: Forks, plans, the Options.txt catalogue - these do not go into the repository
 local/
