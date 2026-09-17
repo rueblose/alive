@@ -8,13 +8,15 @@ using System.Windows.Forms;
 
 namespace AbletonManager.Nebula
 {
-    /// <summary>Ось облака: величина, её шкала, подписи краёв — и включена ли она вообще.</summary>
+    /// <summary>An axis of the cloud: a value, its scale, the edge labels — and whether it is
+    /// on at all.</summary>
     public sealed class Axis
     {
         public Metric M;
 
-        /// <summary>Выключенный канал не участвует в облаке (см. CloudView.Coord/ColorOf),
-        /// но помнит свою величину: включили обратно — она уже выбрана.</summary>
+        /// <summary>A channel that is off takes no part in the cloud (see
+        /// CloudView.Coord/ColorOf) but remembers its value: switch it back on and it is
+        /// already chosen.</summary>
         public bool On = true;
 
         public Range R = new Range();
@@ -39,7 +41,8 @@ namespace AbletonManager.Nebula
             HiText = m.Text(ok[hi]);
         }
 
-        /// <summary>Канал выключен — шкала не считается, а край не подписан.</summary>
+        /// <summary>The channel is off — the scale is not computed and the edge is not
+        /// labelled.</summary>
         public void Clear(Metric m)
         {
             M = m;
@@ -48,32 +51,32 @@ namespace AbletonManager.Nebula
         }
     }
 
-    /// <summary>Готовые положения камеры — свободный угол по умолчанию и три
-    /// ортографических вида на куб, как в CAD.</summary>
+    /// <summary>Ready camera positions — a free angle by default and three orthographic views
+    /// onto the cube, as in CAD.</summary>
     public enum CameraPreset { Angle, Front, Side, Top }
 
     /// <summary>
-    /// Само облако: шесть величин сета превращаются в три координаты, размер, плотность
-    /// и цвет точки.
+    /// The cloud itself: six values of a set turn into three coordinates, plus the size,
+    /// density and colour of a dot.
     ///
-    /// Рисуется не средствами GDI+, а своим буфером пикселей. Причина простая: у каждой
-    /// точки мягкое свечение, а PathGradientBrush на тысяче точек в кадре — это тысяча
-    /// кистей на кадр и десятки миллисекунд. Свой буфер складывает свечения сложением
-    /// (как свет и складывается), лежит в предумноженной альфе — ровно в том формате,
-    /// который GDI+ кладёт на стекло окна одним DrawImage без пересчёта.
+    /// It is drawn not with GDI+ but into a pixel buffer of our own. The reason is simple:
+    /// every dot has a soft glow, and a PathGradientBrush over a thousand dots per frame is a
+    /// thousand brushes per frame and tens of milliseconds. Our own buffer adds the glows
+    /// together (as light does add up) and lies in premultiplied alpha — exactly the format
+    /// GDI+ puts onto the window's glass with a single DrawImage and no recomputation.
     /// </summary>
     public sealed class CloudView : Control
     {
         struct Node
         {
-            public int Index;              // строка в _sets
-            public float TX, TY, TZ;       // куда точка едет
-            public float X, Y, Z;          // где сейчас — облако перестраивается плавно
+            public int Index;              // a row in _sets
+            public float TX, TY, TZ;       // where the dot is heading
+            public float X, Y, Z;          // where it is now — the cloud rebuilds itself smoothly
             public float Size;             // 0..1
             public float Alpha;            // 0..1
             public int Rgb;
-            public float Phase;            // фаза мерцания
-            public float SX, SY, SR;       // экран после проекции
+            public float Phase;            // the shimmer phase
+            public float SX, SY, SR;       // the screen position after projection
             public float Depth;
         }
 
@@ -87,24 +90,24 @@ namespace AbletonManager.Nebula
         public readonly Axis AlphaCh = new Axis();
         public readonly Axis ColorCh = new Axis();
 
-        // Камера. Углы в радианах, дистанция в тех же единицах, что и куб [-1,1].
+        // The camera. Angles in radians, distance in the same units as the [-1,1] cube.
         float _yaw = 0.72f, _pitch = 0.34f, _zoom = 1f;
         float _panX, _panY;
         int _lastEdgeX = -1, _lastEdgeY = -1, _lastEdgeZ = -1;
         const float CamDist = 3.4f;
-        const float TopPitch = (float)(Math.PI / 2); // предел наклона и у Top-пресета, и у ручного тяни — ровно 90 градусов (PI/2) без перекоса
+        const float TopPitch = (float)(Math.PI / 2); // the tilt limit for both the Top preset and a manual drag — exactly 90 degrees (PI/2), with no skew
 
-        // Ортографический пресет отключает перспективу: k = 1 всегда, без деления по
-        // глубине (см. Project) — так «Front/Side/Top» дают настоящую параллельную
-        // проекцию, как в CAD, а не перспективный вид под тем же углом.
+        // An orthographic preset switches perspective off: k = 1 always, with no division by
+        // depth (see Project) — so that "Front/Side/Top" give a true parallel projection, as in
+        // CAD, rather than a perspective view from the same angle.
         bool _ortho;
         public CameraPreset Preset { get; private set; }
 
         public bool Spin = true;
         float _spinPhase;
 
-        // 0 — точка почти сплошной диск с тонкой сглаженной кромкой; 1 — мягкое
-        // свечение во весь радиус. См. Splat().
+        // 0 — a dot is almost a solid disc with a thin antialiased rim; 1 — a soft glow across
+        // the whole radius. See Splat().
         float _softness = 0.04f;
         public float Softness
         {
@@ -118,12 +121,12 @@ namespace AbletonManager.Nebula
             }
         }
 
-        // Радиус в логических пикселях (до Sc()) у точки с наименьшим и с наибольшим
-        // значением канала Size (сет без данных в этом канале садится на четверть шкалы
-        // вверх от минимума — см. Rebuild, тот же запасной вариант, что и всегда у «нет
-        // данных», просто в пикселях, а не в доле). Значения не пересчитывают геометрию —
-        // только то, каким радиусом Node.Size разворачивается в пиксели при отрисовке
-        // (DrawPoints), поэтому смена ползунка не запускает Rebuild.
+        // The radius in logical pixels (before Sc()) for a dot with the smallest and with the
+        // largest value of the Size channel (a set with no data in that channel sits a quarter
+        // of the scale up from the minimum — see Rebuild, the same fallback as always for "no
+        // data", only in pixels rather than as a fraction). The values do not recompute the
+        // geometry — only the radius Node.Size unfolds into pixels with when drawing
+        // (DrawPoints), so moving the slider does not trigger a Rebuild.
         float _minR = 1f, _maxR = 16f;
         public float MinPointRadius
         {
@@ -148,9 +151,9 @@ namespace AbletonManager.Nebula
             }
         }
 
-        // То же самое для канала Fade, только в альфе (0..1), а не в пикселях — и здесь
-        // значения ЗАДЕЙСТВОВАНЫ уже в Rebuild (не в DrawPoints, как у размера): альфа не
-        // зависит от DPI, откладывать её в пиксели незачем.
+        // The same for the Fade channel, only in alpha (0..1) rather than pixels — and here the
+        // values ARE used already in Rebuild (not in DrawPoints, as with size): alpha does not
+        // depend on DPI, so there is no point deferring it to pixels.
         float _minA = 0.08f, _maxA = 1f;
         public float MinAlpha
         {
@@ -182,10 +185,10 @@ namespace AbletonManager.Nebula
         int _hover = -1, _selected = -1;
         Point _dragFrom;
         bool _dragging, _panning;
-        bool _moved;                       // тащили ли — чтобы не считать это кликом
+        bool _moved;                       // whether it was dragged — so this is not counted as a click
 
         readonly Timer _timer = new Timer();
-        float _settle;                     // сколько ещё анимировать перестроение
+        float _settle;                     // how much longer the rebuild has to animate
 
         public event EventHandler HoverChanged;
         public event EventHandler SelectionChanged;
@@ -198,8 +201,8 @@ namespace AbletonManager.Nebula
             BackColor = Theme.Bg;
             Cursor = Cursors.Cross;
 
-            // Открывается на виде XY (Front) — плоско, без вращения, чтобы первый
-            // взгляд на облако был понятным читаемым графиком, а не случайным углом.
+            // It opens on the XY view (Front) — flat, with no rotation, so that the first look
+            // at the cloud is a clear readable chart rather than a random angle.
             SetPreset(CameraPreset.Front);
 
             _timer.Interval = 16;
@@ -220,7 +223,7 @@ namespace AbletonManager.Nebula
         int Sc(int v) { return (int)Math.Round(v * (DeviceDpi / 96f)); }
         float ScF(float v) { return v * (DeviceDpi / 96f); }
 
-        // ------------------------------------------------------------------- данные
+        // ------------------------------------------------------------------- data
 
         public List<SetEntry> Sets { get { return _sets; } }
 
@@ -257,16 +260,18 @@ namespace AbletonManager.Nebula
         }
 
         /// <summary>
-        /// Пересчёт всех шести каналов. animate=true — точки не прыгают на новые места,
-        /// а разлетаются по ним за полсекунды: иначе смена величины на оси выглядит как
-        /// подмена картинки, и связь между «было» и «стало» теряется.
+        /// Recomputing all six channels. animate=true — the dots do not jump to their new
+        /// places but fly to them over half a second: otherwise changing the value on an axis
+        /// looks like the picture being swapped, and the connection between "before" and
+        /// "after" is lost.
         /// </summary>
         public void Rebuild(bool animate)
         {
             if (X.M == null) return;
 
-            // Выключенный канал шкалу не считает вовсе — она ему не нужна, а на
-            // категориях вроде Key лишний проход по всем сетам стоит заметных мс.
+            // A channel that is off does not compute its scale at all — it does not need one,
+            // and on categories like Key an extra pass over every set costs noticeable
+            // milliseconds.
             if (X.On) X.Fit(_sets, X.M); else X.Clear(X.M);
             if (Y.On) Y.Fit(_sets, Y.M); else Y.Clear(Y.M);
             if (Z.On) Z.Fit(_sets, Z.M); else Z.Clear(Z.M);
@@ -288,10 +293,10 @@ namespace AbletonManager.Nebula
                 n.TY = Coord(Y, s, jitter, 1);
                 n.TZ = Coord(Z, s, jitter, 2);
 
-                // Выключенный канал размера/прозрачности даёт всем точкам один и тот же
-                // вид — не «нет данных» (это тусклый серый где-то посередине шкалы), а
-                // ровно нейтральный, потому что тут не пропуск в данных, а решение убрать
-                // канал целиком.
+                // A size or fade channel that is off gives every dot one and the same look —
+                // not "no data" (that is a dull grey somewhere in the middle of the scale) but
+                // exactly neutral, because this is not a gap in the data but a decision to
+                // remove the channel altogether.
                 if (SizeCh.On)
                 {
                     double sz = SizeCh.R.Norm(SizeCh.M.Value(s));
@@ -304,7 +309,7 @@ namespace AbletonManager.Nebula
                 n.Rgb = ColorOf(s) & 0xFFFFFF;
                 n.Phase = (float)(jitter * Math.PI * 2);
 
-                // Точка, уже жившая в облаке, стартует с прежнего места.
+                // A dot that already lived in the cloud starts from its previous place.
                 if (animate && i < old.Length && old[i].Index == i)
                 {
                     n.X = old[i].X; n.Y = old[i].Y; n.Z = old[i].Z;
@@ -324,23 +329,23 @@ namespace AbletonManager.Nebula
             if (animate) _settle = 1f;
         }
 
-        /// <summary>Величина → координата в кубе [-1,1]. Без данных, как и на выключенном
-        /// канале, — центр со сдвигом, чтобы такие сеты не слипались в одну точку и было
-        /// видно, сколько их.</summary>
+        /// <summary>A value → a coordinate in the [-1,1] cube. With no data, as on a channel
+        /// that is off, it is the centre with a scatter, so that such sets do not stick
+        /// together into one dot and it is visible how many of them there are.</summary>
         static float Coord(Axis a, SetEntry s, double jitter, int seed)
         {
             double t = a.On ? a.R.Norm(a.M.Value(s)) : double.NaN;
             if (double.IsNaN(t))
                 return (float)((((jitter * 7.13 + seed * 0.37) % 1.0) - 0.5) * 0.12);
-            // Небольшой разброс: у целых величин (24 дорожки, 120 BPM) точки иначе
-            // ложатся ровно друг на друга и плотность не читается.
+            // A small scatter: with whole-number values (24 tracks, 120 BPM) the dots otherwise
+            // lie exactly on top of each other and the density does not read.
             double j = (((jitter * 13.7 + seed * 2.31) % 1.0) - 0.5) * 0.022;
             return (float)((t - 0.5) * 2.0 + j);
         }
 
-        // Выключенный цвет — не «нет данных» (тускло-серый), а тот же светлый нейтральный
-        // тон, что даёт подсветку остальным элементам интерфейса: канал не молчит о
-        // проблеме, он просто отключён по решению.
+        // Colour switched off is not "no data" (dull grey) but the same light neutral tone that
+        // highlights the rest of the interface: the channel is not keeping quiet about a
+        // problem, it has simply been turned off by decision.
         static readonly int OffRgb = Theme.Light.ToArgb();
 
         int ColorOf(SetEntry s)
@@ -358,8 +363,8 @@ namespace AbletonManager.Nebula
 
         Gradient _gradient = Palette.Gradients[0];
 
-        /// <summary>Какой из именованных LAB-градиентов красит непрерывные величины
-        /// (BPM, Modified, Project size, …). На категориях (Key/Scale/…) не влияет.</summary>
+        /// <summary>Which of the named LAB gradients colours continuous values (BPM, Modified,
+        /// Project size, …). Has no effect on categories (Key/Scale/…).</summary>
         public Gradient ColorGradient
         {
             get { return _gradient; }
@@ -371,9 +376,9 @@ namespace AbletonManager.Nebula
             }
         }
 
-        /// <summary>Перекрасить облако без пересборки геометрии: смена палитры не
-        /// трогает ни координаты, ни размер — только Rgb, и не должна дёргать анимацию
-        /// разлёта точек, которую делает полный Rebuild.</summary>
+        /// <summary>Recolour the cloud without rebuilding the geometry: changing the palette
+        /// touches neither the coordinates nor the size — only Rgb — and must not trigger the
+        /// fly-out animation a full Rebuild does.</summary>
         void Recolor()
         {
             for (int i = 0; i < _nodes.Length; i++)
@@ -384,8 +389,8 @@ namespace AbletonManager.Nebula
             Invalidate();
         }
 
-        /// <summary>Выключенный канал прозрачности — не «нет данных» (тускло), а ровно
-        /// такая же непрозрачная точка, как у самого яркого конца включённой шкалы.</summary>
+        /// <summary>A fade channel that is off is not "no data" (dull) but exactly as opaque a
+        /// dot as at the brightest end of a channel that is on.</summary>
         float AlphaOf(SetEntry s)
         {
             if (!AlphaCh.On) return 0.82f;
@@ -393,8 +398,9 @@ namespace AbletonManager.Nebula
             return double.IsNaN(al) ? 0.30f : (float)(_minA + (_maxA - _minA) * al);
         }
 
-        /// <summary>Как Recolor(), только для альфы: сдвиг ползунков MinAlpha/MaxAlpha не
-        /// трогает ни координаты, ни цвет, и не должен дёргать анимацию разлёта точек.</summary>
+        /// <summary>Like Recolor(), only for alpha: moving the MinAlpha/MaxAlpha sliders
+        /// touches neither the coordinates nor the colour, and must not trigger the fly-out
+        /// animation.</summary>
         void Refade()
         {
             for (int i = 0; i < _nodes.Length; i++)
@@ -405,7 +411,7 @@ namespace AbletonManager.Nebula
             Invalidate();
         }
 
-        // ------------------------------------------------------------------- камера
+        // ------------------------------------------------------------------- camera
 
         public void ResetView()
         {
@@ -413,9 +419,10 @@ namespace AbletonManager.Nebula
         }
 
         /// <summary>
-        /// Угол свободный (перспектива) или один из трёх ортографических видов на куб —
-        /// ровно по осям, без перспективного схождения. Zoom и pan тоже сбрасываются:
-        /// пресет — это «покажи мне ровно вот так», а не «поверни то, что уже сдвинуто».
+        /// A free angle (perspective) or one of the three orthographic views onto the cube —
+        /// square on the axes, with no perspective convergence. Zoom and pan are reset too: a
+        /// preset means "show me exactly like this" rather than "turn what has already been
+        /// shifted".
         /// </summary>
         public void SetPreset(CameraPreset preset)
         {
@@ -459,8 +466,8 @@ namespace AbletonManager.Nebula
                 need = true;
             }
 
-            // Мерцание идёт всегда: облако из мёртвых точек выглядит картинкой, а не
-            // живой сценой. Шаг мелкий, поэтому кадр дешёвый.
+            // The shimmer runs always: a cloud of dead dots looks like a picture rather than a
+            // living scene. The step is small, so the frame is cheap.
             _spinPhase += 0.028f;
             if (_spinPhase > 1000f) _spinPhase -= 1000f;
             need = true;
@@ -468,7 +475,7 @@ namespace AbletonManager.Nebula
             if (need && Visible && Width > 0 && Height > 0) Invalidate();
         }
 
-        // ------------------------------------------------------------------ отрисовка
+        // ------------------------------------------------------------------ drawing
 
         protected override void OnPaintBackground(PaintEventArgs e) { }
 
@@ -501,19 +508,20 @@ namespace AbletonManager.Nebula
             float ry = y * cosP - rz * sinP;
             float rz2 = y * sinP + rz * cosP;
 
-            // Ортографический пресет убирает деление по глубине целиком — точки не
-            // сходятся к центру с удалением, как в перспективе, а идут параллельно.
-            // Заодно это тот же k, что даёт радиус и туман точке (DrawPoints), поэтому
-            // на ортографике размер и яркость точки тоже перестают зависеть от глубины —
-            // так и должно быть у настоящей параллельной проекции.
+            // An orthographic preset removes the division by depth entirely — the dots do not
+            // converge towards the centre with distance, as in perspective, but run parallel.
+            // That is also the same k that gives a dot its radius and haze (DrawPoints), so in
+            // orthographic mode a dot's size and brightness stop depending on depth too — which
+            // is how a true parallel projection should be.
             float k = _ortho ? 1f : CamDist / (CamDist + rz2);
             sx = cx + rx * scale * k;
             sy = cy - ry * scale * k;
             depth = k;
         }
 
-        /// <summary>Пол и рёбра куба — только чтобы вращение читалось. Линии почти
-        /// невидимы намеренно: сцена про точки, а не про сетку.</summary>
+        /// <summary>The floor and edges of the cube — only so that rotation reads. The lines
+        /// are almost invisible on purpose: the scene is about the dots, not about the
+        /// grid.</summary>
         void DrawFrame(Graphics g, float cx, float cy, float scale,
                        float cosY, float sinY, float cosP, float sinP)
         {
@@ -555,9 +563,9 @@ namespace AbletonManager.Nebula
 
             float baseR = ScF(_minR);
             float sizeR = ScF(Math.Max(0f, _maxR - _minR));
-            // Обычная перспектива (не орто) увеличивает k у точек ближе камеры — без
-            // запаса точка на максимальном ползунке ещё и на переднем плане раздулась
-            // бы за пределы им же заданного максимума.
+            // Ordinary perspective (not ortho) increases k for dots closer to the camera —
+            // without headroom a dot at the maximum slider setting would also swell past that
+            // very maximum when in the foreground.
             float maxR = ScF(Math.Max(_maxR * 2.2f, 34f));
 
             for (int i = 0; i < _nodes.Length; i++)
@@ -569,7 +577,7 @@ namespace AbletonManager.Nebula
                 float r = (baseR + sizeR * _nodes[i].Size) * k;
                 if (r > maxR) r = maxR;
 
-                // Дальние точки тусклее — без этого куб выглядит плоским пятном.
+                // Distant dots are dimmer — without this the cube looks like a flat blob.
                 float fog = 0.42f + 0.58f * Math.Min(1f, Math.Max(0f, (k - 0.6f) / 0.75f));
                 float twinkle = 0.90f + 0.10f * (float)Math.Sin(_spinPhase + _nodes[i].Phase);
                 float a = _nodes[i].Alpha * fog * twinkle;
@@ -593,9 +601,10 @@ namespace AbletonManager.Nebula
         }
 
         /// <summary>
-        /// Одна светящаяся точка. Спад (1-t²)² даёт мягкий край без единого вызова
-        /// GDI+, а сложение с насыщением — свет: там, где точки наложились, ярче.
-        /// Цвет уже предумножен на альфу, поэтому буфер кладётся на окно как есть.
+        /// One glowing dot. A (1-t²)² falloff gives a soft edge without a single GDI+ call,
+        /// while saturating addition gives light: where dots have overlapped it is brighter.
+        /// The colour is already premultiplied by alpha, so the buffer goes onto the window as
+        /// it is.
         /// </summary>
         void Splat(int w, int h, float cx, float cy, float r, int rgb, float alpha)
         {
@@ -610,10 +619,11 @@ namespace AbletonManager.Nebula
             float inv = 1f / (r * r);
             int cr = (rgb >> 16) & 255, cg = (rgb >> 8) & 255, cb = rgb & 255;
 
-            // Ядро — сплошная заливка, ореол — плавный спад до нуля на краю. Где кончается
-            // ядро и начинается спад, решает Softness: 0 почти не оставляет ореола (диск с
-            // тонкой сглаженной кромкой), 1 отдаёт под спад почти весь радиус (мягкое
-            // свечение, как раньше по умолчанию). core — доля радиуса, где точка ещё сплошная.
+            // The core is a solid fill, the halo a smooth falloff to zero at the edge. Where
+            // the core ends and the falloff begins is decided by Softness: 0 leaves almost no
+            // halo (a disc with a thin antialiased rim), 1 gives almost the whole radius over
+            // to the falloff (a soft glow, as the default used to be). core is the fraction of
+            // the radius where the dot is still solid.
             float core = 1f - (0.06f + 0.79f * _softness);
             float fadeSpan = Math.Max(0.0001f, 1f - core);
 
@@ -672,7 +682,8 @@ namespace AbletonManager.Nebula
             g.InterpolationMode = old;
         }
 
-        /// <summary>Кольцо и имя у точки под курсором и у выбранной.</summary>
+        /// <summary>A ring and a name on the dot under the cursor and on the selected
+        /// one.</summary>
         void DrawMarks(Graphics g)
         {
             if (_selected >= 0 && _selected < _nodes.Length && _selected != _hover)
@@ -702,9 +713,10 @@ namespace AbletonManager.Nebula
         }
 
         /// <summary>
-        /// Подписи осей. Ребро для подписи выбирается по картинке, а не по номеру:
-        /// из четырёх параллельных берём то, чья середина дальше от центра сцены, —
-        /// оно всегда снаружи облака и подпись не тонет в точках.
+        /// The axis labels. The edge to label is chosen by the picture rather than by number:
+        /// of the four parallel ones we take the one whose midpoint is furthest from the centre
+        /// of the scene — it is always outside the cloud and the label does not drown among the
+        /// dots.
         /// </summary>
         void DrawAxisLabels(Graphics g, float cx, float cy, float scale,
                             float cosY, float sinY, float cosP, float sinP)
@@ -719,9 +731,10 @@ namespace AbletonManager.Nebula
         {
             if (a.M == null) return;
 
-            // Для X (dim == 0) и Z (dim == 2) оси всегда привязаны к полу куба (y = -1),
-            // чтобы подписи горизонтальных шкал всегда были снизу куба и никогда не лезли на потолок.
-            // Для Y (dim == 1) выбирается один из 4 вертикальных столбов (крайний левый).
+            // For X (dim == 0) and Z (dim == 2) the axes are always tied to the floor of the
+            // cube (y = -1), so that the labels of the horizontal scales are always below the
+            // cube and never climb onto the ceiling. For Y (dim == 1) one of the 4 vertical
+            // pillars is chosen (the leftmost).
             const float yFloor = -1f;
 
             int count = dim == 1 ? 4 : 2;
@@ -750,9 +763,9 @@ namespace AbletonManager.Nebula
                 float mx = (p1x + p2x) * 0.5f - cx;
                 float my = (p1y + p2y) * 0.5f - cy;
 
-                // Для горизонтальных ребер важнее быть снизу экрана (+my).
-                // Для вертикальных ребер важнее быть слева экрана (-mx).
-                // Плавная непрерывная оценка без резких скачков:
+                // For horizontal edges it matters more to be at the bottom of the screen (+my).
+                // For vertical edges it matters more to be at the left of the screen (-mx). A
+                // smooth continuous score with no abrupt jumps:
                 float score = (Math.Abs(dx) * my - Math.Abs(dy) * mx) / len;
 
                 if (score > bestScore)
@@ -771,8 +784,9 @@ namespace AbletonManager.Nebula
 
             if (bestScore <= -float.MaxValue / 2f) return;
 
-            // Гистерезис: не переключаем ребро, пока новый кандидат не опередит текущий
-            // с уверенным отрывом (16 px). Это на 100% исключает дребезг и мелькание при вращении (spin).
+            // Hysteresis: we do not switch edge until a new candidate beats the current one by
+            // a confident margin (16 px). That rules out chatter and flicker while spinning
+            // completely.
             float ax, ay, bx, by, lenChosen;
             int chosenIdx;
 
@@ -793,9 +807,9 @@ namespace AbletonManager.Nebula
 
             float nx = (bx - ax) / lenChosen, ny = (by - ay) / lenChosen;
 
-            // Вектор внешней нормали к ребру (в сторону от центра сцены):
-            // Для нижней оси: px = 0, py = 1 (строго вниз) -> подписи снизу оси.
-            // Для левой оси: px = -1, py = 0 (строго влево) -> подписи слева от оси.
+            // The outward normal vector of the edge (away from the centre of the scene): for
+            // the bottom axis px = 0, py = 1 (straight down) -> labels below the axis. For the
+            // left axis px = -1, py = 0 (straight left) -> labels to the left of the axis.
             float mx2 = (ax + bx) / 2f, my2 = (ay + by) / 2f;
             float px = -ny, py = nx;
             if ((mx2 - cx) * px + (my2 - cy) * py < 0) { px = -px; py = -py; }
@@ -812,18 +826,20 @@ namespace AbletonManager.Nebula
                 Size szLo = TextRenderer.MeasureText(a.LoText, Theme.FBadge);
                 Size szHi = TextRenderer.MeasureText(a.HiText, Theme.FBadge);
 
-                // LoText у точки a (минимум): отодвигаем наружу по нормали p на (gap + Rp)
-                // и смещаем внутрь ребра на Rn, чтобы подпись начиналась от угла, а не вылетала наружу
+                // LoText at point a (the minimum): we push it outward along the normal p by
+                // (gap + Rp) and shift it inward along the edge by Rn, so the label starts at
+                // the corner rather than flying off outside
                 float cxLo = ax + px * (gap + HalfSpan(szLo, px, py)) + nx * HalfSpan(szLo, nx, ny);
                 float cyLo = ay + py * (gap + HalfSpan(szLo, px, py)) + ny * HalfSpan(szLo, nx, ny);
 
-                // HiText у точки b (максимум): отодвигаем наружу по нормали p на (gap + Rp)
-                // и смещаем внутрь ребра на -Rn, чтобы подпись заканчивалась у угла
+                // HiText at point b (the maximum): we push it outward along the normal p by
+                // (gap + Rp) and shift it inward along the edge by -Rn, so the label ends at
+                // the corner
                 float cxHi = bx + px * (gap + HalfSpan(szHi, px, py)) - nx * HalfSpan(szHi, nx, ny);
                 float cyHi = by + py * (gap + HalfSpan(szHi, px, py)) - ny * HalfSpan(szHi, nx, ny);
 
-                // Если ребро преимущественно горизонтальное (снизу/сверху), проверяем,
-                // не наползает ли Title на LoText или HiText:
+                // If the edge is predominantly horizontal (bottom/top), we check whether the
+                // Title runs into LoText or HiText:
                 if (Math.Abs(px) < 0.5f)
                 {
                     float leftLo = cxLo - szLo.Width / 2f, rightLo = cxLo + szLo.Width / 2f;
@@ -834,7 +850,7 @@ namespace AbletonManager.Nebula
                     if (leftTi < minEdgeX + ScF(8f) || rightTi > maxEdgeX - ScF(8f))
                         cyTi += py * (szTitle.Height + ScF(2f));
                 }
-                // Аналогично для преимущественно вертикального ребра (слева/справа):
+                // Likewise for a predominantly vertical edge (left/right):
                 else if (Math.Abs(py) < 0.5f)
                 {
                     float topLo = cyLo - szLo.Height / 2f, bottomLo = cyLo + szLo.Height / 2f;
@@ -872,7 +888,7 @@ namespace AbletonManager.Nebula
                 float x = i == 0 ? -1f : 1f;
                 x1 = x2 = x; y1 = y2 = yFloor; z1 = -1f; z2 = 1f;
             }
-            else // Y (столбы)
+            else // Y (the pillars)
             {
                 float x = (i == 1 || i == 2) ? 1f : -1f;
                 float z = (i == 2 || i == 3) ? 1f : -1f;
@@ -880,8 +896,9 @@ namespace AbletonManager.Nebula
             }
         }
 
-        /// <summary>Надпись по центру точки, вжатая в границы облака: у краёв сцены
-        /// подпись иначе уезжает под панель или за окно.</summary>
+        /// <summary>A caption centred on a dot, squeezed within the cloud's bounds: at the
+        /// edges of the scene the label otherwise slides under the panel or off the
+        /// window.</summary>
         void Label(Graphics g, string text, Font font, Color color, float x, float y)
         {
             if (string.IsNullOrEmpty(text)) return;
@@ -895,7 +912,7 @@ namespace AbletonManager.Nebula
                             color, Chrome.Left);
         }
 
-        // --------------------------------------------------------------- мышь и клавиши
+        // --------------------------------------------------------- mouse and keys
 
         protected override void OnMouseDown(MouseEventArgs e)
         {
@@ -917,8 +934,9 @@ namespace AbletonManager.Nebula
 
                 if (_dragging)
                 {
-                    // Инвертировано: тащишь вправо — сцена доворачивается влево, как будто
-                    // хватаешь сам объект, а не крутишь камеру вокруг него.
+                    // Inverted: drag to the right and the scene turns to the left, as though
+                    // you were grabbing the object itself rather than swinging the camera
+                    // around it.
                     _yaw -= dx * 0.0075f;
                     _pitch -= dy * 0.0075f;
                     if (_pitch > TopPitch) _pitch = TopPitch;
@@ -988,8 +1006,8 @@ namespace AbletonManager.Nebula
             base.OnMouseWheel(e);
         }
 
-        /// <summary>Ближайшая точка под курсором. Из наложившихся выигрывает та, что
-        /// ближе к камере, — целиться логично в верхнюю.</summary>
+        /// <summary>The nearest dot under the cursor. Of overlapping ones the closer to the
+        /// camera wins — aiming at the topmost is the logical thing.</summary>
         int Pick(int mx, int my)
         {
             int best = -1;

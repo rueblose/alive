@@ -19,54 +19,55 @@ namespace AbletonManager
 
         public string Creator = "";
         public double Tempo;
-        public string Key = "";      // «C Major»; пусто у версий Live без общей тональности
-        public int ScaleRoot = -1;   // 0..11; по нему фильтруем — «C#» и «Db» это одна нота
+        public string Key = "";      // "C Major"; empty on Live versions with no overall key
+        public int ScaleRoot = -1;   // 0..11; we filter by it — "C#" and "Db" are one note
         public int ScaleIndex = -1;
         public int Tracks;
         public int MissingFiles;
         public int TotalRefs;
         public string[] Plugins = new string[0];
-        public string[] PluginVendors = new string[0];        // параллельно Plugins, "" если неизвестен
-        public bool[] PluginVendorConfident = new bool[0];    // вендор из VST3/AU, а не из папки браузера
-        public string[] PluginUids = new string[0];           // «vst3:…» / «vst2:…», параллельно Plugins
+        public string[] PluginVendors = new string[0];        // parallel to Plugins, "" when unknown
+        public bool[] PluginVendorConfident = new bool[0];    // the vendor from VST3/AU rather than from a browser folder
+        public string[] PluginUids = new string[0];           // "vst3:…" / "vst2:…", parallel to Plugins
         public string Error = "";
 
         /// <summary>
-        /// Сколько плагинов сета не установлено. Считается не при сканировании, а после —
-        /// набор установленного меняется без правки самих сетов, кешировать его нельзя.
+        /// How many of a set's plugins are not installed. Computed after the scan rather than
+        /// during it — what is installed changes without the sets themselves being edited, so
+        /// it cannot be cached.
         /// </summary>
         public int MissingPlugins;
 
         /// <summary>
-        /// Есть ли рядом с проектом что слушать. Не кешируется на диск: рендеры
-        /// появляются без правки самого сета, и запомненный ответ протух бы первым же
-        /// экспортом. Считается заново при каждом сканировании.
+        /// Whether there is anything to listen to next to the project. Not cached to disk:
+        /// renders appear without the set itself being edited, and a remembered answer would go
+        /// stale with the first export. Recomputed on every scan.
         /// </summary>
         public bool HasRenders;
 
         /// <summary>
-        /// Имена файлов, которые реально можно предпрослушать (та же выборка, что и
-        /// у RenderScan.Find — Samples и служебные папки Live не в счёт), — чтобы
-        /// искать сет по названию рендера, а не только по имени сета. Не кешируется на
-        /// диск по той же причине, что и HasRenders.
+        /// The names of the files that really can be previewed (the same selection as
+        /// RenderScan.Find uses — Samples and Live's housekeeping folders do not count) — so
+        /// that a set can be searched for by the name of a render rather than only by the set's
+        /// own name. Not cached to disk, for the same reason as HasRenders.
         /// </summary>
         public string[] RenderNames = new string[0];
 
         /// <summary>
-        /// Вес всей папки проекта и сколько в ней файлов. Не кешируется по той же
-        /// причине, что и HasRenders: записал сэмпл — папка потяжелела, а .als не
-        /// изменился, и запомненное число врало бы.
+        /// The weight of the whole project folder and how many files are in it. Not cached, for
+        /// the same reason as HasRenders: record a sample and the folder grows heavier while
+        /// the .als has not changed, and the remembered number would be a lie.
         /// </summary>
         public long ProjectSize;
         public int ProjectFiles;
 
         /// <summary>
-        /// Сколько ещё сетов той же папки спрятано под этой строкой. Считается при
-        /// каждом заполнении списка — зависит от фильтров, а не от самого сета.
+        /// How many more sets of the same folder are hidden under this row. Computed on every
+        /// filling of the list — it depends on the filters rather than on the set itself.
         /// </summary>
         public int CollapsedCount;
 
-        /// <summary>Короткая версия вида «12.4.3» из «Ableton Live 12.4.3».</summary>
+        /// <summary>The short version, "12.4.3", out of "Ableton Live 12.4.3".</summary>
         public string ShortVersion
         {
             get
@@ -82,10 +83,10 @@ namespace AbletonManager
         string _projectDir;
 
         /// <summary>
-        /// Папка проекта — та самая «… Project», которую заводит Live, со всеми
-        /// Samples внутри. Если сет лежит сам по себе, вне такой папки, проектом
-        /// считаем его собственную папку. Считается один раз: Path не меняется, а
-        /// спрашивают её и вес, и теги, и группировка.
+        /// The project folder — that very "… Project" Live creates, with all the Samples
+        /// inside. If a set lies on its own, outside such a folder, we treat its own folder as
+        /// the project. Computed once: Path does not change, while the weight, the tags and the
+        /// grouping all ask for it.
         /// </summary>
         public string ProjectDir
         {
@@ -116,15 +117,14 @@ namespace AbletonManager
         string _place;
 
         /// <summary>
-        /// Полка, на которой лежит проект: имя папки, содержащей папку «* Project».
-        /// Для «…\Series 2\somnitelno\X Project\X.als» это «somnitelno» — по нему видно,
-        /// в какой коллекции сет, не читая весь путь.
+        /// The shelf a project lies on: the name of the folder containing the "* Project"
+        /// folder. For "…\Series 2\somnitelno\X Project\X.als" that is "somnitelno" — from it
+        /// one can see which collection a set is in without reading the whole path.
         ///
-        /// Считается один раз и запоминается: Path у записи не меняется никогда, а вот
-        /// саму «полку» спрашивают в горячих местах — по разу на каждую ячейку колонки
-        /// и ДВАЖДЫ на каждое сравнение при сортировке по ней. На тысяче сетов это
-        /// десятки тысяч обходов дерева DirectoryInfo вверх, и всё ради одной строки,
-        /// которая всё это время одна и та же.
+        /// Computed once and remembered: a record's Path never changes, while the "shelf"
+        /// itself is asked for in hot places — once per cell of the column and TWICE per
+        /// comparison when sorting by it. On a thousand sets that is tens of thousands of walks
+        /// up the DirectoryInfo tree, all for one string that has been the same the whole time.
         /// </summary>
         public string Place
         {
@@ -147,7 +147,8 @@ namespace AbletonManager
                         return d.Parent != null ? d.Parent.Name : "";
                     d = d.Parent;
                 }
-                // Сет не в папке «* Project» — берём родителя папки, где лежит .als.
+                // The set is not in a "* Project" folder — we take the parent of the folder
+                // holding the .als.
                 System.IO.DirectoryInfo dir =
                     new System.IO.DirectoryInfo(System.IO.Path.GetDirectoryName(Path));
                 return dir.Parent != null ? dir.Parent.Name : dir.Name;
@@ -165,12 +166,13 @@ namespace AbletonManager
 
         public string Uid = "";
         public MatchKind Match = MatchKind.Missing;
-        public InstalledPlugin Installed;      // null, если такого плагина на машине нет
+        public InstalledPlugin Installed;      // null if there is no such plugin on the machine
 
         public bool IsInstalled { get { return Match != MatchKind.Missing; } }
         public bool IsUnused { get { return Sets == 0; } }
 
-        /// <summary>«VST3» / «VST2» — формат берём у установленного, иначе у идентификатора.</summary>
+        /// <summary>"VST3" / "VST2" — the format comes from the installed one, otherwise from
+        /// the identifier.</summary>
         public string Format
         {
             get
@@ -183,7 +185,8 @@ namespace AbletonManager
             }
         }
 
-        /// <summary>Категория плагина из VST3/AU (например, Mastering, Reverb, Synth, Dynamics).</summary>
+        /// <summary>The plugin's category from VST3/AU (Mastering, Reverb, Synth, Dynamics and
+        /// so on).</summary>
         public string FxType
         {
             get
@@ -217,59 +220,60 @@ namespace AbletonManager
         }
     }
 
-    /// <summary>Сводка по плагинам библиотеки — то, что показывается карточками.</summary>
+    /// <summary>A summary of the library's plugins — what the cards show.</summary>
     public sealed class PluginHealth
     {
-        public int Used;             // разных плагинов встречается в сетах
-        public int Installed;        // из них установлено (точное совпадение)
-        public int OtherFormat;      // есть, но другого формата
-        public int Missing;          // не установлено вовсе
-        public int InstalledTotal;   // сколько всего стоит на машине
-        public int InstalledUnused;  // из них не встречается ни в одном сете
-        public int FilesGone;        // Live их помнит, но файла на диске уже нет
+        public int Used;             // distinct plugins occurring in the sets
+        public int Installed;        // of those, installed (an exact match)
+        public int OtherFormat;      // present, but in another format
+        public int Missing;          // not installed at all
+        public int InstalledTotal;   // how many are installed on the machine in total
+        public int InstalledUnused;  // of those, occurring in no set at all
+        public int FilesGone;        // Live remembers them, but the file is no longer on disk
     }
 
     public delegate void ScanProgress(int done, int total, string current);
 
     /// <summary>
-    /// Каталог сетов. Разбор одного сета — около 150 мс, а их больше тысячи, поэтому
-    /// результат кешируется на диск и переиспользуется, пока файл не изменился.
+    /// The catalog of sets. Parsing one set takes around 150 ms and there are over a thousand
+    /// of them, so the result is cached to disk and reused until the file changes.
     /// </summary>
     public sealed class ProjectIndex
     {
-        const int CacheVersion = 10;  // 10: Files/Missing считаются по уникальным файлам
+        const int CacheVersion = 10;  // 10: Files/Missing are counted by distinct files
 
         volatile List<SetEntry> _sets = new List<SetEntry>();
 
         /// <summary>
-        /// Каталог сетов. Список ПОДМЕНЯЕТСЯ целиком, а не правится на месте, и это
-        /// не стилистика: читают его из потока интерфейса (список сетов, плитки
-        /// главной, панель подробностей, диалог фильтров), а пишет фоновый поток
-        /// сканирования. Прежняя правка на месте (Clear + Add по одному) роняла любой
-        /// идущий в это время foreach на «Collection was modified» — достаточно было
-        /// набрать что-нибудь в поиске, пока идёт скан.
+        /// The catalog of sets. The list is SWAPPED whole rather than edited in place, and that
+        /// is not a matter of style: it is read from the UI thread (the sets list, the home
+        /// tiles, the detail panel, the filters dialog) while the background scanning thread
+        /// writes it. Editing in place as it used to be (Clear plus Add one by one) brought
+        /// down any foreach running at that moment with "Collection was modified" — it was
+        /// enough to type something into the search while a scan was going.
         ///
-        /// Присваивание ссылки атомарно, поэтому читатель всегда видит либо старый
-        /// список целиком, либо новый целиком, но никогда полусобранный. Плата за это —
-        /// уговор: опубликованный список не меняют. Нужен другой состав — собирают
-        /// новый и присваивают его.
+        /// Assigning a reference is atomic, so a reader always sees either the old list whole
+        /// or the new list whole, and never a half-built one. The price is an agreement: a
+        /// published list is not modified. If a different content is needed, a new one is built
+        /// and assigned.
         /// </summary>
         public List<SetEntry> Sets { get { return _sets; } }
 
         public LiveEnvironment Env = new LiveEnvironment();
 
         /// <summary>
-        /// Когда работали: история сохранений из папок Backup. Подменяется целиком, как
-        /// и Sets, — читает её интерфейс, пишет фоновое сканирование.
+        /// When the work happened: the history of saves from the Backup folders. Swapped whole,
+        /// like Sets — the interface reads it while background scanning writes it.
         /// </summary>
         public Activity History = Activity.Empty;
 
-        /// <summary>Что установлено на машине — по базе самой Live.</summary>
+        /// <summary>What is installed on the machine — according to Live's own
+        /// database.</summary>
         public PluginInventory Inventory = new PluginInventory();
 
         static string CachePath { get { return Path.Combine(Settings.Dir, "index.cache"); } }
 
-        // ------------------------------------------------------------- сканирование
+        // ------------------------------------------------------------------ scanning
 
         public bool LoadFromCache()
         {
@@ -284,7 +288,7 @@ namespace AbletonManager
 
         public void Scan(Settings settings, ScanProgress progress, CancellationToken cancel)
         {
-            // Кеш файловых проб живёт ровно одно сканирование — см. RefResolver.BeginScan.
+            // The file probe cache lives for exactly one scan — see RefResolver.BeginScan.
             RefResolver.BeginScan();
             try { ScanCore(settings, progress, cancel); }
             finally { RefResolver.EndScan(); }
@@ -298,13 +302,13 @@ namespace AbletonManager
 
             HashSet<string> disabled = new HashSet<string>(settings.DisabledRoots, StringComparer.OrdinalIgnoreCase);
             List<string> files = new List<string>();
-            // Один и тот же .als легко попадается дважды: корни бывают вложены друг в
-            // друга («…\Music» и «…\Music\Ableton» оба в списке). Без отсева сет потом
-            // двоится в каталоге, и каждая копия разбирается заново.
+            // One and the same .als turns up twice easily: roots are sometimes nested inside
+            // each other ("…\Music" and "…\Music\Ableton" both in the list). Without filtering,
+            // the set then doubles in the catalog and each copy is parsed anew.
             HashSet<string> seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             foreach (string root in settings.Roots)
             {
-                if (disabled.Contains(root)) continue;   // временно выключена — папка остаётся в списке
+                if (disabled.Contains(root)) continue;   // temporarily off — the folder stays in the list
                 int before = files.Count;
                 FolderScan.Result r = Collect(root, files, seen, progress, cancel);
                 Diag.Line("scan: " + root + " -> " + (files.Count - before) + " sets in "
@@ -335,7 +339,7 @@ namespace AbletonManager
                             && cached.Size == fi.Length
                             && cached.Modified == fi.LastWriteTimeUtc)
                         {
-                            entry = cached;          // файл не менялся — берём из кеша
+                            entry = cached;          // the file has not changed — we take it from the cache
                         }
                         else
                         {
@@ -358,16 +362,17 @@ namespace AbletonManager
             }
             catch (OperationCanceledException) { }
 
-            // Собираем в свой список и публикуем его одним присваиванием в самом конце —
-            // до этого момента поток интерфейса продолжает спокойно читать прежний
-            // каталог. См. комментарий у Sets.
+            // We assemble into a list of our own and publish it with a single assignment at the
+            // very end — until that moment the UI thread carries on reading the previous
+            // catalog in peace. See the comment on Sets.
             List<SetEntry> fresh = new List<SetEntry>(total);
             foreach (SetEntry e in results) if (e != null) fresh.Add(e);
 
-            // Рендеры — свойство папки, а не сета, поэтому идёт отдельным проходом и не
-            // попадает в кеш: экспорт нового файла не меняет .als. Заодно запоминаем их
-            // имена — RenderScan.Find уже даёт ровно ту выборку, что и предпрослушка
-            // (без Samples и служебных папок), и по ней потом ищет MatchesSet.
+            // Renders are a property of the folder rather than of the set, so they go in a
+            // separate pass and do not get into the cache: exporting a new file does not change
+            // the .als. We also remember their names — RenderScan.Find already gives exactly
+            // the selection the preview uses (without Samples and the housekeeping folders),
+            // and MatchesSet searches through it afterwards.
             try
             {
                 Parallel.ForEach(fresh, po, delegate (SetEntry e)
@@ -381,28 +386,28 @@ namespace AbletonManager
             }
             catch (OperationCanceledException) { }
 
-            // История копится поверх уже известной, а не собирается заново: Live
-            // держит только десять последних копий на сет — см. Activity.
+            // The history accumulates on top of what is already known rather than being
+            // rebuilt: Live keeps only the last ten copies per set — see Activity.
             Activity known = History.Total > 0 ? History : Activity.LoadCache();
             Activity activity = WeighProjects(fresh, po, cancel, known);
 
-            _sets = fresh;                 // <- отсюда каталог виден интерфейсу целиком
+            _sets = fresh;                 // <- from here the catalog is visible to the interface whole
             History = activity;
             activity.SaveCache();
-            _knownVendors = null;          // состав вендоров зависит от набора сетов
+            _knownVendors = null;          // the set of vendors depends on the set of sets
             SaveCache();
             RefreshInstalled();
             if (progress != null) progress(fresh.Count, total, "");
         }
 
         /// <summary>
-        /// Одна строка на папку. У проекта обычно лежит рядом с десяток .als — v1, v2,
-        /// final, final2, — и в каталоге они занимают десять строк, хотя проект один.
-        /// Оставляем самый свежий, остальные прячем под него, а сколько спрятано —
-        /// пишем ему в CollapsedCount.
+        /// One row per folder. A project usually has a dozen .als files lying next to each
+        /// other — v1, v2, final, final2 — and in the catalog they take ten rows although the
+        /// project is one. We keep the newest and hide the rest under it, writing how many are
+        /// hidden into its CollapsedCount.
         ///
-        /// Схлопываем ПОСЛЕ фильтров и поиска, а не до: иначе запрос по плагину,
-        /// который остался только в старой версии, не нашёл бы вообще ничего.
+        /// We collapse AFTER the filters and the search, not before: otherwise a query for a
+        /// plugin that survives only in an older version would find nothing at all.
         /// </summary>
         public static List<SetEntry> CollapseByFolder(List<SetEntry> matched)
         {
@@ -425,7 +430,7 @@ namespace AbletonManager
                 SetEntry was = order[i];
                 if (s.Modified > was.Modified)
                 {
-                    s.CollapsedCount = was.CollapsedCount + 1;   // счётчик переезжает к новому главному
+                    s.CollapsedCount = was.CollapsedCount + 1;   // the counter moves to the new principal one
                     was.CollapsedCount = 0;
                     order[i] = s;
                 }
@@ -435,8 +440,8 @@ namespace AbletonManager
         }
 
         /// <summary>
-        /// Все сеты из той же папки, свежие сверху, — включая сам переданный. Нужно
-        /// панели сведений: под схлопнутой строкой должно быть видно, что там спрятано.
+        /// Every set from the same folder, newest first — including the one passed in. The
+        /// details panel needs it: what is hidden under a collapsed row has to be visible.
         /// </summary>
         public List<SetEntry> InSameFolder(SetEntry s)
         {
@@ -451,9 +456,9 @@ namespace AbletonManager
         }
 
         /// <summary>
-        /// Вес папки каждого проекта. Считаем по РАЗНЫМ папкам, а не по сетам: в одной
-        /// папке проекта обычно лежит с десяток версий .als, и обходить её ради каждой
-        /// значило бы перечитать одно и то же дерево десять раз.
+        /// The folder weight of each project. We count by DISTINCT folders rather than by sets:
+        /// one project folder usually holds a dozen .als versions, and walking it for each
+        /// would mean re-reading the same tree ten times.
         /// </summary>
         static Activity WeighProjects(List<SetEntry> sets, ParallelOptions po,
                                       CancellationToken cancel, Activity known)
@@ -486,8 +491,8 @@ namespace AbletonManager
                 e.ProjectFiles = weights[i].Files;
             }
 
-            // История сохранений приезжает тем же обходом: копии в Backup он и так
-            // перечисляет, считая вес папки.
+            // The save history arrives by the same walk: it enumerates the copies in Backup
+            // anyway while counting the folder weight.
             return Activity.Build(dirs, weights, sets, known);
         }
 
@@ -512,9 +517,9 @@ namespace AbletonManager
             e.ScaleIndex = info.ScaleIndex;
             e.Tracks = info.TotalTracks;
 
-            // Один и тот же плагин встречается в сете многократно, и путь браузера есть
-            // не у каждой копии. Берём первый непустой, но надёжный источник (VST3/AU)
-            // всегда перебивает имя папки браузера.
+            // One and the same plugin occurs in a set many times over, and not every copy has a
+            // browser path. We take the first non-empty one, but a reliable source (VST3/AU)
+            // always beats a browser folder name.
             SortedDictionary<string, PluginRef> plugins =
                 new SortedDictionary<string, PluginRef>(StringComparer.OrdinalIgnoreCase);
             foreach (PluginRef p in info.Plugins)
@@ -547,14 +552,16 @@ namespace AbletonManager
             }
 
             string dir = Path.GetDirectoryName(file);
-            // Считаем РАЗНЫЕ файлы, а не вхождения: один сэмпл, разрезанный на сотню
-            // клипов, даёт сотню FileRef — и раньше колонка Files показывала именно их.
+            // We count DISTINCT files rather than occurrences: one sample chopped into a
+            // hundred clips gives a hundred FileRefs — and the Files column used to show
+            // exactly those.
             HashSet<string> seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             int missing = 0, real = 0;
             foreach (FileRefInfo fr in info.Files)
             {
-                // Считаем только сэмплы клипов. Пресеты и рэки Ableton встраивает в сет,
-                // их FileRef — лишь память о происхождении, файл для открытия не нужен.
+                // We count only clip samples. Ableton embeds presets and racks into the set,
+                // and their FileRef is only a memory of provenance — no file is needed to open
+                // it.
                 if (!fr.IsSampleDependency) continue;
                 ResolvedRef rr = RefResolver.Resolve(fr, dir, Env);
                 if (rr.Status == RefStatus.Empty) continue;
@@ -567,7 +574,8 @@ namespace AbletonManager
             return e;
         }
 
-        /// <summary>Ближайшая вверх папка «* Project», иначе просто имя родительской папки.</summary>
+        /// <summary>The nearest "* Project" folder above, otherwise simply the parent folder's
+        /// name.</summary>
         static string ProjectNameOf(string file)
         {
             try
@@ -585,13 +593,14 @@ namespace AbletonManager
         }
 
         /// <summary>
-        /// Собрать сеты одного корня. Один и тот же .als легко попадается дважды, если
-        /// корни вложены друг в друга, — от этого спасает общий seen.
+        /// Collect the sets of one root. One and the same .als turns up twice easily when roots
+        /// are nested inside each other — the shared seen guards against that.
         ///
-        /// По ходу дела дёргает progress: обход большой папки (D:\Music — двадцать тысяч
-        /// каталогов) идёт секунды, а на холодном диске и минуты, и всё это время до
-        /// разбора сетов дело ещё не дошло. Без этих отчётов окно молчало «Scanning 0 / 0»
-        /// и выглядело так, будто добавленную папку оно просто не смотрит.
+        /// Along the way it pulls progress: walking a large folder (D:\Music — twenty thousand
+        /// directories) takes seconds, and on a cold disk minutes, and all that time parsing
+        /// the sets has not even begun. Without those reports the window sat silent on
+        /// "Scanning 0 / 0" and looked as though it simply was not looking at the folder that
+        /// had been added.
         /// </summary>
         static FolderScan.Result Collect(string dir, List<string> files, HashSet<string> seen,
                                          ScanProgress progress, CancellationToken cancel)
@@ -601,13 +610,14 @@ namespace AbletonManager
                 {
                     if (!seen.Add(f)) return;
                     files.Add(f);
-                    // total = 0 — «сколько всего, ещё неизвестно»; см. MainForm.CountText.
+                    // total = 0 means "how many there are in total is not known yet"; see
+                    // MainForm.CountText.
                     if (progress != null && files.Count % 16 == 0) progress(files.Count, 0, f);
                 },
                 delegate { return cancel.IsCancellationRequested; });
         }
 
-        // ------------------------------------------------------------------ кеш
+        // ------------------------------------------------------------------- cache
 
         Dictionary<string, SetEntry> LoadCache()
         {
@@ -696,21 +706,21 @@ namespace AbletonManager
                 if (File.Exists(CachePath)) File.Delete(CachePath);
                 File.Move(tmp, CachePath);
             }
-            catch { /* кеш — не критично, в худшем случае пересканируем */ }
+            catch { /* the cache is not critical - worst case we rescan */ }
         }
 
-        // -------------------------------------------------------------- установленное
+        // ------------------------------------------------------------- what is installed
 
         /// <summary>
-        /// Перечитывает базу установленных плагинов и проставляет каждому сету, скольких
-        /// плагинов ему не хватает. Дёшево (один текстовый файл), поэтому вызывается и
-        /// после сканирования, и по кнопке — набор плагинов меняется без правки сетов.
+        /// Re-reads the database of installed plugins and marks each set with how many plugins
+        /// it is missing. Cheap (one text file), so it is called both after a scan and from the
+        /// button — the set of plugins changes without the sets being edited.
         /// </summary>
         public void RefreshInstalled()
         {
             Inventory = PluginInventory.Load();
-            _knownVendors = null;      // список вендоров зависит и от установленного
-            _usage = null;             // и сводка по плагинам: совпадения считаются по нему
+            _knownVendors = null;      // the vendor list depends on what is installed too
+            _usage = null;             // and the plugin summary: matches are counted by it
             foreach (SetEntry e in _sets)
             {
                 int missing = 0;
@@ -729,8 +739,8 @@ namespace AbletonManager
             h.InstalledTotal = Inventory.All.Count;
             foreach (InstalledPlugin p in Inventory.All) if (p.FileMissing) h.FilesGone++;
 
-            // Считаем по тем же строкам, которые видно в списке: два разных подсчёта
-            // одного и того же неизбежно разъезжаются.
+            // We count by the same rows that are visible in the list: two separate counts of
+            // one and the same thing inevitably drift apart.
             foreach (PluginStat st in usage)
             {
                 if (st.IsUnused) { h.InstalledUnused++; continue; }
@@ -746,8 +756,8 @@ namespace AbletonManager
         HashSet<string> _knownVendors;
 
         /// <summary>
-        /// Имена, которые хотя бы раз встретились как настоящий вендор (форма
-        /// VST3:Вендор:Имя или поле Manufacturer у AU).
+        /// The names that have turned up at least once as a genuine vendor (the
+        /// VST3:Vendor:Name form, or an AU's Manufacturer field).
         /// </summary>
         public HashSet<string> KnownVendors
         {
@@ -757,8 +767,8 @@ namespace AbletonManager
                 {
                     _knownVendors = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
-                    // Вендоры из базы Live — источник вне подозрений: если «Arturia»
-                    // там есть, то и папка браузера с таким именем не выдумка.
+                    // Vendors from Live's database are a source above suspicion: if "Arturia"
+                    // is there, then a browser folder by that name is no invention either.
                     foreach (InstalledPlugin p in Inventory.All)
                         if (p.Vendor.Length > 0) _knownVendors.Add(p.Vendor);
 
@@ -773,10 +783,10 @@ namespace AbletonManager
         }
 
         /// <summary>
-        /// У VST2 в пути браузера лежит папка, а не разработчик, и в коллекции,
-        /// разложенной по папкам, оттуда прилетает «Eff» или «Gen». Поэтому ненадёжное
-        /// имя принимаем, только если оно где-то подтверждено как настоящий вендор —
-        /// «Arturia» пройдёт, «Eff» нет. Иначе честнее оставить пусто.
+        /// For VST2 the browser path holds a folder rather than a developer, and in a
+        /// collection sorted into folders "Eff" or "Gen" comes flying out of it. So we accept
+        /// an unreliable name only if it has been confirmed somewhere as a genuine vendor —
+        /// "Arturia" passes, "Eff" does not. Otherwise leaving it empty is more honest.
         /// </summary>
         public string AcceptVendor(string vendor, bool confident)
         {
@@ -786,19 +796,20 @@ namespace AbletonManager
         }
 
         volatile List<PluginStat> _usage;
-        volatile List<SetEntry> _usageOf;   // по какому снимку Sets собран _usage
+        volatile List<SetEntry> _usageOf;   // which snapshot of Sets _usage was built from
 
         /// <summary>
-        /// Сводка по плагинам: имя, разработчик, в скольких сетах встречается и стоит ли
-        /// он на машине. В список попадает и то, что установлено, но не используется
-        /// нигде — иначе такие плагины никак не найти.
+        /// A summary of the plugins: the name, the developer, how many sets it occurs in and
+        /// whether it is on the machine. What is installed but used nowhere gets into the list
+        /// too — otherwise such plugins cannot be found at all.
         ///
-        /// Результат запоминается. Обход тут — все сеты на все их плагины, плюс словари,
-        /// сверка с базой Live и сортировка; на тысяче сетов это десятки тысяч шагов, а
-        /// зовут его на КАЖДУЮ перерисовку вкладки плагинов, то есть на каждую букву,
-        /// набранную в поиске. Сам ответ при этом меняется ровно от двух вещей: сменился
-        /// набор сетов или перечитали установленное. Первое ловим по ссылке на список
-        /// (Scan публикует новый), второе — сбросом из RefreshInstalled.
+        /// The result is remembered. The walk here is every set against every one of its
+        /// plugins, plus dictionaries, a cross-check against Live's database and a sort; on a
+        /// thousand sets that is tens of thousands of steps, and it is called on EVERY repaint
+        /// of the plugins tab, that is, on every letter typed into the search. The answer
+        /// itself, meanwhile, changes from exactly two things: the set of sets changed, or what
+        /// is installed was re-read. The first we catch by the reference to the list (Scan
+        /// publishes a new one), the second by a reset from RefreshInstalled.
         /// </summary>
         public List<PluginStat> PluginUsage()
         {
@@ -827,8 +838,8 @@ namespace AbletonManager
                     st.Sets++;
                     if (st.Uid.Length == 0 && i < e.PluginUids.Length) st.Uid = e.PluginUids[i] ?? "";
 
-                    // Разработчик известен не в каждом сете. Надёжный источник (VST3/AU)
-                    // вытесняет ранее найденное имя папки браузера.
+                    // The developer is not known in every set. A reliable source (VST3/AU)
+                    // displaces a browser folder name found earlier.
                     bool conf = rawConf;
                     if (!string.IsNullOrEmpty(vendor)
                         && (st.Vendor.Length == 0 || (conf && !st.VendorConfident)))
@@ -838,8 +849,8 @@ namespace AbletonManager
                     }
                 }
 
-            // Сверяем с установленным и берём оттуда вендора: у Live он настоящий, а
-            // путь браузера у VST2 подсовывает имя папки вроде «Eff».
+            // We cross-check against what is installed and take the vendor from there: Live's
+            // is genuine, while a VST2's browser path slips in a folder name like "Eff".
             foreach (PluginStat st in use.Values)
             {
                 PluginMatch m = Inventory.Match(st.Uid, st.Name);
@@ -852,10 +863,10 @@ namespace AbletonManager
                 }
             }
 
-            // Установленное, но не встреченное ни в одном сете — кандидаты на снос.
-            // «Встречено» считаем по тем же признакам, что и совпадение вообще: один и
-            // тот же плагин у Live заведён и как VST2, и как VST3, и если сет просит
-            // VST2-версию, то VST3-близнец тоже используется, а не простаивает.
+            // Installed but met in no set at all — candidates for removal. "Met" is counted by
+            // the same signs as a match in general: one and the same plugin is registered by
+            // Live both as VST2 and as VST3, and if a set asks for the VST2 version then the
+            // VST3 twin is in use too rather than idle.
             HashSet<string> usedUids = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             HashSet<string> usedNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             foreach (PluginStat st in use.Values)
@@ -871,7 +882,7 @@ namespace AbletonManager
                 if (usedNames.Contains(PluginInventory.Normalize(p.Vendor + p.Name))) continue;
 
                 string key = p.Name;
-                while (use.ContainsKey(key)) key = key + " ";   // имя занято другим плагином
+                while (use.ContainsKey(key)) key = key + " ";   // the name is taken by another plugin
                 PluginStat st2 = new PluginStat();
                 st2.Name = p.Name;
                 st2.Vendor = p.Vendor;
@@ -890,8 +901,8 @@ namespace AbletonManager
                 return c != 0 ? c : string.Compare(a.Name, b.Name, StringComparison.OrdinalIgnoreCase);
             });
 
-            // Порядок важен: сперва «из чего собрано», потом сам ответ — иначе
-            // читатель успеет увидеть новый список рядом со старой пометкой.
+            // The order matters: first "what it was built from", then the answer itself —
+            // otherwise a reader would manage to see the new list next to the old marker.
             _usageOf = sets;
             _usage = list;
             return list;

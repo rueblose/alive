@@ -10,75 +10,80 @@ using Timer = System.Windows.Forms.Timer;
 namespace AbletonManager
 {
     /// <summary>
-    /// Главная страница: проекты плитками с превью аранжировки, как стартовый экран
-    /// DaVinci Resolve. Смысл не в аналитике, а в узнавании — по картинке аранжировки
-    /// сет вспоминается быстрее, чем по имени в таблице.
+    /// The home page: projects as tiles with arrangement previews, like DaVinci Resolve's start
+    /// screen. The point is not analytics but recognition — a set comes back to mind faster
+    /// from the picture of its arrangement than from a name in a table.
     /// </summary>
     public sealed class HomeView : GlassControl
     {
         public ProjectIndex Index;
         public ArrangementLoader Loader;
 
-        public event Action<SetEntry> Activated;       // двойной клик — открыть в Live
+        public event Action<SetEntry> Activated;       // double click — open in Live
         public event Action<SetEntry> PlayRequested;
         public event Action<SetEntry> RevealRequested;
-        public event Action<SetEntry> DetailsRequested; // ПКМ → уйти к сету во вкладку Sets
-        public event Action<SetEntry> RescueRequested;  // ПКМ → помощник по восстановлению
-        public event Action<SetEntry> NotesRequested;   // клик по значку тегов — редактор тегов
-        public event Action NewProjectRequested;       // первая карточка в Recent
+        public event Action<SetEntry> DetailsRequested; // right click → go to the set on the Sets tab
+        public event Action<SetEntry> RescueRequested;  // right click → the rescue helper
+        public event Action<SetEntry> NotesRequested;   // a click on the tags glyph — the tag editor
+        public event Action NewProjectRequested;       // the first card in Recent
 
         public SetFilter SetFilter;
 
-        /// <summary>Фильтр из общего поля поиска — по имени сета и названию папки.</summary>
+        /// <summary>The filter from the shared search field — by set name and folder
+        /// name.</summary>
         public string Filter = "";
 
-        /// <summary>Одна плитка на папку, а не на каждую версию сета. См. настройки.</summary>
+        /// <summary>One tile per folder rather than per version of a set. See the
+        /// settings.</summary>
         public bool GroupByFolder = true;
 
         /// <summary>
-        /// Закреплённые — наверх списка. Тот же переключатель, что звёздочка в шапке
-        /// таблицы: вид разный, а вопрос один, и держать под него две настройки значило
-        /// бы, что на одной вкладке закреплено, а на другой нет.
+        /// Pinned ones to the top of the list. The same switch as the star in the table header:
+        /// the view differs but the question is one, and keeping two settings for it would mean
+        /// pinned on one tab and not on the other.
         /// </summary>
         public bool PinnedFirst;
         public event Action PinnedFirstToggled;
 
         /// <summary>
-        /// Сводка над списком. Стоит внутри прокрутки, поэтому не контрол, а рисовалка:
-        /// раскладку у неё просим сами, мышь пересылаем сами — см. OverviewPanel.
+        /// The summary above the list. It stands inside the scroll, so it is not a control but
+        /// a painter: we ask it for a layout ourselves and forward the mouse ourselves — see
+        /// OverviewPanel.
         /// </summary>
         public readonly OverviewPanel Overview = new OverviewPanel();
 
-        /// <summary>Пользователь свернул сводку или переключил в ней срок — надо запомнить.</summary>
+        /// <summary>The user collapsed the summary or switched the span in it — worth
+        /// remembering.</summary>
         public event Action OverviewStateChanged;
 
         const int PinnedMax = 16;
 
-        // Рамка вокруг картинки внутри превью и сама картинка внутри рамки — снизу
-        // рамка идёт вплотную к тексту (без своего отступа), поэтому итоговый зазор от
-        // t.Thumb до настоящего края картинки справа/сверху и снизу разный. Кнопка play
-        // должна отступать от самой картинки, а не от рамки, — иначе от одного края её
-        // видимый отступ, от другого нет.
+        // The frame around the picture inside a preview, and the picture inside the frame — at
+        // the bottom the frame runs flush with the text (with no inset of its own), so the
+        // resulting gap from t.Thumb to the real edge of the picture differs on the right, the
+        // top and the bottom. The play button has to be inset from the picture itself rather
+        // than from the frame — otherwise its visible inset is there on one edge and absent on
+        // the other.
         const int ThumbInset = 8;
         const int PicInset = 4;
 
-        // Превью держим готовыми картинками фиксированного размера, а не разобранными
-        // аранжировками: у большого сета сотни тысяч нот, и десяток таких в памяти —
-        // это десятки мегабайт. Картинку же можно просто отмасштабировать под плитку
-        // любого размера, поэтому перечитывать сет при изменении окна не нужно.
+        // We keep previews as finished pictures of a fixed size rather than as parsed
+        // arrangements: a large set has hundreds of thousands of notes, and a dozen of those in
+        // memory is tens of megabytes. A picture, on the other hand, can simply be scaled to a
+        // tile of any size, so there is no need to re-read the set when the window changes.
         const int ThumbW = 512, ThumbH = 288;
 
         /// <summary>
-        /// Потолок на картинки в памяти. Одна — 512×288×4 = 576 КБ, и без него на
-        /// библиотеке в тысячу проектов это полгигабайта: «Показать все» прокручивают до
-        /// конца, и каждая увиденная плитка оставалась бы в памяти навсегда.
+        /// A cap on the pictures in memory. One is 512×288×4 = 576 KB, and without it a library
+        /// of a thousand projects is half a gigabyte: "Show all" gets scrolled to the end, and
+        /// every tile seen would stay in memory forever.
         ///
-        /// Потолок обязан быть НЕ МЕНЬШЕ, чем плиток в полосе, которую OnPaint успевает
-        /// запросить (видимое плюс по экрану сверху и снизу). Иначе полоса не влезает
-        /// в себя же: плитки вытесняют друг друга, следующая отрисовка запрашивает их
-        /// заново, и круг «загрузил — вытеснил — загрузил» забивает поток интерфейса
-        /// так, что колесо мыши перестаёт прокручивать. Ловится это только на широком
-        /// окне с большой библиотекой, поэтому считаем от раскладки, а не числом.
+        /// The cap has to be NO SMALLER than the tiles in the band OnPaint manages to request
+        /// (the visible ones plus a screen above and below). Otherwise the band does not fit
+        /// into itself: tiles displace each other, the next repaint requests them again, and
+        /// the "loaded — displaced — loaded" circle jams the UI thread so badly that the mouse
+        /// wheel stops scrolling. This only shows up on a wide window with a large library, so
+        /// we compute it from the layout rather than as a number.
         /// </summary>
         int _thumbBudget = MinThumbs;
         const int MinThumbs = 64;
@@ -86,29 +91,29 @@ namespace AbletonManager
         readonly Dictionary<string, Bitmap> _thumbs =
             new Dictionary<string, Bitmap>(StringComparer.OrdinalIgnoreCase);
 
-        // Когда картинку последний раз рисовали: по этому счётчику выбираем, кого
-        // вытеснить. Видимые плитки отмечаются на каждом кадре, поэтому вытесняется
-        // всегда что-то давно уехавшее за край.
+        // When a picture was last drawn: we choose who to displace by this counter. Visible
+        // tiles are marked on every frame, so what gets displaced is always something that went
+        // off the edge long ago.
         readonly Dictionary<string, int> _thumbUsed =
             new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
         int _thumbClock;
 
-        // Прэ-масштабированные превью: DrawImage по размеру плитки на каждый кадр при
-        // прокрутке — дорогая операция (20 rescale/frame при HQ-интерполяции). Здесь
-        // держим уже отмасштабированные копии, сбрасываем при ресайзе окна.
+        // Pre-scaled previews: a DrawImage to the tile size on every frame while scrolling is
+        // an expensive operation (20 rescales per frame with HQ interpolation). Here we keep
+        // already-scaled copies and drop them when the window is resized.
         readonly Dictionary<string, Bitmap> _scaledThumbs =
             new Dictionary<string, Bitmap>(StringComparer.OrdinalIgnoreCase);
         Size _scaledSize;
 
-        /// <summary>true во время анимации прокрутки — OnPaint использует упрощённый
-        /// рендер (PaintGlassSurfaceFast, NearestNeighbor, пропускает декоративные
-        /// элементы вроде обводок и бликов).</summary>
+        /// <summary>true while the scroll is animating — OnPaint then uses simplified rendering
+        /// (PaintGlassSurfaceFast, NearestNeighbor, skipping decorative elements such as
+        /// outlines and highlights).</summary>
         bool _scrolling { get { return _scroller != null && _scroller.IsActive; } }
 
-        // Очередь превью ведём сами: загрузчик отдаёт ответы всем подписчикам разом и
-        // не знает, что из этого нужно именно нам. В работе держим несколько штук —
-        // разбор сета целиком процессорный, и на одном потоке два десятка плиток
-        // заполняются больше трёх секунд.
+        // We run the preview queue ourselves: the loader gives its answers to every subscriber
+        // at once and does not know which of them we actually need. We keep several in flight —
+        // parsing a set is pure CPU, and on one thread two dozen tiles take over three seconds
+        // to fill.
         const int MaxInFlight = 3;
 
         readonly List<string> _queue = new List<string>();
@@ -120,14 +125,14 @@ namespace AbletonManager
         sealed class Tile
         {
             public SetEntry Set;
-            public Rectangle Bounds;      // без учёта прокрутки
+            public Rectangle Bounds;      // without the scroll
             public Rectangle Thumb;
             public Rectangle Play;
             public Rectangle Pin;
-            public Rectangle TagBox;      // значок тегов слева вверху превью
-            public string TagText = "";   // теги через «, »; пусто — значка нет
+            public Rectangle TagBox;      // the tags glyph at the top left of the preview
+            public string TagText = "";   // the tags joined by ", "; empty means no glyph
             public bool HasPlay;
-            public bool IsNewProject;     // первая карточка в Recent — «New Live Set»
+            public bool IsNewProject;     // the first card in Recent — "New Live Set"
             public string Subtitle;
 
             public float AnimX;
@@ -145,7 +150,7 @@ namespace AbletonManager
             public string Note;
             public Rectangle Bounds;
             public int NoteShift;
-            public Rectangle Star;      // пусто — звёздочки у заголовка нет
+            public Rectangle Star;      // empty means the heading has no star
 
             public float AnimY;
             public float TargetY;
@@ -168,10 +173,11 @@ namespace AbletonManager
         int _hot = -1;
         bool _playHot, _pinHot;
 
-        /// <summary>Курсор на звёздочке заголовка — она подсвечивается.</summary>
+        /// <summary>The cursor is on the heading's star — it lights up.</summary>
         bool _headStarHot;
 
-        /// <summary>Курсор на значке тегов плитки _hot — тогда под ним всплывают сами теги.</summary>
+        /// <summary>The cursor is on the tags glyph of the _hot tile — the tags themselves then
+        /// pop up under it.</summary>
         bool _tagsHot;
         SetEntry _selected;
 
@@ -199,7 +205,7 @@ namespace AbletonManager
             "fresh project, same chords",
             "you finished the old ones?",
             "give me flowjob",
-            "газ",
+            "gas gas gas",
             "i hate midtempo",
             "LUFSMAXXING+MOOGING",
             "no red meter = bad mix"
@@ -383,12 +389,13 @@ namespace AbletonManager
             return parentStill || anim;
         }
 
-        /// <summary>Выделена карточка «New Live Set» — у неё нет своего SetEntry.</summary>
+        /// <summary>The "New Live Set" card is selected — it has no SetEntry of its
+        /// own.</summary>
         bool _newSelected;
 
-        /// <summary>Что сейчас загружено в плеер (необязательно играет — см. Playing) —
-        /// тот же приём, что и PlayingTag у RowListView: сравниваем по ссылке на
-        /// SetEntry, а не по пути.</summary>
+        /// <summary>What is currently loaded into the player (not necessarily playing — see
+        /// Playing) — the same device as PlayingTag in RowListView: we compare by the SetEntry
+        /// reference rather than by path.</summary>
         public object PlayingTag
         {
             get { return _playingTag; }
@@ -396,7 +403,7 @@ namespace AbletonManager
         }
         object _playingTag;
 
-        /// <summary>Плеер сейчас действительно звучит, а не на паузе.</summary>
+        /// <summary>The player is really sounding right now rather than paused.</summary>
         public bool Playing
         {
             get { return _playing; }
@@ -405,9 +412,9 @@ namespace AbletonManager
         bool _playing;
 
         /// <summary>
-        /// Пока звучит — подписываем плитку на общий пульс, чтобы столбики шевелились.
-        /// Перерисовываем не весь экран, а уголок превью: играющая плитка ездит с
-        /// прокруткой, поэтому прямоугольник считается заново на каждый тик.
+        /// While it sounds, we subscribe the tile to the shared pulse so the bars move. We
+        /// repaint not the whole screen but the corner of the preview: the playing tile travels
+        /// with the scroll, so the rectangle is recomputed on every tick.
         /// </summary>
         void SyncPulse()
         {
@@ -424,7 +431,7 @@ namespace AbletonManager
             {
                 Tile t = _tiles[i];
                 if (t.Set == null || !ReferenceEquals(t.Set, _playingTag)) continue;
-                if (!t.HasPlay) return Rectangle.Empty;   // пульс живёт в кнопке play
+                if (!t.HasPlay) return Rectangle.Empty;   // the pulse lives in the play button
                 int dx = (int)Math.Round(t.AnimX) - t.Bounds.X;
                 int dy = (int)Math.Round(t.AnimY) - t.Bounds.Y - (_scroll + over);
                 return new Rectangle(t.Play.X + dx, t.Play.Y + dy, t.Play.Width, t.Play.Height);
@@ -441,8 +448,9 @@ namespace AbletonManager
                 delegate (int s) { _scroll = s; _scrollCurrent = s; ClampScroll(); },
                 delegate { return Math.Max(0, _contentHeight - Height); });
 
-            // Свернули сводку — плитки не влетают заново, а переезжают на освободившееся
-            // место: видно, что подвинулось именно оно, а список остался тем же.
+            // The summary was collapsed — the tiles do not fly in again but move up into the
+            // freed space: it is visible that it was the space that moved while the list stayed
+            // the same.
             Overview.LayoutChanged += delegate { RebuildTransition(); };
             Overview.Repaint += delegate { Invalidate(); };
             Overview.StateChanged += delegate
@@ -451,14 +459,14 @@ namespace AbletonManager
             };
         }
 
-        // ------------------------------------------------------------- содержимое
+        // ------------------------------------------------------------------ content
 
         public void Rebuild() { Rebuild(true); }
 
         /// <summary>
-        /// animate=false — пересобрать, не запуская заново появление плиток. Нужно набору
-        /// в поиске: там пересборка идёт на каждую букву, и сетка всё время заново
-        /// «влетала» снизу, вместо того чтобы просто отфильтроваться.
+        /// animate=false — rebuild without starting the tile entrance again. Typing in the
+        /// search needs it: there the rebuild happens on every letter, and the grid kept
+        /// "flying in" from below instead of simply being filtered.
         /// </summary>
         public void Rebuild(bool animate)
         {
@@ -467,8 +475,8 @@ namespace AbletonManager
         }
 
         /// <summary>
-        /// Плавная анимация перестроения: плитки плавно съезжают на новые места,
-        /// лишние исчезают, новые проявляются. Применяется при закреплении и откреплении сетов.
+        /// A smooth rebuild animation: the tiles glide to their new places, the surplus
+        /// disappear and the new ones fade in. Used when sets are pinned and unpinned.
         /// </summary>
         public void RebuildTransition()
         {
@@ -476,9 +484,10 @@ namespace AbletonManager
             Invalidate();
         }
 
-        /// <summary>Сколько плиток с проектами сейчас на экране — для счётчика в шапке.
-        /// Отдельно от VisibleSets(), который собирает список: счётчик спрашивают на
-        /// каждой перерисовке окна, и строить ради него список незачем.</summary>
+        /// <summary>How many project tiles are on screen right now — for the counter in the
+        /// header. Kept apart from VisibleSets(), which assembles a list: the counter is asked
+        /// for on every repaint of the window, and building a list for it would be
+        /// pointless.</summary>
         public int VisibleCount
         {
             get
@@ -490,10 +499,9 @@ namespace AbletonManager
         }
 
         /// <summary>
-        /// Сеты в том порядке, в каком они лежат на экране: сперва закреплённые — в
-        /// порядке закрепления, а не по дате, — потом недавние. Нужен плееру: «дальше»
-        /// в мини-транспорте должно идти туда же, куда ведёт глаз, а не в какой-то
-        /// свой внутренний порядок.
+        /// The sets in the order they lie on screen: the pinned first — in pin order rather
+        /// than by date — then the recent. The player needs it: "next" in the mini transport
+        /// has to go where the eye goes, not into some internal order of its own.
         /// </summary>
         public event EventHandler SelectionChanged;
 
@@ -511,13 +519,15 @@ namespace AbletonManager
         }
 
         /// <summary>
-        /// Перемещение выделения с клавиатуры. По горизонтали — просто по порядку
-        /// плиток; по вертикали — геометрически, в ближайшую плитку соседнего ряда под
-        /// тем же X. Прыжок «на ширину сетки» тут не годится: ряды разной длины и
-        /// разделены заголовками секций, и на стыке Recent и All он промахивался бы.
+        /// Moving the selection from the keyboard. Horizontally simply by tile order;
+        /// vertically geometrically, into the nearest tile of the neighbouring row under the
+        /// same X. A jump "by the grid width" will not do here: the rows are of different
+        /// lengths and separated by section headings, and at the junction of Recent and All it
+        /// would miss.
         ///
-        /// true и когда двигаться некуда — на краю сетки клавишу всё равно съедаем,
-        /// иначе она уйдёт в навигацию по фокусу и выделение уедет из каталога.
+        /// true even when there is nowhere to move — at the edge of the grid we swallow the key
+        /// all the same, or it goes into focus navigation and the selection drives out of the
+        /// catalog.
         /// </summary>
         public bool MoveSelection(int dx, int dy)
         {
@@ -545,7 +555,7 @@ namespace AbletonManager
             {
                 Rectangle b = _tiles[i].Bounds;
                 if (dy > 0 ? b.Y <= from.Y : b.Y >= from.Y) continue;
-                // Сперва ближайший ряд, и только внутри него — ближайшая колонка.
+                // The nearest row first, and only within it the nearest column.
                 long score = (long)Math.Abs(b.Y - from.Y) * 100000 + Math.Abs(b.X - from.X);
                 if (score < bestScore) { bestScore = score; best = i; }
             }
@@ -559,8 +569,8 @@ namespace AbletonManager
             EnsureTileVisible(_tiles[i].Bounds);
         }
 
-        /// <summary>Программное выделение плитки — например, кубиком случайного сета.
-        /// В отличие от простого присваивания Selected, ещё и скроллит к ней.</summary>
+        /// <summary>Selecting a tile programmatically — from the random-set die, for instance.
+        /// Unlike a plain assignment to Selected, it also scrolls to it.</summary>
         public void Select(SetEntry s)
         {
             for (int i = 0; i < _tiles.Count; i++)
@@ -587,7 +597,8 @@ namespace AbletonManager
             Invalidate();
         }
 
-        /// <summary>Меню выбранной плитки — для клавиши вызова меню на клавиатуре.</summary>
+        /// <summary>The menu of the selected tile — for the context menu key on the
+        /// keyboard.</summary>
         public bool ShowMenuForSelected()
         {
             if (_selected == null) return false;
@@ -617,8 +628,8 @@ namespace AbletonManager
             if (s.Name.IndexOf(q, StringComparison.CurrentCultureIgnoreCase) >= 0) return true;
             if (s.Place.IndexOf(q, StringComparison.CurrentCultureIgnoreCase) >= 0) return true;
 
-            // Рендер — то же самое «имя проекта» для человека, который ищет по звуку,
-            // а не по названию сета. Та же выборка, что у предпрослушки (без Samples).
+            // A render is the same "project name" for somebody searching by sound rather than
+            // by a set's name. The same selection as the preview uses (without Samples).
             foreach (string r in s.RenderNames)
                 if (r.IndexOf(q, StringComparison.CurrentCultureIgnoreCase) >= 0) return true;
             return false;
@@ -629,8 +640,8 @@ namespace AbletonManager
             List<SetEntry> result = new List<SetEntry>();
             if (Index == null) return result;
 
-            // Идём по списку закреплений, а не по всем сетам: порядок закрепления —
-            // это и есть порядок на экране, он не должен скакать.
+            // We go by the list of pins rather than by every set: the pin order is the order on
+            // screen and must not jump about.
             foreach (string path in HomeStore.Pins)
             {
                 foreach (SetEntry s in Index.Sets)
@@ -644,10 +655,10 @@ namespace AbletonManager
         }
 
         /// <summary>
-        /// Один список вместо двух секций. Прежние «Pinned» и «Recent» показывали одно и
-        /// то же двумя кучами, и закреплённый проект пропадал из ленты свежих — искать
-        /// его приходилось глазами в другом месте экрана. Теперь лента одна, а
-        /// закрепление либо поднимает наверх, либо остаётся просто пометкой на плитке.
+        /// One list instead of two sections. The former "Pinned" and "Recent" showed the same
+        /// thing as two heaps, and a pinned project vanished from the stream of recent ones —
+        /// it had to be hunted for by eye elsewhere on the screen. Now the stream is one, and
+        /// pinning either lifts a project to the top or remains merely a mark on the tile.
         /// </summary>
         List<SetEntry> Projects()
         {
@@ -661,24 +672,25 @@ namespace AbletonManager
 
             List<SetEntry> pins = Pinned();
 
-            // Закрепили версию, а потом сохранили рядом свежую — старая уходит под
-            // схлопнутую строку, и закрепление молча перестало бы работать. Возвращаем.
+            // A version was pinned and then a fresh one saved next to it — the old one goes
+            // under the collapsed row, and the pin would silently stop working. We bring it
+            // back.
             foreach (SetEntry p in pins)
                 if (!all.Contains(p)) all.Add(p);
 
             all.Sort(delegate (SetEntry a, SetEntry b) { return b.Modified.CompareTo(a.Modified); });
             if (!PinnedFirst || pins.Count == 0) return all;
 
-            // Наверх — в порядке закрепления: он не должен скакать от даты правки.
+            // To the top — in pin order: it must not jump about with the edit date.
             List<SetEntry> ordered = new List<SetEntry>(pins);
             foreach (SetEntry s in all)
                 if (!pins.Contains(s)) ordered.Add(s);
             return ordered;
         }
 
-        // --------------------------------------------------------------- раскладка
+        // ------------------------------------------------------------------ layout
 
-        int Gap { get { return Sc(16); } }   // S4 — тот же шаг, что между строками свойств
+        int Gap { get { return Sc(16); } }   // S4 — the same step as between property rows
 
         void BuildLayout() { BuildLayout(true); }
 
@@ -874,7 +886,8 @@ namespace AbletonManager
             h.Bounds = new Rectangle(0, y, Width, Sc(38));
             int titleW = title.Length > 0 ? TextRenderer.MeasureText(title, Theme.FHead).Width + Sc(12) : 0;
 
-            // Звёздочка сразу за названием, а примечание — за ней: иначе они наезжают.
+            // The star right after the name and the note after it: otherwise they run into each
+            // other.
             int star = Sc(26);
             h.Star = new Rectangle(titleW, h.Bounds.Y + (h.Bounds.Height - star) / 2, star, star);
             h.NoteShift = titleW + star + Sc(6);
@@ -884,8 +897,8 @@ namespace AbletonManager
             _heads.Add(h);
             y += h.Bounds.Height + Sc(16);
 
-            // Первая плитка — всегда «New Live Set»: завести сет отсюда должно быть
-            // ближе, чем найти его среди уже заведённых.
+            // The first tile is always "New Live Set": starting a set from here has to be
+            // closer at hand than finding one among those already started.
             Tile nt = new Tile();
             nt.IsNewProject = true;
             nt.Bounds = new Rectangle(0, y, tileW, tileH);
@@ -914,9 +927,10 @@ namespace AbletonManager
                 string place = t.Set.Place;
                 t.Subtitle = place.Length > 0 ? date + "   ·   " + place : date;
 
-                // Отступы считаем от настоящего края картинки (Thumb минус рамка минус
-                // отступ картинки в рамке), а не от рамки превью, — справа и снизу у
-                // рамки разный внутренний отступ, и от рамки кнопка легла бы криво.
+                // We count the insets from the real edge of the picture (Thumb minus the frame
+                // minus the picture's inset inside the frame) rather than from the preview
+                // frame — on the right and at the bottom the frame has different internal
+                // insets, and measured from the frame the button would sit crooked.
                 int picRight = Sc(ThumbInset + PicInset);
                 int picBottom = Sc(PicInset);
                 int picTop = Sc(ThumbInset + PicInset);
@@ -928,14 +942,14 @@ namespace AbletonManager
                 int pin = Sc(28);
                 t.Pin = new Rectangle(t.Thumb.Right - picRight - margin - pin, t.Thumb.Y + picTop + margin, pin, pin);
 
-                // Значок тегов — зеркально звёздочке: слева картинка отбита от рамки
-                // ровно так же, как справа, поэтому отступ тот же picRight.
+                // The tags glyph mirrors the star: on the left the picture is set off from the
+                // frame exactly as it is on the right, so the inset is the same picRight.
                 t.TagText = ProjectMeta.JoinTags(ProjectMeta.TagsOf(sets[i].ProjectDir));
                 t.TagBox = new Rectangle(t.Thumb.X + picRight + margin, t.Thumb.Y + picTop + margin, pin, pin);
                 _tiles.Add(t);
             }
 
-            int total = slot + sets.Count;   // slot — та самая первая плитка
+            int total = slot + sets.Count;   // slot — that very first tile
             int rows = (total + cols - 1) / cols;
             return y + rows * tileH + (rows - 1) * gap + Sc(18);
         }
@@ -944,10 +958,10 @@ namespace AbletonManager
         {
             base.OnResize(e);
             DropScaledThumbs();
-            // Без анимации: ресайз — это только новая геометрия для того же набора
-            // плиток, не новый контент. С BuildLayout(true) вся сетка переигрывала
-            // fade-in заново на каждый чих, включая появление/скрытие мини-плеера
-            // внизу окна (оно меняет высоту HomeView и приходит именно сюда).
+            // Without animation: a resize is only new geometry for the same set of tiles, not
+            // new content. With BuildLayout(true) the whole grid replayed its fade-in at the
+            // slightest thing, including the mini player appearing and disappearing at the
+            // bottom of the window (which changes HomeView's height and arrives here).
             BuildLayout(false);
         }
 
@@ -973,13 +987,13 @@ namespace AbletonManager
             base.OnMouseWheel(e);
         }
 
-        // ------------------------------------------------------------------- мышь
+        // ------------------------------------------------------------------- mouse
 
         int TileAt(Point p, out bool onPlay, out bool onPin, out bool onTags)
         {
             onPlay = onPin = onTags = false;
-            // Вместе с резиновым перелётом: во время отскока плитки уезжают, а попадания
-            // считались по старому месту — звёздочка срабатывала там, где её уже нет.
+            // Along with the rubber-band overshoot: during the bounce the tiles move away while
+            // hits were counted at the old place — the star fired where it no longer was.
             int over = _scroller != null ? (int)Math.Round(_scroller.Overscroll) : 0;
             Point q = new Point(p.X, p.Y + _scroll + over);
             for (int i = 0; i < _tiles.Count; i++)
@@ -1002,8 +1016,8 @@ namespace AbletonManager
         }
 
         /// <summary>
-        /// Точка окна в координатах содержимого. Вместе с резиновым перелётом: во время
-        /// отскока всё уезжает, а попадания считались по старому месту.
+        /// A window point in content coordinates. Along with the rubber-band overshoot: during
+        /// the bounce everything moves away while hits were counted at the old place.
         /// </summary>
         Point Content(Point p)
         {
@@ -1011,7 +1025,8 @@ namespace AbletonManager
             return new Point(p.X, p.Y + _scroll + over);
         }
 
-        /// <summary>Курсор на звёздочке заголовка? Заголовок один, искать не в чем.</summary>
+        /// <summary>Is the cursor on the heading's star? There is one heading, so there is
+        /// nothing to search.</summary>
         bool OnHeadStar(Point p)
         {
             int over = _scroller != null ? (int)Math.Round(_scroller.Overscroll) : 0;
@@ -1094,7 +1109,7 @@ namespace AbletonManager
         Point _lastPinPos;
         int _lastPinTime;
 
-        // ПКМ по плитке открывает её меню — см. OnMouseDown.
+        // A right click on a tile opens its menu — see OnMouseDown.
         protected override bool WantsRightClick { get { return true; } }
 
         protected override void OnMouseDown(MouseEventArgs e)
@@ -1117,9 +1132,9 @@ namespace AbletonManager
             if (e.Button == MouseButtons.Left && OnHeadStar(e.Location))
             {
                 PinnedFirst = !PinnedFirst;
-                Invalidate();                      // значок меняется сразу
+                Invalidate();                      // the glyph changes at once
                 if (PinnedFirstToggled != null) PinnedFirstToggled();
-                else RebuildTransition();          // некому пересобрать — сами
+                else RebuildTransition();          // there is nobody to rebuild it — we do it ourselves
                 return;
             }
 
@@ -1132,8 +1147,8 @@ namespace AbletonManager
                 return;
             }
 
-            // Клик мимо плиток снимает выделение — иначе от него нельзя избавиться,
-            // не выбрав что-то другое.
+            // A click past the tiles clears the selection — otherwise there is no getting rid
+            // of it without choosing something else.
             if (hit < 0)
             {
                 if (_selected != null || _newSelected)
@@ -1145,10 +1160,10 @@ namespace AbletonManager
                 return;
             }
 
-            // «New Live Set» ведёт себя как остальные карточки: одиночный клик только
-            // выделяет, само действие — по двойному. Раньше она срабатывала сразу, и на
-            // поле из одинаковых с виду плиток одна вела себя не как все — по ней
-            // случайно запускали Live, просто ткнув мимо.
+            // "New Live Set" behaves like the other cards: a single click only selects, and the
+            // action itself is on a double click. It used to fire straight away, and on a field
+            // of tiles that look alike one behaved unlike the rest — people launched Live with
+            // it by accident, simply by clicking wide.
             if (_tiles[hit].IsNewProject)
             {
                 _selected = null;
@@ -1193,8 +1208,8 @@ namespace AbletonManager
         {
             bool play, pin, tags;
             int hit = TileAt(e.Location, out play, out pin, out tags);
-            // Значок тегов уже открыл редактор по первому клику — второй просто глотаем,
-            // иначе он поверх редактора ещё и запустил бы проект в Live.
+            // The tags glyph already opened the editor on the first click — the second we
+            // simply swallow, or on top of the editor it would also launch the project in Live.
             if (hit >= 0 && tags) { base.OnMouseDoubleClick(e); return; }
             if (hit >= 0 && (play || pin))
             {
@@ -1277,7 +1292,7 @@ namespace AbletonManager
             m.Show(this, at);
         }
 
-        // -------------------------------------------------------------- превью
+        // ------------------------------------------------------------------ previews
 
         void Want(string path)
         {
@@ -1285,8 +1300,8 @@ namespace AbletonManager
             if (_thumbs.ContainsKey(path) || _queued.Contains(path)
                 || _rendering.Contains(path) || _diskLoading.Contains(path)) return;
 
-            // Готовая картинка с прошлого запуска — самый дешёвый путь: пара миллисекунд
-            // против сотни на полный разбор сета.
+            // A finished picture from the previous run is the cheapest route: a couple of
+            // milliseconds against a hundred for a full parse of the set.
             if (ThumbCache.Has(path)) { LoadFromDisk(path); return; }
 
             Arrangement cached = Loader.Cached(path);
@@ -1313,7 +1328,7 @@ namespace AbletonManager
                         _diskLoading.Remove(p);
                         if (!known)
                         {
-                            // Запись пропала или испортилась — идём обычным путём.
+                            // The entry is gone or corrupt — we go the usual way.
                             if (bmp != null) bmp.Dispose();
                             Want(p);
                             return;
@@ -1339,15 +1354,15 @@ namespace AbletonManager
             }
         }
 
-        /// <summary>Ответ загрузчика; приходит в потоке интерфейса.</summary>
+        /// <summary>The loader's answer; it arrives on the UI thread.</summary>
         public void OnArrangement(Arrangement a)
         {
             if (IsDisposed) return;
 
-            // Разбор всегда возвращает объект с заполненным Path — даже когда сет не
-            // прочитался, — поэтому по нему и закрываем свой запрос. Ответы на чужие
-            // запросы (панель подробностей, полноэкранное превью) сюда тоже приходят:
-            // раз сет уже разобран, грех не сделать из него плитку.
+            // Parsing always returns an object with Path filled in — even when the set did not
+            // read — so that is what we close our request by. Answers to other requests (the
+            // detail panel, the full-screen preview) arrive here too: since the set is already
+            // parsed, it would be a shame not to make a tile out of it.
             if (a != null && !string.IsNullOrEmpty(a.Path))
             {
                 _inFlight.Remove(a.Path);
@@ -1359,9 +1374,10 @@ namespace AbletonManager
             Invalidate();
         }
 
-        // --------------------------------------------------- хранение картинок
+        // --------------------------------------------------- storing the pictures
 
-        /// <summary>Отметить, что картинку сейчас показывали, — она не кандидат на вытеснение.</summary>
+        /// <summary>Mark that a picture has just been shown — it is not a candidate for
+        /// displacement.</summary>
         void TouchThumb(string path)
         {
             _thumbUsed[path] = ++_thumbClock;
@@ -1375,9 +1391,9 @@ namespace AbletonManager
         }
 
         /// <summary>
-        /// Считаем и вытесняем только записи с картинкой: «аранжировка пуста» и «сет не
-        /// читается» — это null, памяти они не занимают вовсе, а вот выбросить такую
-        /// запись значило бы разбирать безнадёжный сет заново на каждой прокрутке.
+        /// We count and displace only entries with a picture: "the arrangement is empty" and
+        /// "the set does not read" are null and take no memory at all, while throwing such an
+        /// entry away would mean parsing a hopeless set again on every scroll.
         /// </summary>
         void TrimThumbs()
         {
@@ -1421,10 +1437,10 @@ namespace AbletonManager
 
             if (a.Error != null || !a.HasContent)
             {
-                // Пустую аранжировку запоминаем и на диск: такой ответ стоит ровно
-                // столько же, сколько картинка. Ошибку чтения — только в памяти: она
-                // бывает временной (диск отключили), и записать её значило бы объявить
-                // сет пустым до следующей его правки.
+                // An empty arrangement we remember to disk too: that answer costs exactly as
+                // much as a picture. A read error only in memory: it can be temporary (the
+                // drive was switched off), and writing it down would mean declaring the set
+                // empty until its next edit.
                 if (a.Error == null) ThumbCache.SaveEmptyAsync(a.Path);
                 PutThumb(a.Path, null);
                 return;
@@ -1439,7 +1455,7 @@ namespace AbletonManager
                 try
                 {
                     RenderOptions o = new RenderOptions();
-                    o.Dpi = 1f;                 // рисуем в фиксированный размер, потом масштабируем
+                    o.Dpi = 1f;                 // we draw into a fixed size and scale afterwards
                     o.MaxLane = 8;
                     o.ShowRuler = false;
                     bmp = ArrangementRender.ToBitmap(arr, ThumbW, ThumbH, o);
@@ -1494,7 +1510,7 @@ namespace AbletonManager
         {
             if (src == null || targetSize.Width <= 0 || targetSize.Height <= 0) return null;
 
-            // Сброс кэша при изменении размера плиток (ресайз окна)
+            // Dropping the cache when the tile size changes (a window resize)
             if (_scaledSize != targetSize)
             {
                 DropScaledThumbs();
@@ -1504,7 +1520,7 @@ namespace AbletonManager
             Bitmap result;
             if (_scaledThumbs.TryGetValue(path, out result)) return result;
 
-            // Масштабируем один раз, дальше DrawImage рисует 1:1 без ресемплинга
+            // We scale once, and DrawImage then draws 1:1 with no resampling
             result = new Bitmap(targetSize.Width, targetSize.Height,
                 System.Drawing.Imaging.PixelFormat.Format32bppPArgb);
             using (Graphics tg = Graphics.FromImage(result))
@@ -1516,7 +1532,7 @@ namespace AbletonManager
             return result;
         }
 
-        // ------------------------------------------------------------- отрисовка
+        // ------------------------------------------------------------------ drawing
 
         protected override void OnPaint(PaintEventArgs e)
         {
@@ -1534,7 +1550,7 @@ namespace AbletonManager
                 return;
             }
 
-            // Резиновый перелёт за край — едет всё содержимое, кроме полосы прокрутки.
+            // The rubber-band overshoot past the edge — everything moves except the scrollbar.
             int over = _scroller != null ? (int)Math.Round(_scroller.Overscroll) : 0;
             int scroll = _scroll + over;
 
@@ -1555,15 +1571,16 @@ namespace AbletonManager
                 PaintOneTile(g, _tiles[i], i, false, scroll, bufferTop, bufferBottom);
             }
 
-            // Плитки у верхней и нижней кромки чуть растворяются в фоне — тонкая
-            // полоска, втрое короче первой попытки. На стекле не нужен: там край и
-            // так размыт подложкой окна.
+            // The tiles at the top and bottom edges dissolve slightly into the background — a
+            // thin band, three times shorter than the first attempt. Not needed on glass: there
+            // the edge is blurred by the window backdrop as it is.
             if (!Glass.Enabled && _contentHeight > Height)
             {
                 int fadeH = Sc(36);
 
-                // Сверху — только если реально прокрутили: у самого верха фейд гасил бы
-                // заголовок Overview, а прятать нечего, там ничего не обрезано.
+                // At the top only if it really has been scrolled: right at the top the fade
+                // would dim the Overview heading, and there is nothing to hide, nothing is cut
+                // off there.
                 if (scroll > 0)
                 {
                     Rectangle top = new Rectangle(0, 0, Width, fadeH);
@@ -1580,8 +1597,8 @@ namespace AbletonManager
                     g.FillRectangle(lb, bottom);
             }
 
-            // Полоса прокрутки поверх сетки: Sc(4) в покое, Sc(8) под курсором,
-            // гаснет через секунду после последней прокрутки.
+            // The scrollbar over the grid: Sc(4) at rest, Sc(8) under the cursor, fading a
+            // second after the last scroll.
             Chrome.PaintFadingBar(g, BarRect(), _draggingBar ? 1f : _barFade.Alpha,
                                   _draggingBar ? 1f : _barFade.Thick, true, Sc(4));
         }
@@ -1600,7 +1617,7 @@ namespace AbletonManager
 
             if (!h.Star.IsEmpty)
             {
-                // Тот же значок и те же три состояния, что у звёздочки в шапке таблицы.
+                // The same glyph and the same three states as the star in the table header.
                 Color ink = PinnedFirst ? Theme.Light
                           : (_headStarHot ? Theme.Text : Color.FromArgb(0xFF, 0x8E, 0x8E, 0x93));
                 if (h.Alpha < 0.99f) ink = Color.FromArgb((int)Math.Round(ink.A * h.Alpha), ink);
@@ -1623,7 +1640,8 @@ namespace AbletonManager
             int curY = (int)Math.Round(t.AnimY);
             Rectangle b = new Rectangle(curX, curY - scroll, t.Bounds.Width, t.Bounds.Height);
 
-            // Плитка далеко за пределами видимости (более 1 экрана от края) — пропускаем полностью
+            // A tile far outside visibility (more than one screen from the edge) — skipped
+            // entirely
             if (b.Bottom < bufferTop || b.Top > bufferBottom) return;
 
             if (b.Bottom < 0 || b.Top > Height)
@@ -1636,7 +1654,8 @@ namespace AbletonManager
                 return;
             }
 
-            // Входная анимация (если была запущена полная) умножается на прозрачность плитки
+            // The entrance animation (if a full one was started) is multiplied by the tile's
+            // transparency
             float entrance = (_tileEntrance != null && index >= 0 && index < _tileEntrance.Length) ? _tileEntrance[index] : 1.0f;
             float totalAlpha = entrance * t.Alpha;
             if (totalAlpha <= 0.001f) return;
@@ -1651,26 +1670,28 @@ namespace AbletonManager
         }
 
         /// <summary>
-        /// Подложка карточки — всегда полная, с обводкой и бликом.
+        /// The card backing — always the full one, with outline and highlight.
         ///
-        /// Пробовал рисовать при прокрутке упрощённо (PaintGlassSurfaceFast, без обводки
-        /// и блика — это два GraphicsPath на плитку на кадр): экономия есть, но она видна
-        /// глазом. Карточки на едущей сетке теряют края и получают их обратно, стоит
-        /// прокрутке замереть, — читается как мельтешение, а не как плавность. Поэтому
-        /// не надо: два лишних пути на плитку дешевле, чем дёргающаяся картинка.
+        /// I tried drawing it simplified while scrolling (PaintGlassSurfaceFast, with no
+        /// outline and no highlight — those are two GraphicsPaths per tile per frame): there is
+        /// a saving, but it is visible to the eye. Cards on a moving grid lose their edges and
+        /// get them back the moment the scroll comes to rest — that reads as flicker rather
+        /// than as smoothness. So no: two extra paths per tile are cheaper than a twitching
+        /// picture.
         /// </summary>
         void PaintCard(Graphics g, RectangleF r, float radius, int alpha)
         {
             Theme.PaintGlassSurface(this, g, r, radius, alpha);
         }
 
-        /// <summary>Карточка создания нового сета: мягкий штрихованный контур без фона
-        /// и аккуратный центрированный плюс в стиле Apple.</summary>
+        /// <summary>The card for creating a new set: a soft dashed contour with no background
+        /// and a neat centred plus in the Apple style.</summary>
         void PaintNewProjectTile(Graphics g, Rectangle b, bool hot, float hoverFactor, float entrance)
         {
             float cardR = Sc(Theme.CardR);
 
-            // Мягкий штрихованный контур по скруглённому контуру карточки без фона и без сплошной обводки
+            // A soft dashed contour along the card's rounded outline, with no background and no
+            // solid stroke
             int borderAlpha = _newSelected ? 0xFF : (int)Math.Round((0x22 + 0x2A * hoverFactor) * entrance);
             Color dashColor = _newSelected ? Theme.Light : Color.FromArgb(borderAlpha, 0xFF, 0xFF, 0xFF);
             float dashWidth = _newSelected ? 1.5f : 1.2f;
@@ -1699,7 +1720,7 @@ namespace AbletonManager
             float discY = b.Y + (b.Height - groupH) / 2f;
             float discX = b.X + (b.Width - discDiam) / 2f;
 
-            // Матовый стеклянный кружок под иконку плюса
+            // A frosted glass circle under the plus glyph
             RectangleF discRect = new RectangleF(discX, discY, discDiam, discDiam);
             Color discBg = Color.FromArgb((int)Math.Round((0x12 + 0x1E * hoverFactor) * entrance), 0xFF, 0xFF, 0xFF);
             Color discBorder = Color.FromArgb((int)Math.Round((0x1E + 0x28 * hoverFactor) * entrance), 0xFF, 0xFF, 0xFF);
@@ -1709,16 +1730,16 @@ namespace AbletonManager
             using (Pen discPen = new Pen(discBorder, 1f))
                 g.DrawEllipse(discPen, discRect);
 
-            // Иконка плюса внутри кружка
+            // The plus glyph inside the circle
             int iconSize = Sc(20);
             RectangleF iconBox = new RectangleF(b.X + (b.Width - iconSize) / 2f, discY + (discDiam - iconSize) / 2f, iconSize, iconSize);
             Icons.Draw(g, Glyph.Plus, iconBox, ink, 1.8f);
 
-            // Подпись под кружком
+            // The caption under the circle
             Rectangle textR = new Rectangle(b.X, (int)(discY + discDiam + gap), b.Width, labelH);
             Chrome.DrawText(g, label, Theme.FTitle, textR, ink, Chrome.Center | TextFormatFlags.NoClipping);
 
-            // Подзаголовок при наведении в духе Minecraft/Terraria с продюсерским юмором
+            // A hover subtitle in the Minecraft/Terraria spirit, with producer humour
             if (hoverFactor > 0.02f)
             {
                 string splash = (_splashIndex >= 0 && _splashIndex < Splashes.Length) ? Splashes[_splashIndex] : Splashes[0];
@@ -1744,16 +1765,16 @@ namespace AbletonManager
 
             PaintCard(g, b, cardR, alpha);
 
-            // Наведение подсвечивает контур: заливка на стекле почти не меняется,
-            // и без этого карточка на курсор не отзывалась вовсе.
+            // Hover lights up the contour: on glass the fill barely changes, and without this
+            // the card did not respond to the cursor at all.
             if (!selected && hoverFactor > 0.01f)
                 Theme.DrawRound(g, b, cardR,
                     Color.FromArgb((int)Math.Round(0x3C * hoverFactor * entrance), 255, 255, 255), 1.2f);
             if (selected)
             {
-                // Выделение — обычным светлым, не акцентом: акцент выбирают кнопки,
-                // прогресс и переключатели, а обводка активного элемента от выбора
-                // темы не зависит.
+                // Selection in ordinary light rather than the accent: the accent is claimed by
+                // buttons, progress and switches, while the outline of the active element does
+                // not depend on the choice of theme.
                 RectangleF ring = RectangleF.Inflate(b, -0.75f, -0.75f);
                 Color line = Color.FromArgb((int)Math.Round(0xD0 * entrance), Theme.Light);
                 using (GraphicsPath rp = Theme.Round(ring, cardR - 0.75f))
@@ -1761,13 +1782,13 @@ namespace AbletonManager
                     g.DrawPath(pen, rp);
             }
 
-            // Всё внутри плитки считаем от её собственного прямоугольника: он уже учёл
-            // и прокрутку, и резинку, и сдвиг анимации перехода.
+            // Everything inside a tile is counted from its own rectangle: that has already
+            // accounted for the scroll, the rubber band and the transition animation's offset.
             int dx = b.X - t.Bounds.X;
             int dy = b.Y - t.Bounds.Y;
             Rectangle thumb = new Rectangle(t.Thumb.X + dx, t.Thumb.Y + dy, t.Thumb.Width, t.Thumb.Height);
             Rectangle inner = Rectangle.Inflate(thumb, -Sc(ThumbInset), -Sc(ThumbInset));
-            inner.Height = thumb.Height - Sc(ThumbInset);   // снизу картинка идёт вплотную к тексту
+            inner.Height = thumb.Height - Sc(ThumbInset);   // at the bottom the picture runs flush with the text
             Color innerBg = entrance < 0.99f ? Color.FromArgb((int)Math.Round(255 * entrance), Theme.Bg) : Theme.Bg;
             Theme.FillRound(g, inner, Sc(Theme.ThumbR), innerBg);
 
@@ -1788,12 +1809,13 @@ namespace AbletonManager
             }
             else
             {
-                // Картинку показали — значит она не кандидат на вытеснение, см. MaxThumbs.
+                // The picture was shown — meaning it is not a candidate for displacement, see
+                // MaxThumbs.
                 TouchThumb(t.Set.Path);
                 Rectangle fit = Rectangle.Inflate(inner, -Sc(PicInset), -Sc(PicInset));
                 if (fit.Width > 0 && fit.Height > 0)
                 {
-                    // Используем прэ-масштабированную копию: DrawImage 1:1 без ресемплинга
+                    // We use the pre-scaled copy: DrawImage 1:1 with no resampling
                     Bitmap scaled = GetScaledThumb(t.Set.Path, art, fit.Size);
                     Bitmap bmp = scaled ?? art;
                     if (entrance < 0.99f)
@@ -1816,8 +1838,9 @@ namespace AbletonManager
                 }
             }
 
-            // Имя и дата под превью — с запасом от краёв плитки и друг от друга, но
-            // сама пара строк держится ближе к превью, а не к середине пустого низа.
+            // The name and the date under the preview — with room from the tile edges and from
+            // each other, but the pair of lines stays closer to the preview than to the middle
+            // of the empty bottom.
             int textY = thumb.Bottom + Sc(4);
             Rectangle nameR = new Rectangle(b.X + Sc(16), textY, b.Width - Sc(32), Sc(26));
             Color nameC = entrance < 0.99f ? Color.FromArgb((int)Math.Round(Theme.Text.A * entrance), Theme.Text) : Theme.Text;
@@ -1829,7 +1852,7 @@ namespace AbletonManager
             Chrome.DrawText(g, t.Subtitle ?? "", Theme.FLabel, dateR, dateC,
                             Chrome.Left | TextFormatFlags.NoClipping);
 
-            // Кнопка прослушивания — только если рядом с проектом есть рендер.
+            // The listen button — only if there is a render next to the project.
             bool isPlaying = Playing && PlayingTag != null && ReferenceEquals(PlayingTag, t.Set);
             if (t.HasPlay)
             {
@@ -1847,7 +1870,7 @@ namespace AbletonManager
                                RectangleF.Inflate(pb, -Sc(9), -Sc(9)), iconC, 1.4f);
             }
 
-            // Звёздочка: у закреплённого видна всегда, у остальных — под курсором.
+            // The star: always visible on a pinned one, under the cursor on the rest.
             bool pinned = HomeStore.IsPinned(t.Set.Path);
             if (pinned || hot)
             {
@@ -1864,11 +1887,10 @@ namespace AbletonManager
         }
 
         /// <summary>
-        /// Бирка слева вверху превью — «у проекта есть теги». Видна всегда, как
-        /// закреплённая звезда: иначе о тегах узнаёшь, только наведя курсор на каждую
-        /// плитку по очереди. Сами теги в плитку не влезают, поэтому под курсором на
-        /// значке они всплывают полоской под ним — что не поместилось, обрезается
-        /// многоточием.
+        /// A tag at the top left of the preview — "this project has tags". Always visible, like
+        /// a pinned star: otherwise one learns about the tags only by hovering over every tile
+        /// in turn. The tags themselves do not fit into a tile, so with the cursor on the glyph
+        /// they pop up as a strip under it — whatever does not fit is cut off with an ellipsis.
         /// </summary>
         void PaintTileTags(Graphics g, Tile t, int dx, int dy, Rectangle thumb, bool hot, float entrance)
         {
@@ -1887,9 +1909,9 @@ namespace AbletonManager
             string[] tags = t.TagText.Split(new string[] { ", " }, StringSplitOptions.RemoveEmptyEntries);
             if (tags.Length == 0) return;
 
-            // Пилюли лежат прямо на картинке, без общей подложки под ними, поэтому
-            // каждая непрозрачна сама по себе и обведена волоском: поверх светлого
-            // аранжемента полупрозрачная пилюля не читалась бы вовсе.
+            // The pills lie directly on the picture with no shared backing under them, so each
+            // is opaque in itself and outlined with a hairline: over a light arrangement a
+            // translucent pill would not read at all.
             Font f = Theme.FBadge;
             int chipH = Chrome.PillHeight(f), gap = Sc(4), chipPadX = Sc(10);
             int right = thumb.Right - Sc(ThumbInset + PicInset);
@@ -1902,8 +1924,8 @@ namespace AbletonManager
 
                 if (x + w > right)
                 {
-                    // Первый же тег шире ячейки — режем его сам, иначе на месте
-                    // единственного тега осталось бы одно многоточие ни о чём.
+                    // The very first tag is wider than the cell — we cut it ourselves, or in
+                    // place of the only tag there would be a lone ellipsis about nothing.
                     if (i == 0 && right - x > chipH)
                         PaintTagChip(g, new Rectangle(x, y, right - x, chipH), tags[i], f, true);
                     else if (x + chipH <= right)
@@ -1916,14 +1938,16 @@ namespace AbletonManager
             }
         }
 
-        /// <summary>Пилюля «есть ещё теги» — та же, только с точками вместо слова.</summary>
+        /// <summary>The "there are more tags" pill — the same one, only with dots instead of a
+        /// word.</summary>
         void PaintTagDots(Graphics g, Rectangle chip)
         {
             PaintTagPill(g, chip);
             Chrome.DrawDots(g, chip, Theme.Text, Sc(3));
         }
 
-        /// <summary>Подложка пилюли: плотная, с волоском обводки — поверх превью.</summary>
+        /// <summary>The pill backing: dense, with a hairline outline — it goes over the
+        /// preview.</summary>
         void PaintTagPill(Graphics g, Rectangle chip)
         {
             float r = chip.Height / 2f;
@@ -1931,7 +1955,7 @@ namespace AbletonManager
             Theme.DrawRound(g, chip, r, Color.FromArgb(0x3C, 0xFF, 0xFF, 0xFF), 1f);
         }
 
-        /// <summary>Одна пилюля тега поверх превью.</summary>
+        /// <summary>One tag pill over the preview.</summary>
         void PaintTagChip(Graphics g, Rectangle chip, string text, Font f, bool clipped = false)
         {
             PaintTagPill(g, chip);
