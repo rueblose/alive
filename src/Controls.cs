@@ -11,9 +11,10 @@ namespace AbletonManager
     public static class Chrome
     {
         /// <summary>
-        /// Фон контрола. Окно плоское, поэтому достаточно залить цветом той поверхности,
-        /// на которой контрол лежит: у панели инструментов это фон окна, у кнопки внутри
-        /// карточки — цвет карточки. Без этого скруглённые углы обводятся чужим цветом.
+        /// The control's background. The window is flat, so filling with the colour of the
+        /// surface the control lies on is enough: for the toolbar that is the window
+        /// background, for a button inside a card the card's colour. Without it the rounded
+        /// corners get outlined in a foreign colour.
         /// </summary>
         public static void PaintBase(Control c, Graphics g, Color surface)
         {
@@ -21,9 +22,9 @@ namespace AbletonManager
         }
 
         /// <summary>
-        /// То же, но в два слоя — для контрола, который лежит не на голом окне, а на
-        /// карточке. На стекле карточка это фон окна плюс полупрозрачная накладка;
-        /// повторяем обе, иначе контрол вырежет в карточке дырку своей плотности.
+        /// The same, but in two layers — for a control lying not on the bare window but on a
+        /// card. On glass a card is the window background plus a translucent overlay; we repeat
+        /// both, or the control cuts a hole of its own density into the card.
         /// </summary>
         public static void PaintBase(Control c, Graphics g, Rectangle clip, Color surface, Color overlay)
         {
@@ -39,16 +40,16 @@ namespace AbletonManager
             clip.Intersect(c.ClientRectangle);
             if (clip.Width <= 0 || clip.Height <= 0) return;
 
-            // Полупрозрачный фон имеет смысл только там, где DWM реально читает альфу
-            // окна. У диалога с UseGlass=false её никто не читает, и записанная
-            // SourceCopy прозрачность превращалась в чёрный прямоугольник вокруг пилюли
-            // (раньше его прятал region-клип контрола, теперь клипа нет).
+            // A translucent background only makes sense where DWM really reads the window's
+            // alpha. On a dialog with UseGlass=false nobody reads it, and transparency written
+            // with SourceCopy turned into a black rectangle around the pill (which the
+            // control's region clip used to hide; there is no clip now).
             if (surface.A < 255 && !Theme.IsBlurred(c)) surface = Color.FromArgb(255, surface);
 
-            // Полупрозрачная поверхность — это стекло, и её надо записать в буфер как
-            // есть, а не подмешать поверх. Причин две: буфер WinForms переиспользуется
-            // между кадрами, так что альфа копилась бы от кадра к кадру; и DWM показывает
-            // размытие ровно по той альфе, что в итоге лежит в пикселе.
+            // A translucent surface is glass, and it has to be written into the buffer as it is
+            // rather than blended on top. There are two reasons: the WinForms buffer is reused
+            // between frames, so the alpha would accumulate from frame to frame; and DWM shows
+            // the blur by exactly the alpha that ends up in the pixel.
             CompositingMode old = g.CompositingMode;
             if (surface.A < 255) g.CompositingMode = CompositingMode.SourceCopy;
             g.FillRectangle(Theme.GetBrush(surface), clip);
@@ -56,9 +57,10 @@ namespace AbletonManager
         }
 
         /// <summary>
-        /// Оверлейная полоса прокрутки: тонкая в покое, толще под курсором, растёт от
-        /// дальнего края, чтобы не наползать на текст. Геометрию и затухание считает
-        /// владелец (см. ScrollFade), здесь только общий вид — он один на весь проект.
+        /// An overlay scrollbar: thin at rest, thicker under the cursor, growing from the far
+        /// edge so as not to climb onto the text. The geometry and the fade are computed by the
+        /// owner (see ScrollFade); only the general look is here — it is one for the whole
+        /// project.
         /// </summary>
         public static void PaintFadingBar(Graphics g, Rectangle bar, float alpha, float thick, bool vertical, int grow)
         {
@@ -98,45 +100,45 @@ namespace AbletonManager
             TextFormatFlags.NoPrefix;
 
         /// <summary>
-        /// Текст в пилюле: коробку строки кладём по верху, потому что верх мы считаем
-        /// сами — см. PillTop.
+        /// Text in a pill: the line box is placed by its top, because we compute the top
+        /// ourselves — see PillTop.
         /// </summary>
         public static readonly TextFormatFlags PillText =
             TextFormatFlags.HorizontalCenter | TextFormatFlags.Top | TextFormatFlags.SingleLine |
             TextFormatFlags.NoPrefix | TextFormatFlags.NoClipping;
 
-        /// <summary>То же, но с обрезкой: для пилюли, ширину которой задали силой.</summary>
+        /// <summary>The same, but with clipping: for a pill whose width was forced.</summary>
         public static readonly TextFormatFlags PillTextClipped =
             TextFormatFlags.HorizontalCenter | TextFormatFlags.Top | TextFormatFlags.SingleLine |
             TextFormatFlags.NoPrefix | TextFormatFlags.EndEllipsis;
 
         /// <summary>
-        /// Отступ от верха пилюли до верха коробки строки, при котором по центру пилюли
-        /// встают САМИ БУКВЫ. TextFormatFlags.VerticalCenter центрирует коробку целиком,
-        /// а в ней над строчными заложено место под выносные элементы, которого в слове
-        /// обычно нет: в пилюле 19 px одиннадцатым кеглем над буквами оставалось 5 px,
-        /// под ними 3 — это и читается как «текст съехал вниз».
+        /// The inset from the top of a pill to the top of the line box at which THE LETTERS
+        /// THEMSELVES sit centred in the pill. TextFormatFlags.VerticalCenter centres the whole
+        /// box, and inside it above the lowercase there is room for descenders which a word
+        /// usually does not have: in a 19 px pill at eleven point there were 5 px left above
+        /// the letters and 3 below — and that reads as "the text has slipped downwards".
         ///
-        /// Высоту прописных GDI+ не отдаёт, поэтому берём долю кегля: 0.72 em — замерено
-        /// отрисовкой Segoe UI Variable Text в битмап на высотах пилюли 19, 21 и 24.
+        /// GDI+ does not give out capital height, so we take a fraction of the size: 0.72 em —
+        /// measured by rendering Segoe UI Variable Text into a bitmap at pill heights of 19, 21
+        /// and 24.
         /// </summary>
         /// <summary>
-        /// Какой высоты должна быть пилюля под этот шрифт: коробка строки плюс воздух.
-        /// Коробки впритык мало — она кончается ровно на хвосте выносного элемента, и
-        /// «y» в пилюле выглядит срезанным её краем (замерено: под хвостом оставался
-        /// один пиксель).
+        /// What height a pill has to be for this font: the line box plus air. The box flush is
+        /// not enough — it ends exactly at the tail of a descender, and a "y" in a pill looks
+        /// shaved off by its edge (measured: one pixel was left under the tail).
         ///
-        /// Высота идёт от шрифта, а не от Sc(): кегль задан в пунктах и от DeviceDpi не
-        /// зависит, так что пилюля, привязанная к Sc, на другом мониторе разъехалась бы
-        /// с собственным текстом.
+        /// The height comes from the font rather than from Sc(): the type size is set in points
+        /// and does not depend on DeviceDpi, so a pill tied to Sc would drift apart from its
+        /// own text on another monitor.
         /// </summary>
         public static int PillHeight(Font f) { return PillHeight(f, 6); }
 
         /// <summary>
-        /// «Есть ещё» — три точки, нарисованные вручную и ровно по центру прямоугольника.
-        /// Глиф «…» для этого не годится: его чернила лежат на базовой линии, а пилюли
-        /// рядом выровнены по прописным (см. PillTop), и многоточие среди них
-        /// оказывалось заметно ниже середины.
+        /// "There are more" — three dots drawn by hand and exactly centred in the rectangle.
+        /// The "…" glyph will not do for this: its ink sits on the baseline while the pills
+        /// beside it are aligned by their capitals (see PillTop), and among them the ellipsis
+        /// came out noticeably below the middle.
         /// </summary>
         public static void DrawDots(Graphics g, Rectangle r, Color ink, int dot)
         {
@@ -145,12 +147,12 @@ namespace AbletonManager
                 g.FillEllipse(Theme.GetBrush(ink), cx + i * dot * 2f - dot / 2f, cy - dot / 2f, dot, dot);
         }
 
-        /// <summary>Ширина, которую займут точки из DrawDots.</summary>
+        /// <summary>The width the dots from DrawDots will take.</summary>
         public static int DotsWidth(int dot) { return dot * 5; }
 
         /// <summary>
-        /// Тот же расчёт с явным запасом воздуха. Меньше шести берут там, где по высоте
-        /// тесно, — например две дорожки тегов в строке таблицы.
+        /// The same calculation with an explicit allowance of air. Less than six is used where
+        /// height is tight — two rows of tags in a table row, for instance.
         /// </summary>
         public static int PillHeight(Font f, int air)
         {
@@ -167,26 +169,27 @@ namespace AbletonManager
             TextFormatFlags.Left | TextFormatFlags.Top | TextFormatFlags.WordBreak |
             TextFormatFlags.NoPrefix | TextFormatFlags.NoPadding;
 
-        // ------------------------------------------------------------------ системный «дзынь»
+        // ------------------------------------------------------------ the system beep
 
         const int WM_SETCURSOR = 0x0020;
         const int WM_MOUSEMOVE = 0x0200;
         const short HTERROR = -2;
 
         /// <summary>
-        /// Съесть системный звук при клике мимо модального окна. Зовётся из WndProc
-        /// любого окна, которое может оказаться владельцем диалога.
+        /// Swallow the system sound on a click outside a modal window. Called from the WndProc
+        /// of any window that may turn out to be a dialog's owner.
         ///
-        /// Клик по окну, выключенному модальным диалогом, не приходит к нему ни одним
-        /// мышиным сообщением — систему это интересует раньше. Но одно сообщение всё же
-        /// доходит: WM_SETCURSOR, где в младшем слове lParam лежит HTERROR, а в старшем —
-        /// код нажатой кнопки (проверено журналом сообщений владельца: 0x0020 с lParam
-        /// 0x0201FFFE на нажатие левой). Именно на этой паре DefWindowProc и зовёт
-        /// MessageBeep — так это описано и в документации WM_SETCURSOR. Не отдаём
-        /// сообщение дальше: звука нет, а всё остальное поведение системы на месте —
-        /// диалог по-прежнему остаётся впереди и не закрывается.
+        /// A click on a window disabled by a modal dialog reaches it through no mouse message
+        /// at all — the system takes an interest earlier. But one message does get through:
+        /// WM_SETCURSOR, where the low word of lParam holds HTERROR and the high word the code
+        /// of the button pressed (verified with the owner's message log: 0x0020 with lParam
+        /// 0x0201FFFE on a left press). It is on that very pair that DefWindowProc calls
+        /// MessageBeep — this is how the WM_SETCURSOR documentation describes it too. We do not
+        /// pass the message on: there is no sound, while all the rest of the system's behaviour
+        /// is intact — the dialog still stays in front and does not close.
         ///
-        /// Взамен звука подсвечиваем обводку самого диалога: отказ должно быть видно.
+        /// In place of the sound we light up the dialog's own outline: a refusal has to be
+        /// visible.
         /// </summary>
         public static bool SwallowBlockedClick(ref Message m)
         {
@@ -194,12 +197,12 @@ namespace AbletonManager
 
             int l = m.LParam.ToInt32();
             if ((short)(l & 0xFFFF) != HTERROR) return false;
-            if (((l >> 16) & 0xFFFF) == WM_MOUSEMOVE) return false;   // beep'ает только нажатие
+            if (((l >> 16) & 0xFFFF) == WM_MOUSEMOVE) return false;   // only a press beeps
 
             GlassDialog blocking = Form.ActiveForm as GlassDialog;
             if (blocking != null) blocking.Flash();
 
-            m.Result = (IntPtr)1;      // TRUE — «обработано», DefWindowProc не зовём
+            m.Result = (IntPtr)1;      // TRUE means "handled", DefWindowProc is not called
             return true;
         }
 
@@ -210,18 +213,19 @@ namespace AbletonManager
         }
 
         /// <summary>
-        /// Здесь была поправка «поднять на 2 px всё, что с VerticalCenter»: считалось,
-        /// что GDI сажает строку ниже геометрического центра. Перемерено по чернилам
-        /// (рендер в Bitmap, границы непрозрачных пикселей): DT_VCENTER|DT_SINGLELINE
-        /// центрирует ровно, отклонение 0–0.5 px на всех кеглях от 9.5 до 22 pt и любой
-        /// высоте пилюли. Прежний замер обманула нижняя выносная: у строки с «g» или «р»
-        /// чернила уходят вниз, и центр чернил оказывается ниже центра коробки — так и
-        /// должно быть. Поправка же поднимала текст на честные 2 px выше центра, что и
-        /// было видно во всех пилюлях и подсказках.
+        /// There used to be a correction here — "lift everything with VerticalCenter by 2 px" —
+        /// on the assumption that GDI seats a line below the geometric centre. Re-measured by
+        /// the ink (rendering into a Bitmap, the bounds of the opaque pixels):
+        /// DT_VCENTER|DT_SINGLELINE centres exactly, with a deviation of 0–0.5 px at every size
+        /// from 9.5 to 22 pt and at any pill height. The earlier measurement was fooled by a
+        /// descender: on a line with a "g" or a "p" the ink runs downwards, and the centre of
+        /// the ink turns out below the centre of the box — as it should be. The correction,
+        /// meanwhile, lifted the text an honest 2 px above the centre, which is what could be
+        /// seen in every pill and hint.
         ///
-        /// Важно: DT_VCENTER без DT_SINGLELINE система игнорирует молча — текст встаёт
-        /// по верху прямоугольника. Все однострочные наборы флагов ниже включают
-        /// SingleLine именно поэтому.
+        /// Important: DT_VCENTER without DT_SINGLELINE is silently ignored by the system — the
+        /// text stands at the top of the rectangle. That is exactly why every single-line flag
+        /// set below includes SingleLine.
         /// </summary>
         public static void DrawText(Graphics g, string text, Font font, Rectangle rect, Color color,
                                     TextFormatFlags flags)
@@ -230,8 +234,8 @@ namespace AbletonManager
         }
 
         /// <summary>
-        /// «1 reference», «18 references» — согласование, а не «1 references». Один
-        /// общий помощник вместо копии в каждом окне, которое считает что-нибудь.
+        /// "1 reference", "18 references" — agreement, not "1 references". One shared helper
+        /// instead of a copy in every window that counts something.
         /// </summary>
         public static string Plural(int n, string word)
         {
@@ -283,10 +287,10 @@ namespace AbletonManager
     }
 
     /// <summary>
-    /// Пульс «сейчас играет»: три столбика, которые шевелятся, пока идёт звук.
-    /// Общий на всё приложение — один таймер на 90 мс вместо таймера у каждого списка,
-    /// и перерисовывается не весь список, а только прямоугольник самого значка
-    /// (подписчик отдаёт его функцией, потому что играющая строка ездит с прокруткой).
+    /// The "now playing" pulse: three bars that move while the sound is going. Shared across
+    /// the whole application — one 90 ms timer instead of a timer per list, and what gets
+    /// repainted is not the whole list but only the rectangle of the glyph itself (the
+    /// subscriber supplies it as a function, because the playing row travels with the scroll).
     /// </summary>
     public static class PlayPulse
     {
@@ -329,14 +333,15 @@ namespace AbletonManager
             if (_subs.Count == 0) _timer.Stop();
         }
 
-        /// <summary>Высота столбика номер i, 0.25..1. Фаза общая — от часов, без своего состояния.</summary>
+        /// <summary>The height of bar number i, 0.25..1. The phase is shared — from the clock,
+        /// with no state of its own.</summary>
         public static float Level(int i)
         {
             double t = Environment.TickCount / 260.0 + i * 0.7;
             return 0.28f + 0.72f * (float)((Math.Sin(t) * 0.5 + 0.5) * (0.55 + 0.45 * (Math.Sin(t * 1.7 + i) * 0.5 + 0.5)));
         }
 
-        /// <summary>Три столбика по нижнему краю прямоугольника.</summary>
+        /// <summary>Three bars along the bottom edge of the rectangle.</summary>
         public static void Paint(Graphics g, RectangleF r, Color color)
         {
             float barW = r.Width / 5f;
@@ -350,10 +355,10 @@ namespace AbletonManager
     }
 
     /// <summary>
-    /// Оверлейная полоса прокрутки: тонкая в покое, толще под курсором, гаснет через
-    /// секунду после последней прокрутки. Держит только свои две доли (видимость и
-    /// толщину) — саму геометрию и цвет рисует владелец, потому что у списка и у сетки
-    /// плиток полосы стоят по-разному.
+    /// An overlay scrollbar: thin at rest, thicker under the cursor, fading a second after the
+    /// last scroll. It holds only its own two fractions (visibility and thickness) — the
+    /// geometry and the colour are drawn by the owner, because the bars stand differently on a
+    /// list and on a grid of tiles.
     /// </summary>
     public sealed class ScrollFade : IDisposable
     {
@@ -374,13 +379,14 @@ namespace AbletonManager
             _t.Tick += Step;
         }
 
-        /// <summary>Насколько полоса видна, 0..1.</summary>
+        /// <summary>How visible the bar is, 0..1.</summary>
         public float Alpha { get { return _alpha; } }
 
-        /// <summary>Насколько полоса «толстая», 0..1 — от покоя к наведению.</summary>
+        /// <summary>How "thick" the bar is, 0..1 — from rest to hover.</summary>
         public float Thick { get { return _thick; } }
 
-        /// <summary>Была прокрутка — показать полосу и завести отсчёт до затухания.</summary>
+        /// <summary>There was a scroll — show the bar and start the countdown to the
+        /// fade.</summary>
         public void Ping()
         {
             _lastPing = Environment.TickCount;
@@ -388,7 +394,8 @@ namespace AbletonManager
             InvalidateBar();
         }
 
-        /// <summary>Курсор у самой полосы: она не гаснет и становится толще.</summary>
+        /// <summary>The cursor is right by the bar: it does not fade and grows
+        /// thicker.</summary>
         public void SetHot(bool value)
         {
             if (_hot == value) return;
@@ -425,17 +432,20 @@ namespace AbletonManager
         public void Dispose() { _t.Stop(); _t.Dispose(); }
     }
 
-    /// <summary>База для контролов: без мигания, с фоном своей поверхности и плавной анимацией hover/press.</summary>
+    /// <summary>A base for controls: no flicker, with the background of its own surface and a
+    /// smooth hover/press animation.</summary>
     public class GlassControl : Control, IAnimatable
     {
         protected bool Hot, Pressed;
         public float HoverFactor;
         public float PressFactor;
 
-        /// <summary>Цвет того, на чём лежит контрол — им заливается фон под скруглениями.</summary>
+        /// <summary>The colour of what the control lies on — the background under the rounding
+        /// is filled with it.</summary>
         public Color Surface = Theme.Backdrop;
 
-        /// <summary>Накладка поверх фона, если контрол лежит на карточке. См. Chrome.PaintBase.</summary>
+        /// <summary>An overlay over the background if the control lies on a card. See
+        /// Chrome.PaintBase.</summary>
         public Color SurfaceOverlay = Color.Transparent;
 
         protected void PaintSurface(Graphics g)
@@ -456,15 +466,15 @@ namespace AbletonManager
         protected int Sc(int v) { return (int)Math.Round(v * (DeviceDpi / 96f)); }
 
         /// <summary>
-        /// Нужна ли контролу правая (и средняя) кнопка мыши. По умолчанию нет: голый
-        /// Control поднимает Click на любой кнопке — фильтрует левую только Button, —
-        /// и от этого ПКМ по нашим пилюлям и иконкам срабатывала как ЛКМ. Списки с
-        /// контекстным меню переопределяют свойство и разбирают e.Button сами.
+        /// Whether the control needs the right (and middle) mouse button. Not by default: a
+        /// bare Control raises Click on any button — only Button filters for the left — and
+        /// because of that a right click on our pills and icons fired as a left one. Lists with
+        /// a context menu override the property and handle e.Button themselves.
         /// </summary>
         protected virtual bool WantsRightClick { get { return false; } }
 
-        // WM_RBUTTONDOWN..WM_MBUTTONDBLCLK — правая и средняя кнопки со всеми их
-        // down/up/dblclk. Съедаем целиком, чтобы до Click-логики Control они не дошли.
+        // WM_RBUTTONDOWN..WM_MBUTTONDBLCLK — the right and middle buttons with all their
+        // down/up/dblclk. We swallow them entirely so they never reach Control's Click logic.
         const int WM_RBUTTONDOWN = 0x0204, WM_RBUTTONDBLCLK = 0x0206;
         const int WM_MBUTTONDBLCLK = 0x0209;
 
@@ -472,10 +482,10 @@ namespace AbletonManager
         {
             if (m.Msg >= WM_RBUTTONDOWN && m.Msg <= WM_MBUTTONDBLCLK)
             {
-                // Двойной клик правой (и средней) не нужен никому: даже списки, которым
-                // правая кнопка нужна для меню, от второго тычка открывали строку, как
-                // от двойного левого. Поэтому dblclk глушим всегда, а остальное — только
-                // тем, кто правую кнопку не просил.
+                // Nobody needs a right (or middle) double click: even the lists that need the
+                // right button for a menu opened a row on a second poke, just as on a left
+                // double click. So dblclk is always muted, and the rest only for those that did
+                // not ask for the right button.
                 bool dbl = m.Msg == WM_RBUTTONDBLCLK || m.Msg == WM_MBUTTONDBLCLK;
                 if (dbl || !WantsRightClick)
                 {
@@ -487,16 +497,15 @@ namespace AbletonManager
         }
 
         /// <summary>
-        /// Насколько контрол «продавлен» при нажатии — на столько пикселей всё его
-        /// содержимое рисуется внутрь. Тактильность, которую дают Apple-контролы,
-        /// это она, а не анимация цвета.
+        /// How far a control is "pushed in" when pressed — all its content is drawn that many
+        /// pixels inwards. The tactility Apple's controls give is this, not a colour animation.
         /// </summary>
         protected float PressInset { get { return PressFactor * Sc(2); } }
 
-        // Регион-клипа здесь больше нет. Он был однобитным, и сглаженный край пилюли
-        // срезался по нему ступеньками — заметно на любой заливной кнопке (Open in Live,
-        // Apply). Фон под скруглениями пишет PaintBase, так что регион не держал ничего,
-        // кроме этих ступенек.
+        // The region clip is gone from here. It was one-bit, and the antialiased edge of a pill
+        // was cut off by it in steps — visible on any filled button (Open in Live, Apply). The
+        // background under the rounding is written by PaintBase, so the region held nothing but
+        // those steps.
 
         protected override void OnMouseEnter(EventArgs e) { Hot = true; AnimEngine.Register(this); base.OnMouseEnter(e); }
         protected override void OnMouseLeave(EventArgs e) { Hot = false; Pressed = false; AnimEngine.Register(this); base.OnMouseLeave(e); }
@@ -521,9 +530,9 @@ namespace AbletonManager
                 return false;
             }
 
-            // Вход быстрый, возврат ленивый — симметричные скорости читаются как
-            // «интерфейс думает». Числа — доля остатка за кадр (16 мс):
-            // наведение ~110 мс вход / ~260 мс выход, нажатие ~55 / ~210.
+            // Entry quick, return lazy — symmetric speeds read as "the interface is thinking".
+            // The numbers are the fraction of the remainder per frame (16 ms): hover ~110 ms in
+            // / ~260 ms out, press ~55 / ~210.
             HoverFactor += dh * (dh > 0f ? 0.45f : 0.18f);
             PressFactor += dp * (dp > 0f ? 0.70f : 0.22f);
             Invalidate();
@@ -531,11 +540,12 @@ namespace AbletonManager
         }
     }
 
-    /// <summary>Кнопка-пилюля. Обычная — на цвете поверхности, главная — светлая заливка.</summary>
+    /// <summary>A pill button. Ordinary — on the surface colour; primary — a light
+    /// fill.</summary>
     public class GlassButton : GlassControl
     {
         public bool Primary;
-        public bool Quiet;   // без заливки, как текстовая ссылка
+        public bool Quiet;   // no fill, like a text link
         public bool Checked;
 
         protected override float PillRadius { get { return Height / 2f; } }
@@ -592,9 +602,9 @@ namespace AbletonManager
                 RectangleF pr = RectangleF.Inflate(r, -PressInset, -PressInset);
                 float rad = pr.Height / 2f;
 
-                // Вертикальный градиент со светом сверху — то же, что у ручки тумблера:
-                // кнопка читается как приподнятая, а значит нажимаемая. Плоская заливка
-                // выглядела выключенной рядом с обводочными кнопками.
+                // A vertical gradient with the light on top — the same as the toggle's knob:
+                // the button reads as raised and therefore pressable. A flat fill looked
+                // disabled next to the outlined buttons.
                 Color top = Theme.Interpolate(Theme.LightTop, Color.White, HoverFactor);
                 Color bottom = Theme.Interpolate(Theme.Light, Theme.LightTop, HoverFactor);
                 if (PressFactor > 0.01f)
@@ -609,7 +619,7 @@ namespace AbletonManager
                            top, bottom, LinearGradientMode.Vertical))
                     g.FillPath(lgb, path);
 
-                // Блик по верхней дуге — 1px белым, гаснет при нажатии.
+                // A highlight along the top arc — 1px white, fading when pressed.
                 using (Pen hi = new Pen(Color.FromArgb((int)Math.Round(0x66 * (1f - PressFactor)), 255, 255, 255), 1f))
                 using (GraphicsPath tp = Theme.RoundTop(RectangleF.Inflate(pr, -0.5f, -0.5f), rad - 0.5f))
                     g.DrawPath(hi, tp);
@@ -623,9 +633,10 @@ namespace AbletonManager
             }
             else if (Quiet)
             {
-                // Обычная кнопка сливается с покоем задолго до HoverFactor==0 (её alpha
-                // идёт от 0x14, не от нуля). У Quiet заливка идёт от нуля, поэтому хвост
-                // виден вдвое дольше и ховер «залипает». Сдвигаем шкалу на ту же долю.
+                // An ordinary button merges with rest long before HoverFactor==0 (its alpha
+                // runs from 0x14, not from zero). On a Quiet one the fill runs from zero, so
+                // the tail is visible twice as long and the hover "sticks". We shift the scale
+                // by that same fraction.
                 float rest = Theme.GlassSurfaceAlpha / (float)Theme.GlassSurfaceHotAlpha;
                 float shown = Math.Max(0f, (HoverFactor - rest) / (1f - rest));
                 if (shown > 0.001f)
@@ -653,20 +664,20 @@ namespace AbletonManager
     }
 
     /// <summary>
-    /// Кнопка фильтров: значок ползунков, подпись и число включённых условий через точку.
-    /// Отдельный контрол, потому что значок и счётчик должны стоять на своих местах
-    /// независимо от длины подписи.
+    /// The filters button: the sliders glyph, a caption and the number of active conditions
+    /// after a dot. A control of its own, because the glyph and the counter have to keep their
+    /// places regardless of the caption's length.
     /// </summary>
     public class FiltersButton : GlassControl
     {
         public int Count;
 
-        /// <summary>Подпись со счётчиком — она же задаёт ширину пилюли.</summary>
+        /// <summary>The caption with the counter — it also sets the pill width.</summary>
         string Label { get { return Count > 0 ? Text + " · " + Count : Text; } }
 
         /// <summary>
-        /// Ширина под текущую подпись. Фиксированных 140 пикселей хватало ровно на
-        /// «Filters»: стоило появиться счётчику, и число уезжало в многоточие.
+        /// The width for the current caption. A fixed 140 pixels was exactly enough for
+        /// "Filters": the moment a counter appeared, the number went off into an ellipsis.
         /// </summary>
         public int PreferredWidth
         {
@@ -714,17 +725,17 @@ namespace AbletonManager
         }
     }
 
-    /// <summary>Круглая кнопка со значком — панель инструментов и кнопки окна.</summary>
+    /// <summary>A round glyph button — the toolbar and the window buttons.</summary>
     public class IconButton : GlassControl
     {
         public Glyph Icon = Glyph.Close;
-        public bool Danger;          // закрытие окна краснеет под курсором
-        public bool Quiet;           // без подложки: только значок, светлеющий под курсором
+        public bool Danger;          // the window close button turns red under the cursor
+        public bool Quiet;           // no backing: just the glyph, lightening under the cursor
         public float IconScale = 0.46f;
 
-        /// <summary>Провернуть значок на пол-оборота при нажатии — для кубика.</summary>
+        /// <summary>Spin the glyph half a turn when pressed — for the die.</summary>
         public bool SpinOnClick;
-        float _spin;                 // текущий угол, градусы
+        float _spin;                 // the current angle, in degrees
         int _spinFrom;
 
         protected override float PillRadius { get { return Height / 2f; } }
@@ -758,8 +769,8 @@ namespace AbletonManager
             bool more = base.OnAnimTick();
             if (_spin > 0.5f)
             {
-                // Доводим угол к нулю по той же экспоненте, что и ховер: кубик
-                // проворачивается и встаёт на место, а не крутится вечно.
+                // We settle the angle to zero by the same exponential as the hover: the die
+                // turns and comes to rest rather than spinning forever.
                 _spin += (0f - _spin) * 0.22f;
                 Invalidate();
                 return true;
@@ -789,14 +800,14 @@ namespace AbletonManager
             }
 
             float box = Width * IconScale;
-            // У значка ход вдвое короче: он и так мельче пилюли, и полный отступ
-            // съедал бы заметную долю самого рисунка.
+            // The glyph's travel is half as long: it is smaller than a pill as it is, and a
+            // full inset would eat a noticeable share of the drawing itself.
             float inset = PressInset * 0.5f;
             RectangleF ir = new RectangleF((Width - box) / 2f + inset, (Height - box) / 2f + inset,
                                            box - inset * 2, box - inset * 2);
-            // Значок светлеет под курсором в любом виде кнопки: у обычной он раньше
-            // держал ровно один цвет, и единственным признаком наведения оставалась
-            // подложка — а её на размытом фоне почти не видно.
+            // The glyph lightens under the cursor on every kind of button: on the ordinary one
+            // it used to hold exactly one colour, and the only sign of hover was the backing —
+            // which is barely visible on a blurred background.
             Color ink = Danger ? Theme.Interpolate(Theme.Light, Color.White, HoverFactor)
                       : (Quiet ? Theme.Interpolate(Theme.TextDim, Theme.Text, HoverFactor)
                                : Theme.Interpolate(Theme.Light, Color.White, HoverFactor));
@@ -815,7 +826,7 @@ namespace AbletonManager
         }
     }
 
-    /// <summary>Пилюля-переключатель: выбор из двух состояний или тумблер (IsSwitch).</summary>
+    /// <summary>A toggle pill: a choice of two states, or a switch (IsSwitch).</summary>
     public class PillToggle : GlassControl
     {
         bool _checked;
@@ -967,9 +978,8 @@ namespace AbletonManager
 
             float t = (_animTimer != null && _animTimer.Enabled) ? _thumbPos : (_checked ? 1f : 0f);
 
-            // 1. Ложе трека:
-            // OFF: утопленный тёмный стеклянный трек (Theme.Sunken + деликатная полупрозрачность)
-            // ON: обычный светлый (Theme.Light)
+            // 1. The track bed: OFF: a recessed dark glass track (Theme.Sunken plus a delicate
+            // translucency) ON: the ordinary light one (Theme.Light)
             Color offSunken = Theme.Sunken;
             Color offOverlay = Color.FromArgb((int)(0x14 + 0x0E * HoverFactor), 0xFF, 0xFF, 0xFF);
 
@@ -1002,7 +1012,8 @@ namespace AbletonManager
                 }
             }
 
-            // 2. Стеклянный контур ложа с бликом по верхнему краю (в стилистике PaintGlassBorder)
+            // 2. The glass contour of the bed with a highlight along the top edge (in the
+            // PaintGlassBorder idiom)
             if (Enabled)
             {
                 int borderAlpha = (int)(0x26 * (1f - t) + 0x30 * t + 0x10 * HoverFactor);
@@ -1028,7 +1039,7 @@ namespace AbletonManager
                 }
             }
 
-            // 3. Ручка (knob): тактильная, с мягким градиентом, серебристая в OFF, белая в ON
+            // 3. The knob: tactile, with a soft gradient, silvery in OFF and white in ON
             float inset = Sc(2);
             float knobDiam = trackH - inset * 2;
             float offX = trackX + inset;
@@ -1040,7 +1051,7 @@ namespace AbletonManager
 
             if (Enabled)
             {
-                // Мягкая диффузная тень под ручкой
+                // A soft diffuse shadow under the knob
                 RectangleF s1 = new RectangleF(knobX - 0.5f, knobY + 0.5f, knobDiam + 1f, knobDiam + 1f);
                 using (Brush b1 = new SolidBrush(Color.FromArgb(0x18, 0, 0, 0))) g.FillEllipse(b1, s1);
                 RectangleF s2 = new RectangleF(knobX, knobY + 1f, knobDiam, knobDiam);
@@ -1079,7 +1090,7 @@ namespace AbletonManager
         }
     }
 
-    /// <summary>Сегментированный переключатель: обводка и подвижная пилюля внутри.</summary>
+    /// <summary>A segmented control: an outline with a moving pill inside.</summary>
     public class Segmented : GlassControl
     {
         string[] _items = new string[0];
@@ -1180,35 +1191,34 @@ namespace AbletonManager
     }
 
     /// <summary>
-    /// Поле ввода — единственное настоящее нативное окно во всём интерфейсе, и на
-    /// стеклянном окне оно ведёт себя не как остальные контролы. Edit рисует свой фон
-    /// обычной GDI-кистью, а у кисти цвет — это COLORREF, где под альфу байта просто
-    /// нет: в поверхность уходит ноль. Ноль в альфе для DWM значит «здесь дырка», и
-    /// сквозь поле начинает светить акриловый слой.
+    /// An input field is the one genuinely native window in the whole interface, and on a glass
+    /// window it behaves unlike the other controls. Edit draws its background with an ordinary
+    /// GDI brush, and a brush's colour is a COLORREF, where there is simply no byte for alpha:
+    /// zero goes into the surface. Zero in the alpha means "a hole here" to DWM, and the
+    /// acrylic layer starts shining through the field.
     ///
-    /// Первая версия чинила это ПОСЛЕ штатного WM_PAINT: пусть Edit нарисует дыру в
-    /// настоящем окне, а мы следом залатаем альфу поверх. В спокойном состоянии
-    /// разницы не видно, но при перетаскивании окна DWM успевает считать кадр ровно
-    /// в момент между «дыра нарисована» и «альфа залатана» — и мелькает прозрачный
-    /// прямоугольник. Лечится только атомарно: Edit печатает себя в наш офскрин-буфер
-    /// (WM_PRINTCLIENT, а не WM_PAINT), там же получает альфу 0xFF, и на настоящее
-    /// окно попадает уже готовый, беспроблемный кадр одним BitBlt — сырую дыру
-    /// снаружи не увидит никто и никогда, а не «обычно не увидит».
+    /// The first version fixed this AFTER the regular WM_PAINT: let Edit draw a hole in the
+    /// real window and we will patch the alpha over it afterwards. At rest the difference is
+    /// invisible, but while the window is being dragged DWM manages to read a frame at exactly
+    /// the moment between "the hole is drawn" and "the alpha is patched" — and a transparent
+    /// rectangle flickers. It can only be cured atomically: Edit prints itself into our
+    /// offscreen buffer (WM_PRINTCLIENT rather than WM_PAINT), gets alpha 0xFF right there, and
+    /// what reaches the real window is a finished, trouble-free frame in a single BitBlt —
+    /// nobody ever sees the raw hole from outside, rather than "usually does not see it".
     /// </summary>
     /// <summary>
-    /// Текстовое поле ввода на базе невидимого нативного TextBox.
-    /// Полностью устраняет артефакты фонового прямоугольника UxTheme на акриловом стекле.
+    /// A text input field built on an invisible native TextBox. It removes the UxTheme
+    /// background rectangle artefacts on acrylic glass completely.
     /// </summary>
     public class GlassTextBox : TextBox
     {
         public string Cue = "";
 
         /// <summary>
-        /// Второй источник того же системного «дзынь»: однострочное поле ввода не умеет
-        /// вставить перевод строки, и на Enter (а заодно на Escape) сам edit-control
-        /// зовёт MessageBeep из своего WM_CHAR. Съедаем именно символ — KeyDown до
-        /// подписчиков доходит как раньше, так что Enter по-прежнему что-то делает,
-        /// просто молча.
+        /// The second source of that same system beep: a single-line input field cannot insert
+        /// a line break, and on Enter (and on Escape too) the edit control itself calls
+        /// MessageBeep from its WM_CHAR. We swallow the character specifically — KeyDown
+        /// reaches the subscribers as before, so Enter still does something, just silently.
         /// </summary>
         protected override void WndProc(ref Message m)
         {
@@ -1222,15 +1232,16 @@ namespace AbletonManager
         }
     }
 
-    /// <summary>Поле ввода: утопленная пилюля, отрисовка через GDI+ с поддержкой выделения и каретки.</summary>
+    /// <summary>An input field: a recessed pill drawn through GDI+ with selection and caret
+    /// support.</summary>
     public class FieldBox : GlassControl
     {
         public readonly GlassTextBox Box = new GlassTextBox();
-        public string Glyph;      // необязательный значок слева
-        public bool ShowClear;    // крестик справа, пока в поле есть текст — очищает его
+        public string Glyph;      // an optional glyph on the left
+        public bool ShowClear;    // a cross on the right while the field has text — it clears it
 
-        /// <summary>Кнопка-значок в том же левом слоте: клик по ней не ставит каретку,
-        /// а зовёт IconLeftClicked (календарь у полей с датой).</summary>
+        /// <summary>A glyph button in that same left slot: a click on it does not place the
+        /// caret but calls IconLeftClicked (the calendar on date fields).</summary>
         public AbletonManager.Glyph? IconLeft;
         public event Action IconLeftClicked;
 
@@ -1241,18 +1252,18 @@ namespace AbletonManager
         }
 
         bool _focused, _clearHot, _caretVisible, _dragSelecting, _iconHot;
-        int _anchor;      // неподвижный конец выделения: от него считаем, где сейчас каретка
-        int _scroll;      // на сколько пикселей текст уехал влево под левый край поля
+        int _anchor;      // the fixed end of the selection: we work out where the caret is from it
+        int _scroll;      // how many pixels the text has moved left under the left edge of the field
         Rectangle _clearRect;
         Timer _timer = new Timer();
 
         /// <summary>
-        /// Один набор флагов на замер и на отрисовку — иначе позиция каретки расходится
-        /// с тем, где реально стоит буква. NoPadding обязателен: без него TextRenderer
-        /// добавляет к строке несколько пикселей полей, и их приходится вычитать
-        /// подобранными на глаз константами (так тут и было). С ним ширина подстроки
-        /// ровно равна смещению следующего символа, включая хвостовые пробелы.
-        /// SingleLine — чтобы работал VerticalCenter, см. Chrome.DrawText.
+        /// One flag set for measuring and for drawing — otherwise the caret position disagrees
+        /// with where the letter really stands. NoPadding is mandatory: without it TextRenderer
+        /// adds several pixels of margin to the line, and they have to be subtracted with
+        /// constants picked by eye (which is how it used to be here). With it the width of a
+        /// substring exactly equals the offset of the next character, trailing spaces included.
+        /// SingleLine so that VerticalCenter works, see Chrome.DrawText.
         /// </summary>
         static readonly TextFormatFlags TextFlags =
             TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.SingleLine |
@@ -1263,9 +1274,9 @@ namespace AbletonManager
         public FieldBox()
         {
             Height = Theme.ControlH;
-            // Пилюля — только оболочка: фокус держит спрятанный Box. Пока оболочка была
-            // своим таб-стопом, Tab сначала вставал на неё — без каретки и видимой
-            // рамки, то есть впустую, — и в поле попадали со второго нажатия.
+            // The pill is only a shell: the focus is held by the hidden Box. While the shell
+            // was a tab stop of its own, Tab landed on it first — with no caret and no visible
+            // frame, that is, for nothing — and the field was reached on the second press.
             SetStyle(ControlStyles.Selectable, false);
             TabStop = false;
             Box.Size = new Size(0, 0);
@@ -1283,12 +1294,13 @@ namespace AbletonManager
             Box.Click += delegate { Sync(); Invalidate(); };
         }
 
-        /// <summary>Схлопнулось выделение — значит якорь там же, где каретка.</summary>
+        /// <summary>The selection collapsed — meaning the anchor is where the caret
+        /// is.</summary>
         void Sync() { if (Box.SelectionLength == 0) _anchor = Box.SelectionStart; }
 
         /// <summary>
-        /// Каретка — подвижный конец выделения. EM_GETSEL отдаёт только начало и длину,
-        /// какой из концов сейчас двигают — нет; вычисляем по якорю.
+        /// The caret is the moving end of the selection. EM_GETSEL gives only the start and the
+        /// length, not which end is currently being moved; we work it out from the anchor.
         /// </summary>
         int Caret
         {
@@ -1310,7 +1322,7 @@ namespace AbletonManager
             _clearRect = new Rectangle(Width - Sc(26), (Height - cs) / 2, cs, cs);
         }
 
-        /// <summary>Левый слот значка — он же зона клика для IconLeft.</summary>
+        /// <summary>The left glyph slot — also the click zone for IconLeft.</summary>
         Rectangle IconRect
         {
             get { int s = Sc(20); return new Rectangle(Sc(11), (Height - s) / 2, s, s); }
@@ -1323,7 +1335,8 @@ namespace AbletonManager
             return new Rectangle(left, 0, Math.Max(10, Width - left - right), Height);
         }
 
-        /// <summary>Ширина первых upto символов, в пикселях от начала строки.</summary>
+        /// <summary>The width of the first `upto` characters, in pixels from the start of the
+        /// line.</summary>
         int TextW(Graphics g, int upto)
         {
             if (upto <= 0) return 0;
@@ -1349,13 +1362,13 @@ namespace AbletonManager
             return bestIdx;
         }
 
-        // ------------------------------------------------------- границы слов
-        // Нативный edit шириной 0 по Ctrl+стрелкам не ходит, поэтому переходы по словам
-        // и выделение слова двойным кликом считаем сами. Правило как в проводнике: буквы,
-        // цифры и подчёркивание — слово; остальные непробельные знаки — своя группа;
-        // пробелы прилипают к слову справа при движении вправо.
+        // ------------------------------------------------------------- word bounds A native
+        // edit of zero width does not walk by Ctrl+arrows, so we work out word movement and
+        // double-click word selection ourselves. The rule is as in Explorer: letters, digits
+        // and the underscore are a word; other non-whitespace characters are a group of their
+        // own; spaces stick to the word on the right when moving right.
 
-        // public, а не private: границы слов проверяет scratch\wordnav_check.cs.
+        // public rather than private: the word bounds are checked by scratch\wordnav_check.cs.
         public static bool IsWordChar(char c) { return char.IsLetterOrDigit(c) || c == '_'; }
 
         public static int WordLeft(string s, int i)
@@ -1393,10 +1406,10 @@ namespace AbletonManager
                 e.Handled = e.SuppressKeyPress = true;
                 return;
             }
-            // Тот же баг нулевой ширины, что у Ctrl+стрелок выше: нативное стирание
-            // слова целиком на edit-контроле размером 0×0 тоже не срабатывает. Есть
-            // выделение — Ctrl тут ни при чём, обычное удаление и так уберёт ровно его;
-            // иначе считаем границу слова сами и вырезаем диапазон руками.
+            // The same zero-width bug as with Ctrl+arrows above: native whole-word deletion
+            // does not work on a 0×0 edit control either. If there is a selection, Ctrl has
+            // nothing to do with it — ordinary deletion removes exactly that anyway; otherwise
+            // we work the word boundary out ourselves and cut the range by hand.
             if (e.Control && !e.Alt && (e.KeyCode == Keys.Back || e.KeyCode == Keys.Delete))
             {
                 if (Box.SelectionLength > 0)
@@ -1433,8 +1446,9 @@ namespace AbletonManager
             using (Graphics g = CreateGraphics())
                 i = GetCharIndexAt(g, e.X, GetTextRect());
 
-            // Клик у правого края слова даёт индекс за его последним символом — берём
-            // символ слева, иначе двойной клик по концу слова выделял бы пустоту.
+            // A click at a word's right edge gives the index past its last character — we take
+            // the character to the left, or a double click at the end of a word would select
+            // emptiness.
             if (i >= txt.Length || (i > 0 && !IsWordChar(txt[i]) && IsWordChar(txt[i - 1]))) i--;
             if (i < 0 || !IsWordChar(txt[i])) return;
 
@@ -1526,17 +1540,17 @@ namespace AbletonManager
             Rectangle textRect = GetTextRect();
             string txt = Box.Text;
 
-            // Всё, что относится к тексту, живёт строго внутри textRect: выделение
-            // рисуется прямоугольником и раньше уезжало за пилюлю и под крестик,
-            // а длинная строка просто вылезала наружу.
+            // Everything to do with the text lives strictly inside textRect: the selection is
+            // drawn as a rectangle and used to run off past the pill and under the cross, while
+            // a long line simply spilled outside.
             GraphicsState clip = g.Save();
             g.IntersectClip(textRect);
 
             if (string.IsNullOrEmpty(txt))
             {
                 _scroll = 0;
-                // В фокусе подсказку не показываем: рядом с кареткой она читается как
-                // уже набранный текст, который почему-то не стирается.
+                // We do not show the placeholder while focused: next to the caret it reads as
+                // text already typed that for some reason will not delete.
                 if (!_focused && !string.IsNullOrEmpty(Cue))
                     Chrome.DrawText(g, Cue, Font, textRect, Theme.TextDim, TextFlags);
             }
@@ -1546,7 +1560,8 @@ namespace AbletonManager
                 int caretIdx = Math.Min(Caret, txt.Length);
                 int caretX = TextW(g, caretIdx);
 
-                // Строка длиннее поля — не режем по краю, а возим под кареткой.
+                // The line is longer than the field — we do not cut it at the edge but carry it
+                // under the caret.
                 if (!_focused) _scroll = 0;
                 else
                 {
@@ -1583,7 +1598,7 @@ namespace AbletonManager
 
             g.Restore(clip);
 
-            // Пустое поле в фокусе: каретка у левого края, текста под неё ещё нет.
+            // An empty field in focus: the caret at the left edge, with no text under it yet.
             if (_focused && _caretVisible && txt.Length == 0)
             {
                 int cy = (Height - Sc(18)) / 2;
@@ -1593,7 +1608,7 @@ namespace AbletonManager
         }
     }
 
-    /// <summary>Выпадающий список: пилюля и тёмное меню.</summary>
+    /// <summary>A dropdown: a pill and a dark menu.</summary>
     public class DropField : GlassControl
     {
         readonly List<string> _items = new List<string>();
@@ -1673,13 +1688,14 @@ namespace AbletonManager
     }
 
     /// <summary>
-    /// Календарь под полем с датой. Внутри — родной MonthCalendar: месяц, год и выбор
-    /// дня уже написаны за нас, писать своё ради тёмной раскраски незачем.
+    /// A calendar under a date field. Inside is the native MonthCalendar: the month, the year
+    /// and choosing a day are already written for us, and writing our own for the sake of dark
+    /// colouring would be pointless.
     ///
-    /// Одна тонкость: при включённых визуальных стилях MonthCalendar рисуется темой
-    /// Windows и свои BackColor/TitleBackColor молча игнорирует — календарь остаётся
-    /// белым. SetWindowTheme с пустым именем снимает с него тему, после чего цвета
-    /// начинают работать. Звать её можно только по готовому окну, поэтому — после Show.
+    /// One subtlety: with visual styles enabled MonthCalendar is drawn by the Windows theme and
+    /// silently ignores its own BackColor/TitleBackColor — the calendar stays white.
+    /// SetWindowTheme with an empty name strips the theme off it, after which the colours start
+    /// working. It can only be called on an existing window, hence — after Show.
     /// </summary>
     public static class CalendarPopup
     {
@@ -1692,10 +1708,10 @@ namespace AbletonManager
             cal.MaxSelectionCount = 1;
             cal.ShowTodayCircle = false;
 
-            // Тему снимаем ДО показа: без неё календарь меряет себя иначе, и если
-            // сделать это после Show, выпадашка остаётся прежнего размера и срезает
-            // календарю шапку с месяцем и последнюю неделю. Обращение к Handle само
-            // создаёт окно — SetWindowTheme без него не сработает.
+            // We strip the theme BEFORE showing: without it the calendar measures itself
+            // differently, and doing it after Show leaves the dropdown at its former size,
+            // cutting off the calendar's month header and its last week. Touching Handle
+            // creates the window by itself — SetWindowTheme will not work without it.
             try { SetWindowTheme(cal.Handle, "", ""); } catch { }
             cal.BackColor = Theme.SolidSurface;
             cal.ForeColor = Theme.Text;
@@ -1723,8 +1739,8 @@ namespace AbletonManager
                 picked(e.Start.Date);
                 host.Close();
             };
-            // Рвать выпадашку прямо в её собственном Closed нельзя — она в этот момент
-            // ещё дочитывает своё сообщение. Убираем следующим тактом очереди.
+            // The dropdown must not be torn down inside its own Closed — at that moment it is
+            // still finishing with its message. We remove it on the next turn of the queue.
             host.Closed += delegate { anchor.BeginInvoke((Action)delegate { host.Dispose(); }); };
 
             host.Show(anchor, 0, anchor.Height + 4);
@@ -1747,12 +1763,12 @@ namespace AbletonManager
         }
 
         /// <summary>
-        /// Скругляем меню тем же радиусом, что у компактных карточек в остальном
-        /// интерфейсе — иначе на фоне скруглённого всюду оно торчит острыми углами.
-        /// Ставим на Opening: к этому моменту меню уже разложено по своим пунктам
-        /// и Width/Height окончательные.
+        /// We round the menu with the same radius as the compact cards elsewhere in the
+        /// interface — otherwise against a uniformly rounded background it sticks out with
+        /// sharp corners. We do it on Opening: by that point the menu has already laid out its
+        /// items and Width/Height are final.
         /// </summary>
-        /// <summary>Радиус скругления меню — общий для региона и обводки.</summary>
+        /// <summary>The menu's corner radius — shared by the region and the outline.</summary>
         internal static float Radius(ToolStrip t)
         {
             return 10f * (t.DeviceDpi / 96f);
@@ -1767,7 +1783,7 @@ namespace AbletonManager
 
         class DarkColors : ProfessionalColorTable
         {
-            // Меню — отдельное окно без стекла, поэтому цвета здесь только непрозрачные.
+            // A menu is a separate window with no glass, so the colours here are opaque only.
             public override Color MenuItemSelected { get { return Theme.SolidPressed; } }
             public override Color MenuItemSelectedGradientBegin { get { return MenuItemSelected; } }
             public override Color MenuItemSelectedGradientEnd { get { return MenuItemSelected; } }
@@ -1784,8 +1800,9 @@ namespace AbletonManager
             public DarkRenderer() : base(new DarkColors()) { }
 
             /// <summary>
-            /// Хоткей пункта WinForms рисует этим же вызовом, что и название, — отличаем
-            /// по тексту и притеняем, чтобы правая колонка не спорила с самим пунктом.
+            /// WinForms draws an item's shortcut with the same call as its name — we tell them
+            /// apart by the text and shade it, so that the right column does not argue with the
+            /// item itself.
             /// </summary>
             protected override void OnRenderItemText(ToolStripItemTextRenderEventArgs e)
             {
@@ -1797,9 +1814,10 @@ namespace AbletonManager
             }
 
             /// <summary>
-            /// Своя обводка вместо штатной. Штатная — прямоугольник по краю меню, а меню
-            /// скруглено регионом (см. DarkMenu.RoundCorners): прямые стороны обрывались
-            /// на срезанных углах, и рамка выглядела рваной. Рисуем 1px по той же дуге.
+            /// Our own outline instead of the standard one. The standard one is a rectangle
+            /// along the menu's edge, while the menu is rounded by a region (see
+            /// DarkMenu.RoundCorners): the straight sides broke off at the cut corners and the
+            /// frame looked ragged. We draw 1px along the same arc.
             /// </summary>
             protected override void OnRenderToolStripBorder(ToolStripRenderEventArgs e)
             {
@@ -1816,8 +1834,8 @@ namespace AbletonManager
             }
 
             /// <summary>
-            /// Своя галочка вместо системной — штатная рисует приподнятый квадрат под
-            /// цвета Windows и на тёмном фоне почти не видна.
+            /// Our own tick instead of the system one — the standard one draws a raised square
+            /// in Windows colours and is barely visible on a dark background.
             /// </summary>
             protected override void OnRenderItemCheck(ToolStripItemImageRenderEventArgs e)
             {
@@ -1829,7 +1847,8 @@ namespace AbletonManager
         }
     }
 
-    /// <summary>Полоса перемотки трека для мини-транспорта в футере в стиле Apple Music.</summary>
+    /// <summary>A track scrubber for the mini transport in the footer, in the Apple Music
+    /// style.</summary>
     public sealed class SeekSlider : GlassControl
     {
         float _progress;
@@ -1861,8 +1880,8 @@ namespace AbletonManager
             {
                 int trackH = Sc(5);
                 float padX = Sc(4);
-                // Ряд желобка целочисленный: на половине пикселя сглаживание размазывает
-                // крайние строки, и сыгранная часть выглядит подрезанной снизу.
+                // The trough's row is a whole number: at half a pixel the antialiasing smears
+                // the outer lines and the played part looks trimmed at the bottom.
                 return new RectangleF(padX, (Height - trackH) / 2, Math.Max(Sc(20), Width - padX * 2), trackH);
             }
         }
@@ -1915,23 +1934,23 @@ namespace AbletonManager
             RectangleF t = Track;
             float r = t.Height / 2f;
 
-            // Фоновый желобок с закруглёнными концами
+            // The background trough with rounded ends
             Color trackBg = Hot || _drag
                 ? Color.FromArgb(0x50, 0xFF, 0xFF, 0xFF)
                 : Color.FromArgb(0x30, 0xFF, 0xFF, 0xFF);
 
             Theme.FillRound(g, t, r, trackBg);
 
-            // Сыгранная часть — тот же скруглённый желобок, только короче. Клипа по
-            // GraphicsPath тут не было нужно: форма и так лежит внутри желобка, а
-            // Region однобитный и срезал сглаженный край ровной ступенькой.
+            // The played part is the same rounded trough, only shorter. No GraphicsPath clip
+            // was needed here: the shape lies inside the trough as it is, while a Region is
+            // one-bit and cut the antialiased edge off in a flat step.
             float doneW = t.Width * _progress;
             if (doneW > 0f)
                 Theme.FillRound(g, new RectangleF(t.X, t.Y, doneW, t.Height), r,
                                 Hot || _drag ? Color.White : Theme.Text);
 
-            // Ручка появляется только под курсором: в покое полоса читается как
-            // ровная линия прогресса, а тянуть её всё равно можно — курсор подскажет.
+            // The knob appears only under the cursor: at rest the bar reads as an even progress
+            // line, and it can still be dragged — the cursor will say so.
             if (Hot || _drag)
             {
                 float knob = Sc(11);
@@ -1944,8 +1963,8 @@ namespace AbletonManager
     }
 
     /// <summary>
-    /// Кликабельное название сета в мини-транспорте.
-    /// При наведении плавно подсвечивается белым, меняет курсор на руку, по клику переходит к сету.
+    /// A clickable set name in the mini transport. On hover it lights up smoothly in white,
+    /// changes the cursor to a hand, and on a click jumps to the set.
     /// </summary>
     public sealed class PlayerSetLink : GlassControl
     {
@@ -1971,8 +1990,8 @@ namespace AbletonManager
         protected override void OnPaint(PaintEventArgs e)
         {
             Graphics g = e.Graphics;
-            // Фон обязателен: без него контрол оставляет на стекле непрозрачный
-            // прямоугольник — свой BackColor, унаследованный от окна.
+            // The background is mandatory: without it the control leaves an opaque rectangle on
+            // the glass — its own BackColor, inherited from the window.
             PaintSurface(g);
             if (string.IsNullOrEmpty(_text)) return;
             Theme.Smooth(g);
@@ -1986,7 +2005,7 @@ namespace AbletonManager
     }
 
     /// <summary>
-    /// Вертикальный регулятор громкости в виде всплывающей капсулы над кнопкой громкости.
+    /// A vertical volume slider as a capsule popping up over the volume button.
     /// </summary>
     public sealed class VolumePopupControl : GlassControl
     {
@@ -2001,9 +2020,10 @@ namespace AbletonManager
             Visible = false;
         }
 
-        // Попап висит над списком, а не над фоном окна, поэтому закрасить углы
-        // «правильным» цветом нельзя — под ними строки. Вырезаем контрол по форме
-        // пилюли, тогда за скруглениями остаётся то, что было. Приём как у Toast.
+        // The popup hangs over the list rather than over the window background, so the corners
+        // cannot be painted with the "right" colour — there are rows under them. We clip the
+        // control to the pill shape, and then what was there stays behind the rounding. The
+        // same device as in Toast.
         protected override void OnResize(EventArgs e)
         {
             base.OnResize(e);
@@ -2087,8 +2107,9 @@ namespace AbletonManager
             RectangleF rect = new RectangleF(0.5f, 0.5f, Width - 1f, Height - 1f);
             float cornerR = Width / 2f;
 
-            // Заливка во всю коробку, а не по контуру: форму держит Region, а
-            // сглаженный край заливки внутри него дал бы тёмную кромку от BackColor.
+            // The fill covers the whole box rather than following the contour: the shape is
+            // held by the Region, and the antialiased edge of a fill inside it would give a
+            // dark rim from BackColor.
             using (SolidBrush b = new SolidBrush(Color.FromArgb(0xF4, 0x1A, 0x1A, 0x1D)))
                 g.FillRectangle(b, ClientRectangle);
             using (GraphicsPath path = Theme.Round(rect, cornerR))
@@ -2102,18 +2123,18 @@ namespace AbletonManager
             float r = trackW / 2f;
             float knobY = padY + (1f - _value) * trackH;
 
-            // Фоновый серый трек
+            // The grey background track
             RectangleF fullTrack = new RectangleF(tx - r, padY, trackW, trackH);
             Theme.FillRound(g, fullTrack, r, Color.FromArgb(0x38, 0xFF, 0xFF, 0xFF));
 
-            // Заполненная белая часть снизу до ручки
+            // The filled white part from the bottom up to the knob
             if (knobY < padY + trackH)
             {
                 RectangleF playedRect = new RectangleF(tx - r, knobY, trackW, (padY + trackH) - knobY);
                 Theme.FillRound(g, playedRect, r, Color.White);
             }
 
-            // Белая круглая ручка
+            // The white round knob
             float knobR = Sc(6);
             Theme.FillRound(g, new RectangleF(tx - knobR, knobY - knobR, knobR * 2, knobR * 2), knobR, Color.White);
         }

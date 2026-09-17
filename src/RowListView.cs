@@ -9,19 +9,20 @@ namespace AbletonManager
 {
     public sealed class Column
     {
-        public string Id = "";            // устойчивый ключ колонки — для настроек и меню
+        public string Id = "";            // a stable column key — for the settings and the menu
         public string Title = "";
-        public int Width;                 // 0 — колонка растягивается на остаток; иначе логические px
-        public bool Right;                // текст прижат вправо
+        public int Width;                 // 0 — the column stretches over the remainder; otherwise logical px
+        public bool Right;                // the text is right-aligned
         public bool Sortable = true;
         public Font Font;
         public Color? Color;
 
         /// <summary>
-        /// Ячейка — не строка, а список тегов через «, » (см. ProjectMeta.JoinTags),
-        /// и рисовать её нужно пилюлями, как в панели сведений, а не сплошным текстом.
-        /// Отдельного поля под сам список нет: строка и так уже разбирается на теги
-        /// одним Split — заводить рядом ещё один массив ради того же самого незачем.
+        /// The cell is not a string but a list of tags joined by ", " (see
+        /// ProjectMeta.JoinTags), and it has to be drawn as pills, as in the details panel,
+        /// rather than as solid text. There is no separate field for the list itself: the
+        /// string is already split into tags by one Split — keeping another array beside it for
+        /// the same thing would be pointless.
         /// </summary>
         public bool Chips;
 
@@ -29,8 +30,8 @@ namespace AbletonManager
     }
 
     /// <summary>
-    /// Отметка в колонке: цветной текст и полоска того же цвета у правого края —
-    /// так «сколько потеряно» читается одним взглядом по цвету, не вчитываясь в число.
+    /// A mark in a column: coloured text and a strip of the same colour at the right edge — so
+    /// "how much is lost" reads at a glance by colour, without poring over the number.
     /// </summary>
     public struct CellMark
     {
@@ -47,24 +48,27 @@ namespace AbletonManager
         public object Tag;
         public readonly List<CellMark> Marks = new List<CellMark>();
 
-        /// <summary>Только когда у списка включён RowListView.ShowCheckboxes.</summary>
+        /// <summary>Only when the list has RowListView.ShowCheckboxes on.</summary>
         public bool Checked = true;
 
-        /// <summary>Есть ли что проигрывать: у строки без этого кнопка play не рисуется.</summary>
+        /// <summary>Whether there is anything to play: a row without it gets no play
+        /// button.</summary>
         public bool CanPlay = true;
 
-        /// <summary>Закреплён ли проект — только когда у списка включён ShowPinIndicator.</summary>
+        /// <summary>Whether the project is pinned — only when the list has ShowPinIndicator
+        /// on.</summary>
         public bool Pinned;
 
-        /// <summary>Одна из версий под раскрытой строкой, а не сам проект — имя в
-        /// первой колонке отступает и получает короткий рельс перед собой,
-        /// показывая вложенность.</summary>
+        /// <summary>One of the versions under an expanded row rather than the project itself —
+        /// the name in the first column is indented and gets a short rail in front of it,
+        /// showing the nesting.</summary>
         public bool ChildRow;
     }
 
     /// <summary>
-    /// Таблица с собственной отрисовкой: строк тысячи, рисуются только видимые.
-    /// Строка одноэтажная, выделение — пилюля во всю ширину, как в макете.
+    /// A table drawn by hand: there are thousands of rows and only the visible ones are drawn.
+    /// A row is single-storey and the selection is a pill across the full width, as in the
+    /// mockup.
     /// </summary>
     public sealed class RowListView : GlassControl
     {
@@ -144,60 +148,63 @@ namespace AbletonManager
         }
 
         public event EventHandler SelectionChanged;
-        public event EventHandler ItemActivated;      // двойной клик
+        public event EventHandler ItemActivated;      // a double click
         public event Action<int> HeaderClicked;
-        public event Action<Point> HeaderRightClicked; // ПКМ по шапке — меню колонок
-        public event Action ColumnsResized;            // отпустили край колонки — сохранить ширины
-        public event Action<int, int> ColumnsReordered; // колонку перетащили: откуда, куда
-        public event Action<int> RowCheckedChanged;    // клик по чекбоксу строки
-        public event Action<int> RowPlayClicked;       // клик по кнопке прослушивания
-        public event Action<int> RowPinClicked;        // клик по звёздочке закрепления
+        public event Action<Point> HeaderRightClicked; // a right click on the header — the column menu
+        public event Action ColumnsResized;            // a column edge was released — save the widths
+        public event Action<int, int> ColumnsReordered; // a column was dragged: from where, to where
+        public event Action<int> RowCheckedChanged;    // a click on a row's checkbox
+        public event Action<int> RowPlayClicked;       // a click on the listen button
+        public event Action<int> RowPinClicked;        // a click on the pin star
         public event Action<int, Point> RowRightClicked;
-        public event Action<int> RowCountClicked;      // клик по хвостику «+3» / «−3»
-        public event Action<int> RowTagsClicked;       // клик по тегам строки (или по «+» в пустой ячейке)
+        public event Action<int> RowCountClicked;      // a click on the "+3" / "−3" tail
+        public event Action<int> RowTagsClicked;       // a click on a row's tags (or on the "+" in an empty cell)
 
         public int SortColumn = -1;
         public bool SortDescending;
 
-        /// <summary>Можно ли менять ширину колонок и вызывать меню колонок правой кнопкой.</summary>
+        /// <summary>Whether column widths can be changed and the column menu called with the
+        /// right button.</summary>
         public bool ColumnsConfigurable;
 
         /// <summary>
-        /// Чекбокс перед первой колонкой — «включена ли эта строка» (например, папка
-        /// временно исключена из сканирования, но остаётся в списке). Клик по нему не
-        /// трогает выделение — это независимое переключение, а не выбор строки.
+        /// A checkbox before the first column — "is this row on" (a folder temporarily excluded
+        /// from scanning while staying in the list, for instance). A click on it does not touch
+        /// the selection — this is an independent toggle rather than a choice of row.
         /// </summary>
         public bool ShowCheckboxes;
 
         /// <summary>
-        /// Треугольник «послушать» слева от первой колонки. Живёт в своём гутере, а не
-        /// поверх имени: иначе он либо наезжает на текст, либо появляется только под
-        /// курсором, и тогда о нём просто не узнают.
+        /// The "listen" triangle to the left of the first column. It lives in a gutter of its
+        /// own rather than over the name: otherwise it either runs into the text or appears
+        /// only under the cursor, and then nobody learns about it.
         /// </summary>
         public bool ShowPlayButton;
 
         /// <summary>
-        /// Зазор справа от пилюли строки (px). Если задан, пилюли заканчиваются
-        /// на Width - PillRightGap, а вертикальный скроллбар центрируется ровно
-        /// в этом промежутке между пилюлей выделения и правым краем контрола.
+        /// The gap to the right of a row's pill (px). When set, the pills end at Width -
+        /// PillRightGap, and the vertical scrollbar is centred exactly in that space between
+        /// the selection pill and the right edge of the control.
         /// </summary>
         public int PillRightGap;
 
         /// <summary>
-        /// Путь к файлу для строки — если задан (не null и не пустой), строку можно
-        /// вытащить наружу как файл (в проводник, в другое приложение). null для
-        /// строки без файла — например, версии проекта без ссылки на рендер.
+        /// The file path for a row — when set (not null and not empty), the row can be dragged
+        /// out as a file (into Explorer, into another application). null for a row with no file
+        /// — a project version with no render reference, for instance.
         /// </summary>
         public Func<RowData, string> DragFilePath;
 
-        /// <summary>Строка, чью кнопку play сейчас держит курсор, иначе -1.</summary>
+        /// <summary>The row whose play button the cursor is currently on, otherwise
+        /// -1.</summary>
         int _playHot = -1;
 
         /// <summary>
-        /// Хвостик «+3» в конце ячейки — сколько версий проекта спрятано под строкой, и
-        /// одновременно кнопка их раскрыть. Отделяется от имени тремя пробелами: рисуется
-        /// он своим цветом и своим прямоугольником, поэтому его нужно уметь находить в
-        /// готовом тексте ячейки. У раскрытой строки знак меняется на минус.
+        /// The "+3" tail at the end of a cell — how many versions of the project are hidden
+        /// under the row, and at the same time the button to expand them. It is separated from
+        /// the name by three spaces: it is drawn in its own colour and its own rectangle, so it
+        /// has to be findable in the finished cell text. On an expanded row the sign becomes a
+        /// minus.
         /// </summary>
         public const string CountSep = "   ";
         public const string CountOpen = "+";
@@ -211,12 +218,12 @@ namespace AbletonManager
             return i;
         }
 
-        // Куда попал этот хвостик при последней отрисовке — по строке на запись. Считать
-        // его заново в обработчике мыши значило бы повторить весь разбор ячейки вместе с
-        // замерами текста; проще запомнить то, что уже нарисовано.
+        // Where that tail landed on the last repaint — one per record. Working it out again in
+        // the mouse handler would mean repeating the whole cell parse together with the text
+        // measurements; it is simpler to remember what has already been drawn.
         Rectangle[] _countHit;
 
-        /// <summary>Строка, чей «+N» сейчас под курсором, иначе -1.</summary>
+        /// <summary>The row whose "+N" is currently under the cursor, otherwise -1.</summary>
         int _countHot = -1;
 
         int CountAtPoint(Point p)
@@ -227,8 +234,8 @@ namespace AbletonManager
             return -1;
         }
 
-        /// <summary>Запомнить нарисованный хвостик, чуть расширив его по горизонтали:
-        /// «+3» — это три-четыре символа, и попадать в них впритык неудобно.</summary>
+        /// <summary>Remember the drawn tail, widening it slightly horizontally: "+3" is three
+        /// or four characters, and hitting them flush is awkward.</summary>
         void RememberCount(int row, int x, int y, int w, int h)
         {
             if (_countHit == null || row < 0 || row >= _countHit.Length) return;
@@ -236,12 +243,13 @@ namespace AbletonManager
             _countHit[row] = new Rectangle(x - pad, y, Math.Max(1, w) + pad * 2, h);
         }
 
-        // Ячейка тегов — тем же приёмом, что и хвостик «+N»: что нарисовали, по тому и
-        // кликаем. Кликабельны именно пилюли (или «+» у пустой ячейки), а не вся ширина
-        // колонки: пустое место справа от тегов должно просто выделять строку.
+        // The tags cell — by the same device as the "+N" tail: we click by what was drawn. What
+        // is clickable is the pills specifically (or the "+" in an empty cell) rather than the
+        // full width of the column: empty space to the right of the tags should simply select
+        // the row.
         Rectangle[] _tagsHit;
 
-        /// <summary>Строка, чьи теги сейчас под курсором, иначе -1.</summary>
+        /// <summary>The row whose tags are currently under the cursor, otherwise -1.</summary>
         int _tagsHot = -1;
 
         int TagsAtPoint(Point p)
@@ -259,8 +267,8 @@ namespace AbletonManager
             if (r.Width > 0) _tagsHit[row] = r;
         }
 
-        /// <summary>Строка, которая сейчас загружена в плеер (необязательно играет —
-        /// см. Playing), — её треугольник горит светлым.</summary>
+        /// <summary>The row currently loaded into the player (not necessarily playing — see
+        /// Playing) — its triangle glows light.</summary>
         public object PlayingTag
         {
             get { return _playingTag; }
@@ -268,9 +276,10 @@ namespace AbletonManager
         }
         object _playingTag;
 
-        /// <summary>Плеер сейчас действительно звучит, а не на паузе. Иконка PlayingTag
-        /// становится паузой только при обоих условиях разом — иначе после паузы через
-        /// футер строка продолжала бы показывать паузу, хотя играть уже нечему.</summary>
+        /// <summary>The player is really sounding right now rather than paused. The PlayingTag
+        /// glyph becomes a pause only on both conditions at once — otherwise after pausing from
+        /// the footer the row would go on showing a pause although there is nothing left
+        /// playing.</summary>
         public bool Playing
         {
             get { return _playing; }
@@ -278,16 +287,16 @@ namespace AbletonManager
         }
         bool _playing;
 
-        // Оверлейные полосы прокрутки: тонкие в покое, толще под курсором, гаснут
-        // через секунду после последней прокрутки.
+        // Overlay scrollbars: thin at rest, thicker under the cursor, fading a second after the
+        // last scroll.
         ScrollFade _barFade, _hbarFade;
 
-        /// <summary>Волосяная линия под шапкой. Отключается там, где шапка и так стоит
-        /// на своей поверхности (диалоги с одной колонкой).</summary>
+        /// <summary>A hairline under the header. Switched off where the header stands on its
+        /// own surface anyway (dialogs with a single column).</summary>
         public bool ShowHeaderRule = true;
 
-        /// <summary>Пока звучит — перерисовываем не весь список, а только кружок play
-        /// у играющей строки; она ездит с прокруткой, поэтому считаем каждый тик.</summary>
+        /// <summary>While it sounds we repaint not the whole list but only the play circle of
+        /// the playing row; it travels with the scroll, so we compute it every tick.</summary>
         void SyncPulse()
         {
             if (_playing && _playingTag != null) PlayPulse.Attach(this, PulseRect);
@@ -311,63 +320,66 @@ namespace AbletonManager
         }
 
         /// <summary>
-        /// Звёздочка закрепления в гутере, тем же приёмом, что и play: у закреплённой
-        /// строки видна всегда, у остальных — пока курсор на самой строке, а не как у
-        /// play (тот виден всегда, но приглушён) — иначе на длинном списке рябит.
+        /// The pin star in the gutter, by the same device as play: on a pinned row it is always
+        /// visible, on the rest while the cursor is on the row itself — unlike play (which is
+        /// always visible but muted), or a long list would shimmer.
         /// </summary>
         public bool ShowPinIndicator;
         public bool ShowHeaderPin = true;
         int _pinHot = -1;
 
         /// <summary>
-        /// Звёздочка-переключатель в шапке, ровно над гутером со звёздами строк:
-        /// «держать закреплённые сверху». Живёт здесь, а не в диалоге фильтров, потому
-        /// что это не отбор (ничего не прячет), а порядок — и стоять ей логично там же,
-        /// где стоят сами звёзды, которыми закрепляют.
+        /// A star toggle in the header, exactly above the gutter with the row stars: "keep the
+        /// pinned ones on top". It lives here rather than in the filters dialog because this is
+        /// not a filter (it hides nothing) but an order — and its logical place is where the
+        /// stars that do the pinning stand.
         /// </summary>
         public bool PinnedFirst;
         public event Action PinnedFirstToggled;
         bool _headPinHot;
 
         /// <summary>
-        /// Растворять ли нижние строки в фон. На стекле эффекта не даёт: градиент
-        /// подмешивает свой же полупрозрачный фон поверх уже размытых обоев, альфа
-        /// копится слоями, и вместо мягкого исчезновения получается чёткий тёмный
-        /// прямоугольник в самом низу списка. На непрозрачном окне это не проблема.
+        /// Whether to dissolve the bottom rows into the background. It has no effect on glass:
+        /// the gradient blends its own translucent background over already blurred wallpaper,
+        /// the alpha accumulates in layers, and instead of a soft disappearance one gets a
+        /// crisp dark rectangle at the very bottom of the list. On an opaque window this is not
+        /// a problem.
         /// </summary>
         public bool FadeBottom = true;
 
-        // Перетаскивание правого края колонки: индекс колонки или -1.
+        // Dragging a column's right edge: the column index, or -1.
         int _resizeCol = -1;
-        // Где взялись и какой ширина была в тот момент. Ширина считается от этой пары,
-        // а не от текущей раскладки: раскладка сама зависит от ширины, и счёт от неё
-        // замыкался сам на себя — см. DoResize.
+        // Where the grab happened and what the width was at that moment. The width is counted
+        // from that pair rather than from the current layout: the layout itself depends on the
+        // width, and counting from it closed the loop on itself — see DoResize.
         int _resizeStartX, _resizeStartW;
 
-        // Перетаскивание самого заголовка — как в проводнике.
+        // Dragging the header itself — as in Explorer.
         //
-        // Нажатие и перетаскивание разведены намеренно: по заголовку и сортируют, и
-        // таскают, и отличить одно от другого можно только по тому, поехала мышь или
-        // нет. Поэтому на нажатии лишь запоминаем колонку (_pressCol), тащить начинаем
-        // после порога в несколько пикселей (_dragCol), а сортируем на отпускании — и
-        // только если перетаскивания так и не случилось.
+        // The press and the drag are deliberately kept apart: a header is used both for sorting
+        // and for dragging, and the only way to tell one from the other is whether the mouse
+        // moved. So on the press we merely remember the column (_pressCol), start dragging
+        // after a threshold of a few pixels (_dragCol), and sort on release — and only if no
+        // drag happened after all.
         int _pressCol = -1;
         int _pressX;
         int _dragCol = -1;
         int _dragX;
-        int _dropAt = -1;      // куда встанет колонка, если отпустить сейчас
+        int _dropAt = -1;      // where the column will land if released now
 
-        // Строку тоже нажимают раньше, чем становится ясно — клик это или перетаскивание
-        // наружу (в проводник, в другое приложение), тем же порогом, что и колонки.
+        // A row is also pressed before it becomes clear whether this is a click or a drag
+        // outwards (into Explorer, into another application), by the same threshold as the
+        // columns.
         int _rowDragIdx = -1;
         Point _rowDragStart;
 
         int DragThreshold { get { return Sc(5); } }
 
-        // Полоски-ручки между всеми заголовками: видны все разом, как только курсор
-        // зашёл в шапку — чтобы сразу было понятно, где вообще можно тянуть, а не
-        // нащупывать границу вслепую. Непрозрачность общая для всех, 0..1, короткая
-        // анимация — вся дорожка за два тика таймера по 10 мс, то есть около 20 мс.
+        // Grip strips between every header: they all appear at once as soon as the cursor
+        // enters the header — so that it is immediately clear where anything can be dragged at
+        // all, rather than groping for a boundary blindly. The opacity is shared by all of
+        // them, 0..1, with a short animation — the whole path in two ticks of a 10 ms timer,
+        // that is, around 20 ms.
         bool _headerHot;
         float _gripAlpha;
         readonly Timer _gripTimer;
@@ -403,29 +415,31 @@ namespace AbletonManager
         int PadX { get { return Sc(Theme.CellPadX); } }
         int PadRight { get { return Math.Max(PadX, (int)Math.Ceiling(Sc(Theme.RowPillH) / 2f) + Sc(16)) + PillRightGap; } }
 
-        // Чекбокс живёт в отдельной колонке слева от первой обычной колонки — левый
-        // отступ содержимого от этого растёт. Правый отступ (PadRight) гарантирует,
-        // что текст колонок не залезает под скругление пилюли выделения строки.
+        // The checkbox lives in a separate column to the left of the first ordinary one — the
+        // content's left inset grows by it. The right inset (PadRight) guarantees that column
+        // text does not creep under the rounding of the row's selection pill.
         int CheckW { get { return ShowCheckboxes ? Sc(30) : 0; } }
         int PinW { get { return ShowPinIndicator ? Sc(32) : 0; } }
         int PlayW { get { return ShowPlayButton ? Sc(32) : 0; } }
         int LeftX { get { return PadX + CheckW + PinW + PlayW; } }
 
-        /// <summary>Звёздочка закрепления — гутер между чекбоксом и кнопкой play, того
-        /// же размера, что и сама play.</summary>
+        /// <summary>The pin star — a gutter between the checkbox and the play button, the same
+        /// size as play itself.</summary>
         Rectangle PinRect(int top, int rowH)
         {
             int s = Sc(26);
             return new Rectangle(PadX + CheckW + (PinW - s) / 2, top + (rowH - s) / 2, s, s);
         }
 
-        /// <summary>Курсор на звёздочке шапки? Она занимает тот же гутер, что и звёзды строк.</summary>
+        /// <summary>Is the cursor on the header star? It occupies the same gutter as the row
+        /// stars.</summary>
         bool OnHeaderPin(Point p)
         {
             return ShowPinIndicator && ShowHeaderPin && p.Y < HeaderHeight && PinRect(0, HeaderHeight).Contains(p);
         }
 
-        /// <summary>Кнопка play строки — гутер между звёздочкой и первой колонкой.</summary>
+        /// <summary>A row's play button — the gutter between the star and the first
+        /// column.</summary>
         Rectangle PlayRect(int top, int rowH)
         {
             int s = Sc(26);
@@ -446,9 +460,9 @@ namespace AbletonManager
         public void SetRows(List<RowData> rows) { SetRows(rows, true); }
 
         /// <summary>
-        /// animate=false — показать строки сразу, без появления снизу. Нужно набору в
-        /// поиске: список пересобирается на каждую букву, и появление запускалось заново
-        /// от каждого нажатия, вместо того чтобы строки просто отфильтровались.
+        /// animate=false — show the rows at once, with no rise from below. Typing in the search
+        /// needs it: the list is rebuilt on every letter, and the entrance was restarted by
+        /// each press instead of the rows simply being filtered.
         /// </summary>
         public void SetRows(List<RowData> rows, bool animate)
         {
@@ -465,8 +479,8 @@ namespace AbletonManager
 
             if (animate) { TriggerEntrance(); return; }
 
-            // Массив нулей означал бы «строки ещё не появились», и без запущенной
-            // анимации список остался бы пустым.
+            // An array of zeroes would mean "the rows have not appeared yet", and with no
+            // animation running the list would stay empty.
             _rowEntrance = new float[_rows.Count];
             for (int i = 0; i < _rowEntrance.Length; i++) _rowEntrance[i] = 1f;
             Invalidate();
@@ -478,9 +492,9 @@ namespace AbletonManager
         }
 
         /// <summary>
-        /// Программное выделение строки — например, переход к конкретному сету из
-        /// панели деталей плагина, а не клик по самому списку. Тихо ничего не делает,
-        /// если подходящей строки сейчас нет (её могли отфильтровать).
+        /// Selecting a row programmatically — a jump to a specific set from a plugin's details
+        /// panel, say, rather than a click on the list itself. It quietly does nothing if there
+        /// is no suitable row right now (it may have been filtered out).
         /// </summary>
         public void SelectRow(Predicate<RowData> match)
         {
@@ -496,10 +510,11 @@ namespace AbletonManager
         }
 
         /// <summary>
-        /// Прокрутка в пикселях. Нужна автообновлению каталога: SetRows всегда ставит
-        /// список в начало, а обновление приходит само, без нажатия, — и выдёргивать
-        /// человека наверх посреди чтения оно права не имеет. Присваивание ставит
-        /// список сразу, без доводки: это восстановление прежнего вида, а не прокрутка.
+        /// The scroll position in pixels. The catalog's auto-refresh needs it: SetRows always
+        /// puts the list back to the top, while a refresh arrives by itself, without a keypress
+        /// — and it has no right to yank a person upwards in the middle of reading. The
+        /// assignment places the list at once, with no settling: this is restoring the previous
+        /// view rather than scrolling.
         /// </summary>
         public int ScrollOffset
         {
@@ -539,13 +554,14 @@ namespace AbletonManager
             }
         }
 
-        /// <summary>Полоса горизонтальной прокрутки живёт в нижних Sc(10). Её высота
-        /// вычитается из области строк целиком, а не добавляется к содержимому: иначе
-        /// пустая полоска появлялась только в самом низу списка, а на любой другой
-        /// прокрутке полоса по-прежнему лежала поперёк строки.</summary>
+        /// <summary>The horizontal scrollbar lives in the bottom Sc(10). Its height is
+        /// subtracted from the rows area whole rather than added to the content: otherwise the
+        /// empty strip appeared only at the very bottom of the list, while at any other scroll
+        /// position the bar still lay across a row.</summary>
         int HBarSpace { get { return MaxHScroll > 0 ? Sc(14) : 0; } }
 
-        /// <summary>Высота области строк — окно минус полоса горизонтальной прокрутки.</summary>
+        /// <summary>The height of the rows area — the window minus the horizontal
+        /// scrollbar.</summary>
         int ViewH { get { return Height - HBarSpace; } }
 
         int ContentHeight { get { return _rows.Count * RowHeight + Sc(8) + HeaderHeight; } }
@@ -597,7 +613,7 @@ namespace AbletonManager
 
             int current = (int)Math.Round(_scrollXTarget);
 
-            if (direction > 0) // Вправо к следующей колонке
+            if (direction > 0) // Right, to the next column
             {
                 for (int i = 0; i < snapOffsets.Count; i++)
                 {
@@ -606,7 +622,7 @@ namespace AbletonManager
                 }
                 return maxScroll;
             }
-            else // Влево к предыдущей колонке
+            else // Left, to the previous column
             {
                 for (int i = snapOffsets.Count - 1; i >= 0; i--)
                 {
@@ -684,7 +700,8 @@ namespace AbletonManager
 
         const int WM_MOUSEHWHEEL = 0x020E;
 
-        // Список живёт с ПКМ: меню строки и меню шапки. Разбор — в OnMouseDown.
+        // The list lives with the right button: a row menu and a header menu. The handling is
+        // in OnMouseDown.
         protected override bool WantsRightClick { get { return true; } }
 
         protected override void WndProc(ref Message m)
@@ -730,9 +747,9 @@ namespace AbletonManager
 
 
         /// <summary>
-        /// Смещение содержимого по вертикали: прокрутка плюс резиновый перелёт. Попадания
-        /// мыши обязаны считаться по нему же, что и отрисовка, — иначе во время отскока
-        /// звёздочка и play срабатывают там, где их уже не видно.
+        /// The vertical offset of the content: the scroll plus the rubber-band overshoot. Mouse
+        /// hits have to be counted by the same one as the drawing — otherwise during the bounce
+        /// the star and play fire where they are no longer visible.
         /// </summary>
         int ScrollY
         {
@@ -795,7 +812,7 @@ namespace AbletonManager
 
             if (_resizeCol >= 0) { DoResize(e.X); return; }
 
-            // Заголовок уже тащат — ведём его и считаем, куда он встанет.
+            // A header is already being dragged — we carry it and work out where it will land.
             if (_dragCol >= 0)
             {
                 _dragX = e.X;
@@ -805,10 +822,10 @@ namespace AbletonManager
                 return;
             }
 
-            // Взялись за заголовок и повели в сторону — это перетаскивание, а не клик
-            // по сортировке. Порог нужен, чтобы дрожь руки на обычном щелчке не
-            // считалась переносом колонки.
-            // _pressCol > 0 — там же, где и DropIndexAt: первую колонку не таскают.
+            // The header was grabbed and led sideways — this is a drag rather than a click on
+            // the sort. The threshold is there so that a hand shaking on an ordinary click is
+            // not counted as moving a column. _pressCol > 0 — the same as in DropIndexAt: the
+            // first column is not dragged.
             if (_pressCol > 0 && e.Button == MouseButtons.Left
                 && Math.Abs(e.X - _pressX) > DragThreshold
                 && ColumnsConfigurable && _columns.Count > 1)
@@ -849,13 +866,14 @@ namespace AbletonManager
                 return;
             }
 
-            // Полосы прокрутки просыпаются только когда курсор рядом с ними самими,
-            // а не когда он где угодно над списком.
+            // The scrollbars wake only when the cursor is near the bars themselves rather than
+            // anywhere over the list.
             _barFade.SetHot(e.X >= Width - Sc(22) && e.Y > HeaderHeight);
             _hbarFade.SetHot(MaxHScroll > 0 && e.Y >= Height - Sc(18));
 
-            // В шапке у краёв изменяемых колонок курсор — «раздвинуть», в остальном рука.
-            // Полоски-ручки показываем все разом, лишь только курсор зашёл в шапку.
+            // In the header, at the edges of resizable columns the cursor is "spread apart",
+            // elsewhere a hand. We show all the grip strips at once the moment the cursor
+            // enters the header.
             if (e.Y < HeaderHeight)
             {
                 int grip = GripAt(e.X, ComputeWidths());
@@ -896,21 +914,21 @@ namespace AbletonManager
         }
 
         /// <summary>
-        /// Между какими колонками встанет перетаскиваемый заголовок, если отпустить его
-        /// в точке px. Считается по СЕРЕДИНАМ колонок, а не по их краям: пока курсор не
-        /// перевалил за середину соседа, менять их местами рано — иначе колонки прыгают
-        /// туда-сюда от малейшего движения на границе.
+        /// Between which columns a dragged header will land if released at point px. Counted by
+        /// the MIDPOINTS of the columns rather than by their edges: until the cursor has passed
+        /// a neighbour's midpoint it is too early to swap them — otherwise columns jump back
+        /// and forth at the slightest movement on a boundary.
         ///
-        /// Возвращает позицию вставки в списке колонок: 0 — перед первой, Count — после
-        /// последней.
+        /// Returns the insertion position in the column list: 0 — before the first, Count —
+        /// after the last.
         /// </summary>
         int DropIndexAt(int px)
         {
             int[] widths = ComputeWidths();
             if (_columns.Count == 0) return 0;
-            // Первая колонка прибита: это имя сета (плагина), единственное, по чему
-            // строку вообще можно опознать, и тянется она на всю свободную ширину.
-            // Вставлять перед ней некуда — самое левое место для остальных это 1.
+            // The first column is nailed down: it is the set (or plugin) name, the one thing a
+            // row can be recognised by at all, and it stretches across all the free width.
+            // There is nowhere to insert before it — the leftmost place for the rest is 1.
             if (px < LeftX + widths[0]) return 1;
             for (int c = 1; c < _columns.Count; c++)
             {
@@ -921,9 +939,10 @@ namespace AbletonManager
         }
 
         /// <summary>
-        /// Индекс колонки, за левый край которой можно тянуть, если курсор рядом с ним.
-        /// Тянущаяся колонка имени слева, а сумма ширин прижата к правому краю списка,
-        /// поэтому у фиксированных колонок двигается именно левая граница, а не правая.
+        /// The index of the column whose left edge can be dragged if the cursor is near it. The
+        /// stretching name column is on the left and the sum of the widths is pushed to the
+        /// right edge of the list, so on fixed columns it is the left boundary that moves
+        /// rather than the right.
         /// </summary>
         int GripAt(int px, int[] widths)
         {
@@ -962,12 +981,13 @@ namespace AbletonManager
             }
             else if (_resizeCol > 0 && _resizeCol < _columns.Count)
             {
-                // Ширина — от того, что было в момент захвата, плюс пройденный путь. Раньше
-                // считали от правого края текущей раскладки, а он стоит на месте, только пока
-                // колонка имени тянется и гасит разницу собой. Как только колонки переставали
-                // влезать, имя упиралось в минимум, край начинал ехать вместе с шириной — и ширина
-                // разгоняла сама себя на каждом MouseMove. От точки захвата обратной связи нет,
-                // и тянется всегда одна и та же колонка — та, за чей левый край взялись.
+                // The width comes from what it was at the moment of the grab plus the distance
+                // travelled. It used to be counted from the right edge of the current layout,
+                // and that stays put only while the name column is stretching and absorbing the
+                // difference. As soon as the columns stopped fitting, the name hit its minimum,
+                // the edge began to travel with the width — and the width accelerated itself on
+                // every MouseMove. From the grab point there is no feedback, and the column
+                // dragged is always the same one — the one whose left edge was taken hold of.
                 int newScaled = _resizeStartW + (_resizeStartX - mouseX);
 
                 int minW = Sc(48);
@@ -978,11 +998,12 @@ namespace AbletonManager
 
                 _columns[_resizeCol].Width = Math.Max(1, (int)Math.Round(newScaled / scale));
             }
-            // Правее границы ничего шевелиться не должно. Пока колонки влезают, это выходит
-            // само собой: тянущаяся колонка имени гасит разницу собой, и всё остальное стоит
-            // прижатым к правому краю. Когда не влезают, гасить нечем — тогда ровно на ту же
-            // разницу доворачиваем прокрутку, и картинка получается та же, что во весь экран.
-            // В первом случае прокручивать нечего и ClampScrollX вернёт ноль — ветка не нужна.
+            // Nothing to the right of the boundary should stir. While the columns fit, that
+            // comes out by itself: the stretching name column absorbs the difference and
+            // everything else stands pushed against the right edge. When they do not fit there
+            // is nothing to absorb it — we then turn the scroll by exactly the same difference,
+            // and the picture comes out the same as full screen. In the first case there is
+            // nothing to scroll and ClampScrollX returns zero — the branch is not needed.
             int[] after = ComputeWidths();
             _scrollX += ColX(after, _resizeCol) + after[_resizeCol] - rightBefore;
             ClampScrollX();
@@ -1013,7 +1034,7 @@ namespace AbletonManager
         void StepGripFade()
         {
             float target = _headerHot ? 1f : 0f;
-            const float step = 0.5f;    // два тика по 10 мс = вся дорожка 0..1 за ~20 мс
+            const float step = 0.5f;    // two ticks of 10 ms = the whole path 0..1 in ~20 ms
             if (_gripAlpha < target) _gripAlpha = Math.Min(target, _gripAlpha + step);
             else if (_gripAlpha > target) _gripAlpha = Math.Max(target, _gripAlpha - step);
 
@@ -1048,9 +1069,10 @@ namespace AbletonManager
                     return;
                 }
 
-                // Звёздочка шапки перехватывает клик раньше сортировки: она стоит в
-                // гутере, левее первой колонки, так что ColumnAt её всё равно не видит,
-                // но проверить надо до GripAt — ручка первой колонки рядом.
+                // The header star intercepts the click before the sort: it stands in the
+                // gutter, left of the first column, so ColumnAt does not see it anyway — but
+                // the check has to come before GripAt, as the first column's grip is right
+                // beside it.
                 if (OnHeaderPin(e.Location))
                 {
                     PinnedFirst = !PinnedFirst;
@@ -1069,8 +1091,8 @@ namespace AbletonManager
                     return;
                 }
 
-                // Ни сортировки, ни перетаскивания прямо сейчас — только запоминаем, за
-                // что взялись: что это было, станет ясно по движению мыши. См. _pressCol.
+                // Neither a sort nor a drag right now — we merely remember what was grabbed:
+                // which it was will become clear from the mouse movement. See _pressCol.
                 _pressCol = ColumnAt(e.X);
                 _pressX = e.X;
                 return;
@@ -1099,7 +1121,8 @@ namespace AbletonManager
 
             if (e.Button == MouseButtons.Right)
             {
-                // ПКМ по строке выделяет её и отдаёт меню наружу — как в проводнике.
+                // A right click on a row selects it and passes the menu outward — as in
+                // Explorer.
                 if (idx >= 0 && idx != _selected)
                 {
                     _selected = idx;
@@ -1110,16 +1133,16 @@ namespace AbletonManager
                 return;
             }
 
-            // Хвостик «+3» — независимая кнопка «показать остальные версии», как play и
-            // звёздочка: выделение строки он не трогает, иначе панель подробностей
-            // прыгала бы от каждого раскрытия.
+            // The "+3" tail is an independent "show the other versions" button, like play and
+            // the star: it does not touch the row selection, or the details panel would jump on
+            // every expansion.
             if (idx >= 0 && CountAtPoint(e.Location) == idx)
             {
                 if (RowCountClicked != null) { RowCountClicked(idx); return; }
             }
 
-            // Теги — тоже своя кнопка: клик по пилюлям (или по «+» у пустой ячейки)
-            // открывает редактор тегов, а не просто выделяет строку.
+            // The tags are a button of their own too: a click on the pills (or on the "+" in an
+            // empty cell) opens the tag editor rather than simply selecting the row.
             if (idx >= 0 && TagsAtPoint(e.Location) == idx)
             {
                 if (RowTagsClicked != null) { RowTagsClicked(idx); return; }
@@ -1130,7 +1153,7 @@ namespace AbletonManager
                 int pinTop = HeaderHeight + idx * RowHeight - ScrollY;
                 if (PinRect(pinTop, RowHeight).Contains(e.Location))
                 {
-                    // Закрепление — тоже независимое действие, как и play ниже.
+                    // Pinning is an independent action too, like play below.
                     if (RowPinClicked != null) RowPinClicked(idx);
                     return;
                 }
@@ -1141,8 +1164,8 @@ namespace AbletonManager
                 int top = HeaderHeight + idx * RowHeight - ScrollY;
                 if (PlayRect(top, RowHeight).Contains(e.Location))
                 {
-                    // Прослушивание — независимое действие: выделение строки не трогаем,
-                    // иначе панель подробностей будет прыгать от каждого нажатия play.
+                    // Listening is an independent action: we do not touch the row selection, or
+                    // the details panel would jump on every press of play.
                     if (RowPlayClicked != null) RowPlayClicked(idx);
                     return;
                 }
@@ -1150,7 +1173,7 @@ namespace AbletonManager
 
             if (idx >= 0 && ShowCheckboxes && e.X < PadX + CheckW)
             {
-                // Чекбокс — самостоятельное переключение, выделение строки не трогаем.
+                // The checkbox is a toggle in its own right; we do not touch the row selection.
                 RowData row = _rows[idx];
                 row.Checked = !row.Checked;
                 Invalidate();
@@ -1164,8 +1187,9 @@ namespace AbletonManager
                 if (SelectionChanged != null) SelectionChanged(this, EventArgs.Empty);
             }
 
-            // Тащить наружу можно, только если для строки вообще есть файл — курсор
-            // подтверждает это раньше, чем движение мыши решит, клик это или перенос.
+            // Dragging outwards is only possible when the row has a file at all — the cursor
+            // confirms that before the mouse movement decides whether this is a click or a
+            // drag.
             if (idx >= 0 && e.Button == MouseButtons.Left && DragFilePath != null)
             {
                 _rowDragIdx = idx;
@@ -1190,13 +1214,14 @@ namespace AbletonManager
                 int from = _dragCol, to = _dropAt;
                 _dragCol = -1; _dropAt = -1; _pressCol = -1;
                 Invalidate(new Rectangle(0, 0, Width, HeaderHeight));
-                // to == from и to == from+1 — обе «поставить туда же, откуда взяли».
+                // to == from and to == from+1 are both "put it back where it was taken from".
                 if (to >= 0 && to != from && to != from + 1 && ColumnsReordered != null)
                     ColumnsReordered(from, to);
             }
             else if (_pressCol >= 0)
             {
-                // Заголовок нажали и отпустили, никуда не уводя, — это сортировка.
+                // The header was pressed and released without being led anywhere — that is a
+                // sort.
                 int col = _pressCol;
                 _pressCol = -1;
                 if (e.Button == MouseButtons.Left && col < _columns.Count
@@ -1219,13 +1244,14 @@ namespace AbletonManager
         }
 
         /// <summary>
-        /// Двойной клик активирует строку — но только если он пришёлся на саму строку,
-        /// а не на одну из её независимых кнопок (хвостик «+N», звёздочка, play,
-        /// чекбокс). У Windows второй клик быстрого двойного тапа не идёт через
-        /// OnMouseDown второй раз — он приходит сюда, минуя те же проверки. Кнопки строки
-        /// все переключатели (пин, play/pause, раскрытие версий, чекбокс), поэтому второй
-        /// клик тут просто проглатывается — иначе он повторял бы то же действие и гасил
-        /// первое: пин закреплял и тут же открепял, play запускал и тут же ставил на паузу.
+        /// A double click activates a row — but only if it landed on the row itself rather than
+        /// on one of its independent buttons (the "+N" tail, the star, play, the checkbox). On
+        /// Windows the second click of a quick double tap does not go through OnMouseDown a
+        /// second time — it arrives here, bypassing those same checks. The row's buttons are
+        /// all toggles (pin, play/pause, expanding the versions, the checkbox), so the second
+        /// click is simply swallowed here — otherwise it would repeat the same action and
+        /// cancel the first: the pin would pin and unpin at once, play would start and pause at
+        /// once.
         /// </summary>
         protected override void OnMouseDoubleClick(MouseEventArgs e)
         {
@@ -1244,8 +1270,8 @@ namespace AbletonManager
             base.OnMouseDoubleClick(e);
         }
 
-        /// <summary>Курсор сейчас над одной из кнопок строки idx — хвостиком «+N»,
-        /// тегами, звёздочкой, play или чекбоксом, — а не над самой строкой.</summary>
+        /// <summary>Is the cursor currently over one of row idx's buttons — the "+N" tail, the
+        /// tags, the star, play or the checkbox — rather than over the row itself.</summary>
         bool OnRowAccessory(int idx, Point p)
         {
             if (CountAtPoint(p) == idx) return true;
@@ -1286,10 +1312,10 @@ namespace AbletonManager
         public int SelectedIndex { get { return _selected; } }
 
         /// <summary>
-        /// Вернуть выделение на строку с тем же номером. Нужно перестановке колонок:
-        /// строки там те же самые, меняется только их разметка, а SetRows всё равно
-        /// сбрасывает выделение — и без этого колонка переезжала бы ценой потери того,
-        /// что было выбрано.
+        /// Put the selection back on the row with the same number. Reordering the columns needs
+        /// it: the rows there are the very same ones and only their layout changes, while
+        /// SetRows resets the selection all the same — and without this a column would move at
+        /// the price of losing whatever was selected.
         /// </summary>
         public void SelectIndex(int idx)
         {
@@ -1299,16 +1325,17 @@ namespace AbletonManager
             if (SelectionChanged != null) SelectionChanged(this, EventArgs.Empty);
         }
 
-        /// <summary>Насколько прыгает PageUp/PageDown — на экран строк.</summary>
+        /// <summary>How far PageUp/PageDown jump — by a screen of rows.</summary>
         public int PageStep { get { return Math.Max(1, (Height - HeaderHeight) / RowHeight); } }
 
         /// <summary>
-        /// Сдвинуть выделение на step строк. Отдельно от OnKeyDown, потому что стрелки
-        /// приходят не только сюда: главное окно ведёт ими по каталогу независимо от
-        /// того, где сейчас фокус.
+        /// Move the selection by step rows. Kept apart from OnKeyDown because the arrows arrive
+        /// from more than here: the main window drives the catalog with them regardless of
+        /// where the focus currently is.
         ///
-        /// true и на краю списка — клавишу мы всё равно съели, и отдавать её дальше в
-        /// навигацию по фокусу нельзя: она уведёт выделение в соседний контрол.
+        /// true at the edge of the list too — we swallowed the key all the same, and it must
+        /// not be passed on into focus navigation: that would carry the selection into a
+        /// neighbouring control.
         /// </summary>
         public bool MoveSelection(int step)
         {
@@ -1325,9 +1352,9 @@ namespace AbletonManager
         }
 
         /// <summary>
-        /// Куда ставить контекстное меню, вызванное с клавиатуры: у левого края строки,
-        /// по её середине. Мыши тут нет, а меню должно выйти у той строки, о которой
-        /// речь, — не там, где случайно оставили курсор.
+        /// Where to put a context menu called from the keyboard: at the left edge of the row,
+        /// halfway down it. There is no mouse here, and the menu has to come out at the row in
+        /// question — not where the cursor happened to be left.
         /// </summary>
         public Point RowMenuPoint(int idx)
         {
@@ -1345,7 +1372,7 @@ namespace AbletonManager
             ClampScroll();
         }
 
-        // ------------------------------------------------------------- отрисовка
+        // ------------------------------------------------------------------ drawing
 
         int[] ComputeWidths()
         {
@@ -1381,22 +1408,23 @@ namespace AbletonManager
             int scrollLeft = LeftX + widths[0];
             int scrollWidth = Math.Max(0, Width - PadRight - scrollLeft);
 
-            // Пока ручки колонок проявляются/гаснут, таймер дёргает Invalidate только
-            // по прямоугольнику шапки — тело списка в клип не попадает и всё равно
-            // отсекается, так что весь проход по строкам ниже можно пропустить.
+            // While the column grips are fading in and out, the timer pulls Invalidate only for
+            // the header rectangle — the list body does not fall into the clip and is discarded
+            // anyway, so the whole pass over the rows below can be skipped.
             bool headerOnly = e.ClipRectangle.Bottom <= HeaderHeight;
 
             if (!headerOnly)
             {
                 Region baseClip = g.Clip;
 
-                // Резиновый перелёт за край. Сдвигаем только тело списка: шапка
-                // закреплена и уезжать вместе со строками не должна.
+                // The rubber-band overshoot past the edge. We shift only the body of the list:
+                // the header is pinned and must not travel with the rows.
                 int over = _scroller != null ? (int)Math.Round(_scroller.Overscroll) : 0;
                 int slack = Sc(8) + Math.Abs(over);
 
-                // Прямоугольники хвостиков «+N» собираем заново за каждый полный проход:
-                // строки уехали прокруткой, и вчерашние координаты кликать нельзя.
+                // The rectangles of the "+N" tails are collected anew on every full pass: the
+                // rows have moved with the scroll, and yesterday's coordinates must not be
+                // clicked.
                 if (_countHit == null || _countHit.Length != _rows.Count)
                     _countHit = new Rectangle[_rows.Count];
                 Array.Clear(_countHit, 0, _countHit.Length);
@@ -1408,7 +1436,8 @@ namespace AbletonManager
                 int first = Math.Max(0, (_scroll - slack) / rowH);
                 int last = Math.Min(_rows.Count - 1, (_scroll + ViewH + slack) / rowH);
 
-                // 1. Проход: фон строк (пилюли выделения и ховера) на всю ширину
+                // 1. Pass: row backgrounds (the selection and hover pills) across the full
+                // width
                 g.SetClip(new Rectangle(0, HeaderHeight, Width, Math.Max(0, ViewH - HeaderHeight)));
                 for (int i = first; i <= last; i++)
                 {
@@ -1425,8 +1454,9 @@ namespace AbletonManager
                     Rectangle pill = new Rectangle(0, topAnim + (rowH - pillH) / 2, pillW, pillH);
                     float hoverFactor = (_rowHoverFactors != null && i < _rowHoverFactors.Length) ? _rowHoverFactors[i] : (i == _hot ? 1f : 0f);
 
-                    // На уже выделенной строке заливка ховера не нужна — у неё и так
-                    // есть свой контур, а сверху ещё и заливка спорила с текстом.
+                    // On an already selected row the hover fill is not wanted — it has an
+                    // outline of its own as it is, and a fill on top of that argued with the
+                    // text.
                     if (i != _selected && hoverFactor > 0.001f)
                     {
                         Color c = Color.FromArgb((int)Math.Round(hoverFactor * Theme.RowHover.A * entrance), Theme.RowHover);
@@ -1434,9 +1464,9 @@ namespace AbletonManager
                     }
                     if (i == _selected)
                     {
-                        // Выделение — обычным светлым, только контуром: заливка спорила
-                        // с текстом строки, а сам цвет от выбора акцента не зависит —
-                        // акцент выбирают кнопки, прогресс и переключатели.
+                        // Selection in ordinary light, outline only: a fill argued with the
+                        // row's text, and the colour itself does not depend on the choice of
+                        // accent — the accent is claimed by buttons, progress and switches.
                         RectangleF ring = RectangleF.Inflate(pill, -0.75f, -0.75f);
                         Color line = Color.FromArgb((int)Math.Round(0xC0 * entrance), Theme.Light);
                         using (GraphicsPath rp = Theme.Round(ring, pillH / 2f - 0.75f))
@@ -1445,7 +1475,8 @@ namespace AbletonManager
                     }
                 }
 
-                // 2. Проход: прокручиваемые колонки (с 1 по N-1), строго обрезанные границами scrollLeft и PadRight
+                // 2. Pass: the scrolling columns (1 through N-1), strictly clipped by the
+                // scrollLeft and PadRight boundaries
                 if (_columns.Count > 1 && scrollWidth > 0)
                 {
                     g.SetClip(new Rectangle(scrollLeft, HeaderHeight, scrollWidth, Math.Max(0, ViewH - HeaderHeight)));
@@ -1483,7 +1514,8 @@ namespace AbletonManager
                     }
                 }
 
-                // 3. Проход: закреплённая колонка имени (0) и гутеры слева (0 .. scrollLeft)
+                // 3. Pass: the pinned name column (0) and the gutters on the left (0 ..
+                // scrollLeft)
                 {
                     int col0W = Math.Min(scrollLeft, Width - PadRight);
                     g.SetClip(new Rectangle(0, HeaderHeight, col0W, Math.Max(0, ViewH - HeaderHeight)));
@@ -1523,20 +1555,21 @@ namespace AbletonManager
 
                 g.Clip = baseClip;
 
-                // Разделителя между закреплёнными и остальными больше нет: закреплённые
-                // и так видны звёздочкой, а линия внутри списка спорила с линией под
-                // шапкой — на их пересечении с вертикальным разделителем получался
-                // лишний светлый пиксель.
+                // There is no divider between the pinned ones and the rest any more: the pinned
+                // are visible by their star as it is, and a line inside the list argued with
+                // the line under the header — at their intersection with the vertical divider
+                // an extra light pixel appeared.
 
-                // 5. Тонкий вертикальный разделитель между закреплённой колонкой и прокручиваемой областью
+                // 5. A thin vertical divider between the pinned column and the scrolling area
                 if (_scrollX > 0 && _columns.Count > 1)
                 {
                     using (Pen divPen = new Pen(Theme.Hairline))
                         g.DrawLine(divPen, scrollLeft - 1, HeaderHeight, scrollLeft - 1, Height);
                 }
 
-                // Нижние строки чуть растворяются в фоне — тонкая полоска, не прошлый
-                // на треть экрана. На стекле это гасим целиком, см. комментарий у FadeBottom.
+                // The bottom rows dissolve slightly into the background — a thin band, not the
+                // former third of a screen. On glass we kill it entirely, see the comment on
+                // FadeBottom.
                 if (FadeBottom && !Glass.Enabled && ContentHeight > Height)
                 {
                     int fadeH = Sc(36);
@@ -1553,9 +1586,9 @@ namespace AbletonManager
 
             if (!headerOnly)
             {
-                // Полоса под строками — своя дорожка. Clip тут не помогает: текст рисует
-                // TextRenderer мимо GDI+, и обрезку он игнорирует, поэтому нижнюю
-                // полоску просто закрашиваем фоном, а уже поверх кладём полосу.
+                // The bar under the rows has a lane of its own. A Clip does not help here: the
+                // text is drawn by TextRenderer past GDI+ and it ignores clipping, so we simply
+                // paint the bottom strip over with the background and lay the bar on top.
                 if (HBarSpace > 0)
                     Chrome.PaintBase(this, g, new Rectangle(0, Height - HBarSpace, Width, HBarSpace), Surface);
 
@@ -1577,10 +1610,9 @@ namespace AbletonManager
                               : (col.Color ?? (c == 0 || bright ? Theme.Text : Theme.TextDim));
             if (entrance < 1.0f) color = Color.FromArgb((int)Math.Round(color.A * entrance), color);
 
-            // Версия под раскрытой строкой отступает в колонке имени, а прямо
-            // в этом отступе — короткий рельс: только у дочерних строк и только
-            // рядом с текстом, а не через всю строку, — как «|» перед именем в
-            // дереве файлов.
+            // A version under an expanded row is indented in the name column, and right in that
+            // indent sits a short rail: only on child rows and only next to the text rather
+            // than across the whole row — like the "|" before a name in a file tree.
             bool childHere = row.ChildRow && col.Id == "Set";
             int indent = childHere ? Sc(20) : 0;
             int x = ColX(widths, c);
@@ -1597,9 +1629,9 @@ namespace AbletonManager
             if (cellX + cellW > maxRight) cellW = Math.Max(0, maxRight - cellX);
             if (cellW <= 0 && cellX >= maxRight) return;
             Rectangle cr = new Rectangle(cellX, topAnim, cellW, rowH);
-            // Последним аргументом — левая граница кликабельной зоны: прокручиваемая
-            // колонка может заехать под закреплённую первую, рисунок там обрезан клипом,
-            // а вот попадание мышью надо обрезать самим.
+            // The last argument is the left boundary of the clickable zone: a scrolling column
+            // can slide under the pinned first one, where the drawing is cut off by the clip,
+            // but a mouse hit has to be cut off by us.
             if (col.Chips)
                 PaintChips(g, cr, row.Cells[c], color, rowIndex, rowIndex == _hot, rowIndex == _tagsHot,
                            c >= 1 ? LeftX + widths[0] : 0);
@@ -1612,8 +1644,8 @@ namespace AbletonManager
                     string mainText = cellText.Substring(0, plusIdx);
                     string countText = cellText.Substring(plusIdx + CountSep.Length);
 
-                    // Под курсором хвостик светлеет — иначе о том, что по нему
-                    // можно щёлкнуть и раскрыть версии, никто не догадается.
+                    // Under the cursor the tail lightens — otherwise nobody would guess it can
+                    // be clicked to expand the versions.
                     Color countColor = countHot ? Theme.Text : Theme.TextDim;
                     if (entrance < 1.0f) countColor = Color.FromArgb((int)Math.Round(countColor.A * entrance), countColor);
 
@@ -1661,8 +1693,8 @@ namespace AbletonManager
             return x;
         }
 
-        // Заголовок и отметка в данных под ним всегда делят один и тот же прямоугольник —
-        // левую границу собственной колонки, без залезания в соседнюю.
+        // A heading and the mark in the data below it always share one and the same rectangle —
+        // the left boundary of their own column, with no creeping into the neighbouring one.
         Rectangle ColSlot(int[] widths, int top, int rowH, int col)
         {
             int x = ColX(widths, col);
@@ -1672,7 +1704,7 @@ namespace AbletonManager
             return new Rectangle(x, top, w, rowH);
         }
 
-        /// <summary>Квадратный чекбокс в гутере слева от первой колонки.</summary>
+        /// <summary>A square checkbox in the gutter to the left of the first column.</summary>
         void PaintCheckbox(Graphics g, int top, int rowH, bool on)
         {
             float cs = Sc(16);
@@ -1689,17 +1721,17 @@ namespace AbletonManager
         }
 
         /// <summary>
-        /// Треугольник «послушать», той же палитрой, что и звёздочка: в покое —
-        /// приглушённый серый, у играющей строки — акцентный, как у закреплённой
-        /// звезды. Ховер пока не выделяем отдельным видом.
+        /// The "listen" triangle, in the same palette as the star: muted grey at rest, the
+        /// accent colour on the playing row as on a pinned star. We do not yet single out hover
+        /// with a look of its own.
         /// </summary>
         void PaintPlay(Graphics g, int top, int rowH, bool hot, bool playing)
         {
             RectangleF r = PlayRect(top, rowH);
 
-            // Пока строка звучит и на неё не наведён курсор — вместо значка живой
-            // пульс: видно, что играет именно эта строка. Под курсором возвращается
-            // пауза, иначе остановить нечем.
+            // While a row is sounding and the cursor is not on it, a live pulse takes the
+            // glyph's place: it is visible that this row is the one playing. Under the cursor
+            // the pause comes back, or there would be nothing to stop it with.
             if (playing && !hot)
             {
                 RectangleF pr = RectangleF.Inflate(r, -Sc(5), -Sc(6));
@@ -1708,17 +1740,17 @@ namespace AbletonManager
             }
 
             Color ink = playing ? Theme.Light : Color.FromArgb(0xFF, 0x8E, 0x8E, 0x93);
-            // Меньше отступа, чем у звезды: сам треугольник/пауза рисуются мельче
-            // своего бокса (собственные пропорции глифа), и с тем же отступом, что у
-            // звезды, выглядели бы заметно мельче неё при одинаковом размере кнопки.
+            // A smaller inset than the star's: the triangle/pause itself is drawn smaller than
+            // its box (the glyph's own proportions), and with the star's inset it would look
+            // noticeably smaller than the star at the same button size.
             Icons.Draw(g, playing ? Glyph.Pause : Glyph.Play,
                        RectangleF.Inflate(r, -Sc(1), -Sc(1)), ink, 1.5f);
         }
 
         /// <summary>
-        /// Звёздочка закрепления. У закреплённой строки видна постоянно (иначе как
-        /// узнать, что проект закреплён, не наводясь на каждую строку), у остальных —
-        /// пока курсор где-то на строке, чтобы не рябило на длинном списке.
+        /// The pin star. On a pinned row it is visible permanently (otherwise how would one
+        /// know a project is pinned without hovering over every row), on the rest while the
+        /// cursor is somewhere on the row, so a long list does not shimmer.
         /// </summary>
         void PaintPin(Graphics g, int top, int rowH, bool hot, bool pinned)
         {
@@ -1729,33 +1761,33 @@ namespace AbletonManager
         }
 
         /// <summary>
-        /// Теги пилюлями, тем же приёмом, что в панели сведений — только мельче.
-        /// В одну дорожку, а если в неё всё не влезло — в две: строка таблицы держит
-        /// ровно две пилюли по высоте, а больше и не нужно. Что не поместилось и во
-        /// вторую, сворачивается в многоточие: обрезанная наполовину пилюля читалась бы
-        /// как брак вёрстки, а не как «тегов больше, чем видно».
+        /// Tags as pills, by the same device as in the details panel — only smaller. In one
+        /// lane, and if not everything fits into it, in two: a table row holds exactly two
+        /// pills by height, and more is not needed. Whatever does not fit into the second
+        /// either is collapsed into an ellipsis: a pill cut in half would read as broken layout
+        /// rather than as "there are more tags than are visible".
         ///
-        /// Сами пилюли — кнопка правки: по ним кликают, чтобы открыть редактор тегов.
-        /// У пустой ячейки кликать нечего, поэтому под курсором на строке появляется
-        /// «+» — постоянно держать его во всех строках значило бы засеять плюсами
-        /// всю таблицу, у большинства проектов тегов нет.
+        /// The pills themselves are the edit button: they are clicked to open the tag editor.
+        /// In an empty cell there is nothing to click, so with the cursor on the row a "+"
+        /// appears — keeping it permanently in every row would mean sowing the whole table with
+        /// pluses, and most projects have no tags.
         /// </summary>
         const string AddTagsLabel = "Add tags";
 
         void PaintChips(Graphics g, Rectangle cell, string joined, Color textColor,
                         int rowIndex, bool rowHot, bool hot, int clipLeft)
         {
-            // Кегль мельче, чем у остального текста строки: одиннадцатым пилюли выходят
-            // по 21 px, две дорожки съедают строку почти целиком, и пилюли соседних строк
-            // оказываются друг от друга на том же расстоянии, что и две дорожки внутри
-            // одной, — теги перестают читаться как теги одного проекта.
+            // A smaller type size than the rest of the row's text: at eleven the pills come out
+            // 21 px, two lanes eat almost the whole row, and the pills of neighbouring rows end
+            // up as far from each other as the two lanes within one — the tags stop reading as
+            // the tags of one project.
             Font f = Theme.FMini;
             int vgap = Sc(3);
 
-            // Высота пилюли — по шрифту, а не по остатку строки: текст, которому нужно
-            // 17 px, в пилюлю 16 не влезет, и выносные элементы упрутся в края. Две
-            // пилюли с зазором занимают 39 px из 53, остаток строки сам становится
-            // полями сверху и снизу (блок центрируется ниже).
+            // The pill height comes from the font rather than from what is left of the row:
+            // text that needs 17 px will not fit into a pill of 16, and the descenders run into
+            // the edges. Two pills with a gap take 39 px out of 53, and the rest of the row
+            // becomes the margins above and below by itself (the block is centred below).
             int h = Math.Min(Chrome.PillHeight(f, 4), (cell.Height - vgap) / 2);
 
             string[] tags = string.IsNullOrEmpty(joined)
@@ -1766,13 +1798,14 @@ namespace AbletonManager
             {
                 if (!rowHot) return;
 
-                // Бирка и подпись, как в панели сведений, — голый плюс не говорил, что
-                // именно он добавит. Иконка и текст делят одну коробку высотой с пилюлю:
-                // иконка стоит по её центру, текст — по тому же правилу, что и в пилюлях
-                // (Chrome.PillTop), так что буквы и значок выровнены друг с другом.
+                // A tag and a caption, as in the details panel — a bare plus did not say what
+                // it would add. The glyph and the text share one box the height of a pill: the
+                // glyph stands in its centre, the text by the same rule as in the pills
+                // (Chrome.PillTop), so the letters and the glyph are aligned with each other.
                 Color ink = hot ? Theme.Text : Theme.TextDim;
-                // Бирка вписана в квадрат, а сама она широкая и низкая (14×10 в исходнике),
-                // поэтому по ширине занимает весь квадрат, а по высоте — две трети.
+                // The tag is fitted into a square, and it is itself wide and low (14×10 in the
+                // source), so across the width it takes the whole square and across the height
+                // two thirds.
                 int icon = Math.Max(Sc(12), h - Sc(4));
                 int iconGap = Sc(6);
                 int textW = TextRenderer.MeasureText(AddTagsLabel, f, new Size(short.MaxValue, h),
@@ -1783,8 +1816,9 @@ namespace AbletonManager
                 int hintY = cell.Y + (cell.Height - h) / 2;
                 Icons.Draw(g, Glyph.Tag,
                            new RectangleF(cell.X, hintY + (h - icon) / 2f, icon, icon), ink, 1.2f);
-                // NoClipping в Chrome.PillText: прямоугольник тут ровно по мерке текста,
-                // и без него хвост «g» обрезался бы своей же коробкой.
+                // NoClipping in Chrome.PillText: the rectangle here is exactly to the measure
+                // of the text, and without it the tail of a "g" would be cut off by its own
+                // box.
                 Chrome.DrawText(g, AddTagsLabel, f,
                                 new Rectangle(cell.X + icon + iconGap, hintY + Chrome.PillTop(g, f, h), textW, h),
                                 ink, Chrome.PillText);
@@ -1804,9 +1838,10 @@ namespace AbletonManager
                 total += chipW[i] + (i > 0 ? gap : 0);
             }
 
-            // Вторую дорожку заводим, только когда в одну и правда не влезло: ради пары
-            // коротких тегов раздёргивать строку по вертикали незачем. А если не влезает
-            // даже первый тег, второй дорожке тем более нечего показать — только многоточие.
+            // We start a second lane only when one really did not suffice: there is no point
+            // tearing the row apart vertically for a couple of short tags. And if even the
+            // first tag does not fit, the second lane has all the less to show — only an
+            // ellipsis.
             int lines = (total <= cell.Width || chipW[0] > cell.Width) ? 1 : 2;
             int top = cell.Y + (cell.Height - (lines * h + (lines - 1) * vgap)) / 2;
 
@@ -1857,12 +1892,13 @@ namespace AbletonManager
             if (slot.Width <= 0) return;
 
             int yOffset = 0;
-            // Символ галочки (Segoe UI/Emoji) из-за метрик шрифта садится ниже оптического центра строки
+            // The tick character (Segoe UI/Emoji) sits below the line's optical centre because
+            // of the font metrics
             if (m.Text.IndexOfAny(new char[] { '\u2714', '\u2713', '\u2705' }) >= 0)
                 yOffset = -Sc(2);
 
-            // Цветной полоски у правого края больше нет: сам текст уже покрашен, и
-            // полоска только удваивала одно и то же сообщение в самой правой колонке.
+            // The coloured strip at the right edge is gone: the text itself is already
+            // coloured, and the strip only doubled the same message in the rightmost column.
             Chrome.DrawText(g, m.Text, Theme.FBody, new Rectangle(slot.Left, top + yOffset, slot.Width, rowH),
                             m.Color, Chrome.CellRight);
         }
@@ -1874,7 +1910,7 @@ namespace AbletonManager
             int scrollLeft = LeftX + widths[0];
             int scrollWidth = Math.Max(0, Width - PadRight - scrollLeft);
 
-            // 1. Отрисовка заголовков прокручиваемых колонок (с 1 по N-1)
+            // 1. Drawing the headings of the scrolling columns (1 through N-1)
             if (_columns.Count > 1 && scrollWidth > 0)
             {
                 Region oldClip = g.Clip;
@@ -1890,7 +1926,7 @@ namespace AbletonManager
                 g.Clip = oldClip;
             }
 
-            // 2. Закреплённая область заголовка (колонка 0 и левый гутер)
+            // 2. The pinned area of the header (column 0 and the left gutter)
             {
                 Region oldClip = g.Clip;
                 int head0W = Math.Min(scrollLeft, Width - PadRight);
@@ -1913,15 +1949,15 @@ namespace AbletonManager
                 g.Clip = oldClip;
             }
 
-            // 3. Тонкий вертикальный разделитель в шапке
+            // 3. A thin vertical divider in the header
             if (_scrollX > 0 && _columns.Count > 1)
             {
                 using (Pen divPen = new Pen(Theme.Hairline))
                     g.DrawLine(divPen, scrollLeft - 1, 0, scrollLeft - 1, HeaderHeight);
             }
 
-            // 4. Линия под шапкой: без неё заголовки набраны тем же кеглем и цветом,
-            // что и тело, и шапка от списка не отделяется вовсе.
+            // 4. The line under the header: without it the headings are set in the same size
+            // and colour as the body, and the header is not separated from the list at all.
             if (ShowHeaderRule && _columns.Count > 0)
             {
                 using (Pen rule = new Pen(Theme.Hairline))
@@ -1943,8 +1979,8 @@ namespace AbletonManager
             Size tsz = TextRenderer.MeasureText(col.Title, Theme.FLabel);
             if (active)
             {
-                // Треугольник рисуем отдельным элементом, иначе он обрезается вместе
-                // с текстом в узкой колонке.
+                // The triangle is drawn as a separate element, or it gets clipped along with
+                // the text in a narrow column.
                 int arrow = Sc(14);
                 RectangleF ar = col.Right
                     ? new RectangleF(hr.Right - arrow, (HeaderHeight - arrow) / 2f, arrow, arrow)
@@ -1954,8 +1990,8 @@ namespace AbletonManager
                 hr.Width = Math.Max(0, hr.Width - arrow - Sc(4));
             }
 
-            // Заголовок, который сейчас тащат, гаснет: он «взят в руку», а место, куда
-            // он встанет, показывает вертикальная черта ниже.
+            // The heading being dragged fades out: it is "in hand", while where it will land is
+            // shown by the vertical bar below.
             Color ink = active ? Theme.Text : Theme.TextDim;
             if (c == _dragCol) ink = Color.FromArgb(ink.A / 3, ink);
 
@@ -1964,14 +2000,13 @@ namespace AbletonManager
         }
 
         /// <summary>
-        /// Куда встанет колонка, если отпустить её сейчас, — вертикальная черта на
-        /// границе между заголовками, как в проводнике. Рисуется только во время
-        /// перетаскивания.
+        /// Where the column will land if released now — a vertical bar on the boundary between
+        /// headings, as in Explorer. Drawn only while dragging.
         /// </summary>
         void PaintDropMark(Graphics g, int[] widths)
         {
             if (_dragCol < 0 || _dropAt < 0) return;
-            if (_dropAt == _dragCol || _dropAt == _dragCol + 1) return;   // вернуть на место
+            if (_dropAt == _dragCol || _dropAt == _dragCol + 1) return;   // put it back
 
             int x = _dropAt == 0 ? LeftX : (_dropAt < _columns.Count ? ColX(widths, _dropAt) : ColX(widths, _columns.Count - 1) + widths[_columns.Count - 1]);
             if (x > Width - PadRight) x = Width - PadRight;
@@ -1982,9 +2017,10 @@ namespace AbletonManager
         }
 
         /// <summary>
-        /// Тонкие ручки на всех границах между заголовками — появляются все разом, как
-        /// только курсор зашёл в шапку, чтобы сразу было видно, где вообще можно тянуть,
-        /// а не нащупывать границы вслепую. В остальное время шапка чистая.
+        /// Thin grips on every boundary between headings — they all appear at once as soon as
+        /// the cursor enters the header, so that it is immediately visible where anything can
+        /// be dragged rather than groping for the boundaries blindly. The rest of the time the
+        /// header is clean.
         /// </summary>
         void PaintGrip(Graphics g, int[] widths)
         {
