@@ -18,7 +18,7 @@ if not exist "%CSC%" (
 set ROOT=%~dp0..
 set OUT=%ROOT%\export
 
-"%CSC%" /nologo /target:exe /main:AbletonManager.SvgExport /platform:anycpu /codepage:65001 /out:"%TEMP%\AliveSvgExport.exe" /reference:System.dll /reference:System.Core.dll /reference:System.Drawing.dll /reference:System.Windows.Forms.dll /reference:System.Xml.dll /reference:System.IO.Compression.dll /reference:System.IO.Compression.FileSystem.dll "%ROOT%\src\*.cs" "%ROOT%\proto\*.cs" "%ROOT%\nebula\*.cs" "%~dp0SvgExport.cs"
+"%CSC%" /nologo /target:exe /main:AbletonManager.SvgExport /platform:anycpu /codepage:65001 /out:"%TEMP%\AliveSvgExport.exe" /reference:System.dll /reference:System.Core.dll /reference:System.Drawing.dll /reference:System.Windows.Forms.dll /reference:System.Xml.dll /reference:System.IO.Compression.dll /reference:System.IO.Compression.FileSystem.dll "%ROOT%\src\*.cs" "%ROOT%\nebula\*.cs" "%~dp0SvgExport.cs"
 
 if errorlevel 1 (
   echo.

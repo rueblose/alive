@@ -12,7 +12,7 @@ namespace AliveTools
     /// несколько окон сразу:
     ///
     ///     Shot.exe DialogShow.exe out.png settings
-    ///     Shot.exe DialogShow.exe out.png options
+    ///     Shot.exe DialogShow.exe out.png settings-folders
     ///
     /// Сборка: tools\build-rescue-test.cmd. В bin не попадает.
     /// </summary>
@@ -33,16 +33,11 @@ namespace AliveTools
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
 
-            Form f;
-            if (which == "options") f = new OptionsDialog();
-            else
-            {
-                Settings st = Settings.Load();
-                // «settings-folders» — тот же диалог, но сразу в режиме обхода папок:
-                // там на четыре строки больше, и разъезжается раскладка именно в нём.
-                if (which == "settings-folders") st.PluginsFromFolders = true;
-                f = new SettingsDialog(st);
-            }
+            Settings st = Settings.Load();
+            // «settings-folders» — тот же диалог, но сразу в режиме обхода папок:
+            // там на четыре строки больше, и разъезжается раскладка именно в нём.
+            if (which == "settings-folders") st.PluginsFromFolders = true;
+            Form f = new SettingsDialog(st);
 
             // «-flash» — держать подсветку обводки зажжённой, чтобы её было видно на
             // снимке: сама по себе она гаснет за секунду (Chrome.SwallowBlockedClick

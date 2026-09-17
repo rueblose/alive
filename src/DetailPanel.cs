@@ -56,15 +56,6 @@ namespace AbletonManager
         /// <summary>Собрать проект в переносимую папку — см. CollectDialog.</summary>
         public event Action CollectRequested;
 
-        /// <summary>
-        /// Версии этого проекта. Окно живёт не в каталоге, а в proto\, и подписывается
-        /// на это событие снаружи — так каталог о нём ничего не знает. Кнопки нет, пока
-        /// подписчика нет: показывать кнопку, которая ничего не делает, — врать
-        /// интерфейсом. Сборка теперь одна, так что подписчик есть всегда, но правило
-        /// остаётся: оно и держит зависимость односторонней.
-        /// </summary>
-        public event Action ForksRequested;
-
         Action _showInListRequested;
         public event Action ShowInListRequested
         {
@@ -251,13 +242,6 @@ namespace AbletonManager
                 rescue.ShortcutKeyDisplayString = "Ctrl+R";
                 rescue.Click += delegate { if (RescueRequested != null) RescueRequested(); };
                 m.Items.Add(rescue);
-
-                if (ForksRequested != null)
-                {
-                    ToolStripMenuItem forks = new ToolStripMenuItem("Forks");
-                    forks.Click += delegate { if (ForksRequested != null) ForksRequested(); };
-                    m.Items.Add(forks);
-                }
             }
 
             // Пока попап открыт, значок кнопки перевёрнут — как у раскрытого списка.

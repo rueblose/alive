@@ -2,10 +2,9 @@
 setlocal
 rem Build with the C# compiler shipped inside .NET Framework 4.x - nothing to install.
 rem
-rem One executable. src is the catalog, proto adds the version history (Forks) and the
-rem library scatter plot (Stat), nebula adds its own view. Main lives in proto\Program.cs
-rem and is the only one in the tree - see the comment there for why the extra windows
-rem attach from outside instead of being wired into MainForm.
+rem One executable. src is the catalog, nebula adds Stat - the scatter plot over the whole
+rem library. Main lives in src\Program.cs and is the only one in the tree - see the comment
+rem there for why Stat attaches from outside instead of being wired into MainForm.
 rem
 rem Comments in .cmd files stay ASCII on purpose: cmd.exe reads batch files in the OEM
 rem codepage, and UTF-8 text turns into commands it then tries to run.
@@ -26,7 +25,7 @@ echo Building Alive.exe...
   /out:"%~dp0bin\Alive.exe" ^
   /reference:System.dll /reference:System.Core.dll /reference:System.Drawing.dll ^
   /reference:System.Windows.Forms.dll /reference:System.Xml.dll /reference:System.IO.Compression.dll /reference:System.IO.Compression.FileSystem.dll ^
-  "%~dp0src\*.cs" "%~dp0proto\*.cs" "%~dp0nebula\*.cs"
+  "%~dp0src\*.cs" "%~dp0nebula\*.cs"
 
 if errorlevel 1 (
   echo.

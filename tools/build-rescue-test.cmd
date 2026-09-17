@@ -48,9 +48,9 @@ rem DialogShow opens Settings / Options the same way, for the same reason.
 if errorlevel 1 goto fail
 
 rem Shot itself lives with the Reel prototype - same job, no reason for a second copy.
-"%CSC%" /nologo /target:exe /platform:anycpu /codepage:65001 /main:Reel.Shot ^
+"%CSC%" /nologo /target:exe /platform:anycpu /codepage:65001 /main:AliveTools.Shot ^
   /out:"%OUT%\Shot.exe" /reference:System.dll /reference:System.Drawing.dll ^
-  "%ROOT%\proto\test\Shot.cs"
+  "%ROOT%\tools\Shot.cs"
 if errorlevel 1 goto fail
 
 echo OK: %OUT%\RescueTest.exe, %OUT%\RescueShow.exe, %OUT%\DialogShow.exe, %OUT%\Shot.exe

@@ -140,13 +140,7 @@ namespace AbletonManager
                 return new CollectDialog(sample, index.Env, settings);
             });
 
-            Try("14-forks", "Forks - version history", 3000, delegate
-            {
-                if (sample == null) return null;
-                return new Reel.ReelWindow(sample.Path);
-            });
-
-            Try("15-stat", "Stat - library point cloud", 4000, delegate
+            Try("14-stat", "Stat - library point cloud", 4000, delegate
             {
                 return new AbletonManager.Nebula.NebulaForm();
             });

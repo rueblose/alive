@@ -6,7 +6,7 @@ using System.Drawing.Imaging;
 using System.Runtime.InteropServices;
 using System.Threading;
 
-namespace Reel
+namespace AliveTools
 {
     /// <summary>
     /// Запускает прототип, ждёт, пока он дочитает базу плагинов и разберёт сет, и

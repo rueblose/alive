@@ -432,7 +432,7 @@ namespace AbletonManager
             int by = Card.Bottom - pad - _run.Height;
 
             // Высоту подсказки считаем от самого шрифта, а не пикселями на глаз: Sc()
-            // в Alive — множитель ×1 (см. ReelWindow.OnHandleCreated), а шрифт задан в
+            // в Alive — множитель ×1, а шрифт задан в
             // пунктах и на масштабированном экране растёт сам. От сорока «пикселей»
             // третья строка там уезжала под нижний край — ровно это и было видно.
             _hintRect = new Rectangle(x, by - Sc(8) - HintHeight, w, HintHeight);

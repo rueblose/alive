@@ -108,15 +108,13 @@ Live's own housekeeping folders are skipped, and what is left is ordered by plau
 Your entire library as one point cloud. Every project is a dot, and six of its properties carry
 six values of the set — axes, size, fade and colour are all yours to map.
 
-### Settings and Options.txt
+### Settings
 
 <img src="docs/img/settings.png" alt="Settings">
 
 `Ctrl ,` or a click on the program name in the header. Smooth scrolling, a transparency switch
 (on Windows 10 the acrylic backdrop is recomputed on every window move, so the window lags behind
-the cursor), the plugin list source — and an editor for Live's own hidden options: **153 entries**
-with a description and a reliability note, a checkbox instead of editing a text file, and a backup
-taken before every write. Details in [docs/options-txt.md](docs/options-txt.md).
+the cursor), and where the plugin list comes from — Live's own database, or your VST2/VST3 folders.
 
 ---
 
@@ -185,21 +183,12 @@ build.cmd
 
 Out comes `bin\Alive.exe`. That is the whole thing.
 
-> **Forks** — per-set version history with snapshots and a semantic diff — is built but switched
-> off in the UI: the button and `Ctrl H` come back when you uncomment the `AttachHistory` line in
-> [proto/Program.cs](proto/Program.cs). The window also opens directly via
-> `Alive.exe --reel set.als`.
-
 ---
 
 ## Documentation
 
-| | |
-|---|---|
-| [FORMAT.md](FORMAT.md) | The `.als` format — what 427 real sets revealed |
-| [docs/options-txt.md](docs/options-txt.md) | Live's `Options.txt`, catalogued and sourced |
-| [proto/README.md](proto/README.md) | Forks and Stat: how they work and how they attach |
-| [PLANS.md](PLANS.md) | What is next |
+[FORMAT.md](FORMAT.md) — the `.als` format, as far as 427 real sets revealed it. Written while
+building the parser, and the reason the catalog can read a set without opening Live.
 
 ---
 
