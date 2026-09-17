@@ -25,7 +25,7 @@ echo Building Alive.exe...
   /win32icon:"%~dp0src\icons\icon256.ico" ^
   /out:"%~dp0bin\Alive.exe" ^
   /reference:System.dll /reference:System.Core.dll /reference:System.Drawing.dll ^
-  /reference:System.Windows.Forms.dll /reference:System.Xml.dll ^
+  /reference:System.Windows.Forms.dll /reference:System.Xml.dll /reference:System.IO.Compression.dll /reference:System.IO.Compression.FileSystem.dll ^
   "%~dp0src\*.cs" "%~dp0proto\*.cs" "%~dp0nebula\*.cs"
 
 if errorlevel 1 (

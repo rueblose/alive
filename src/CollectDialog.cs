@@ -34,6 +34,18 @@ namespace AbletonManager
         readonly List<Row> _rows = new List<Row>();
         readonly GlassButton _ok = new GlassButton();
         readonly GlassButton _cancel = new GlassButton();
+        readonly PillToggle _zip = new PillToggle();
+
+        const string ZipLabel = "Add to ZIP";
+
+        /// <summary>Самый широкий итог, какой бывает, — по нему меряется полка.</summary>
+        const string WidestSummary = "Will copy 9999 files, 999.9 GB";
+
+        // Ширина — нижняя граница, а не размер: полка внизу может попросить больше, см.
+        // OnHandleCreated. Высота — под четыре строки, итоги и полку; строка «не нашлись»
+        // есть не всегда, запас на неё заложен.
+        const int DialogW = 720;
+        const int DialogH = 350;
         readonly System.Windows.Forms.Timer _tick = new System.Windows.Forms.Timer();
 
         AlsInfo _info;
@@ -71,12 +83,8 @@ namespace AbletonManager
             _env = env;
             _settings = settings;
 
-            Caption = "Collect All: " + set.Name;
-            // 640 обрезало подпись «Specify which used media files are to be copied into
-            // the project.» многоточием на «…the p…» — при 13pt Segoe UI Variable Text
-            // строка чуть шире, чем помещалось в исходную ширину. 720 — с запасом,
-            // проверено снимком (см. отчёт задачи).
-            ClientSize = new Size(Sc(720), Sc(400));
+            Caption = "Export: " + set.Name;
+            ClientSize = new Size(Sc(DialogW), Sc(DialogH));
 
             // Тот же экземпляр, что грузит и сохраняет MainForm, — не Settings.Load()
             // заново: своя копия не видела бы изменений с других окон и, что хуже,
@@ -91,7 +99,7 @@ namespace AbletonManager
             AddRow("Files from User Library", SampleOrigin.UserLibrary, _opt.FromUserLibrary);
             AddRow("Files from Factory Packs", SampleOrigin.FactoryPack, _opt.FromFactoryPacks);
 
-            _ok.Text = "Collect";
+            _ok.Text = "Export";
             _ok.Primary = true;
             _ok.FitToText(20);
             _ok.Enabled = false;
@@ -103,9 +111,45 @@ namespace AbletonManager
             _cancel.Click += delegate { OnCancel(); };
             Controls.Add(_cancel);
 
+            // Тот же тумблер, что у строк выше, и в той же полке, что кнопки: архив —
+            // это про то, чем кончится сборка, а не ещё один вид файлов для неё.
+            _zip.IsSwitch = true;
+            _zip.Size = new Size(Sc(42), Sc(24));
+            _zip.Checked = _settings.CollectToZip;
+            _zip.Enabled = false;
+            _zip.CheckedChanged += delegate { Recount(); };
+            Controls.Add(_zip);
+
             _tick.Interval = 100;
             _tick.Tick += delegate { Invalidate(); };
             _tick.Start();
+        }
+
+        /// <summary>
+        /// Ширину окна задаёт не только Sc(). Sc() считает по DeviceDpi, а текст GDI рисует
+        /// по DPI шрифта, и это разные числа: на системе со 125% окно выходило 96-точечным,
+        /// а буквы в нём — 120-точечными. Нижняя полка — единственная строка, где всё стоит
+        /// впритык, и она переставала помещаться в собственное окно: итог слева обрезался
+        /// многоточием. Поэтому меряем полку настоящим текстом и, если ей тесно, раздаём
+        /// окну ровно столько, сколько она просит.
+        /// </summary>
+        protected override void OnHandleCreated(EventArgs e)
+        {
+            base.OnHandleCreated(e);
+
+            _ok.FitToText(20);
+            _cancel.FitToText(20);
+
+            int need = Sc(24) * 2
+                     + TextRenderer.MeasureText(WidestSummary, Theme.FLabel).Width
+                     + Sc(16) + _zip.Width + Sc(14)
+                     + TextRenderer.MeasureText(ZipLabel, Theme.FBody).Width
+                     + Sc(24) + _cancel.Width + Sc(10) + _ok.Width;
+
+            // Только когда тесно: присваивание ClientSize уже созданному окну проходит
+            // через пересчёт рамки и прибавляет к высоте лишнее, а при обычном масштабе
+            // менять нечего — размер из конструктора и так верен.
+            if (need > ClientSize.Width) ClientSize = new Size(need, ClientSize.Height);
         }
 
         bool _started;
@@ -172,6 +216,7 @@ namespace AbletonManager
                     r.Files = 0; r.Bytes = 0;
                     r.Toggle.Enabled = true;
                 }
+                _zip.Enabled = true;
                 _inProjectFiles = 0; _inProjectBytes = 0; _notFound = 0;
 
                 foreach (SampleDep d in deps)
@@ -204,10 +249,25 @@ namespace AbletonManager
                     case SampleOrigin.FactoryPack: _opt.FromFactoryPacks = r.Toggle.Checked; break;
                 }
             }
+            _opt.ToZip = _zip.Checked;
 
             _plan = CollectAll.Plan(_set, _deps, _opt);
-            _ok.Enabled = !_running && _plan.TotalBytes < _plan.FreeBytes;
+            _ok.Enabled = !_running && Fits;
             Invalidate();
+        }
+
+        /// <summary>
+        /// Хватит ли места. В режиме .zip нужно вдвое: архив пишется рядом с папкой, и
+        /// пока он не готов, на диске лежат оба. Сжатие в расчёт не берём — сэмплы не жмутся.
+        /// </summary>
+        bool Fits
+        {
+            get
+            {
+                if (_plan == null) return false;
+                long need = _plan.Zip ? _plan.TotalBytes * 2 : _plan.TotalBytes;
+                return need < _plan.FreeBytes;
+            }
         }
 
         // ------------------------------------------------------------------ сборка
@@ -220,11 +280,13 @@ namespace AbletonManager
             _settings.CollectOtherProjects = _opt.FromOtherProjects;
             _settings.CollectUserLibrary = _opt.FromUserLibrary;
             _settings.CollectFactoryPacks = _opt.FromFactoryPacks;
+            _settings.CollectToZip = _opt.ToZip;
             _settings.Save();
 
             _running = true;
             _ok.Enabled = false;
             foreach (Row r in _rows) r.Toggle.Enabled = false;
+            _zip.Enabled = false;
             LayoutRows();            // пересинхронизировать Visible — иначе строки не прячутся
             _total = _plan.Copy.Count;
             _done = 0;
@@ -246,14 +308,20 @@ namespace AbletonManager
                     done = true;
                 }
                 catch (OperationCanceledException) { }
-                catch (Exception ex) { error = ex.Message; }
+                catch (Exception ex)
+                {
+                    // В окне эта строка стоит в нижней полке и длинное сообщение там
+                    // обрежется — целиком оно остаётся в журнале.
+                    error = ex.Message;
+                    Diag.Line("export: " + ex);
+                }
 
                 Post(delegate
                 {
                     _running = false;
                     if (done)
                     {
-                        Produced = plan.TargetDir;
+                        Produced = plan.Zip ? plan.ZipPath : plan.TargetDir;
                         Failed = plan.Failed.Count;
                         DialogResult = DialogResult.OK;
                         Close();
@@ -272,6 +340,7 @@ namespace AbletonManager
                             // на устаревших цифрах включил бы Collect там, где он снова
                             // не поместится.
                             foreach (Row r in _rows) r.Toggle.Enabled = true;
+                            _zip.Enabled = true;
                             Recount();
                             LayoutRows();
                             Invalidate();
@@ -299,7 +368,8 @@ namespace AbletonManager
 
         // ------------------------------------------------------------------ раскладка
 
-        int RowTop { get { return Card.Top + Sc(80); } }
+        // Сразу под шапкой окна: та кончается на +59 (заголовок и крестик), дальше список.
+        int RowTop { get { return Card.Top + Sc(72); } }
         int RowStep { get { return Sc(34); } }
 
         protected override void OnResize(EventArgs e)
@@ -312,8 +382,17 @@ namespace AbletonManager
         {
             int h = Sc(Theme.ControlH);
             int pad = Sc(24);
-            _cancel.SetBounds(Card.Right - pad - _cancel.Width, Card.Bottom - pad - h, _cancel.Width, h);
-            _ok.SetBounds(_cancel.Left - Sc(10) - _ok.Width, Card.Bottom - pad - h, _ok.Width, h);
+            int by = Card.Bottom - pad - h;
+
+            _ok.SetBounds(Card.Right - pad - _ok.Width, by, _ok.Width, h);
+            _cancel.SetBounds(_ok.Left - Sc(10) - _cancel.Width, by, _cancel.Width, h);
+
+            // Подпись тумблера рисует OnPaint — ширину её меряем здесь, чтобы отодвинуть
+            // сам тумблер ровно настолько, насколько она займёт справа от него.
+            int labelW = TextRenderer.MeasureText(ZipLabel, Theme.FBody).Width;
+            _zip.Location = new Point(_cancel.Left - Sc(24) - labelW - Sc(14) - _zip.Width,
+                                      by + (h - _zip.Height) / 2);
+            _zip.Visible = !_running && !_counting;
 
             int y = RowTop;
             foreach (Row r in _rows)
@@ -342,7 +421,14 @@ namespace AbletonManager
 
             int pad = Sc(24);
             int left = Card.Left + pad, right = Card.Right - pad;
-            Rectangle head = new Rectangle(left, Card.Top + Sc(46), right - left, Sc(24));
+
+            // Нижняя полка есть в любом состоянии: Cancel стоит в ней и пока идёт подсчёт,
+            // и пока копируем. Линейка отделяет её от списка.
+            int barTop = _ok.Top;
+            int rule = barTop - Sc(14);
+            using (Pen p = new Pen(Theme.Hairline)) g.DrawLine(p, left, rule, right, rule);
+
+            Rectangle head = new Rectangle(left, RowTop, right - left, Sc(24));
 
             if (_error.Length > 0)
             {
@@ -358,8 +444,11 @@ namespace AbletonManager
 
             if (_running)
             {
+                // «Exporting», а не «Copying»: в режиме .zip за копированием идёт второй
+                // проход, упаковка, и счётчик пробегает шкалу дважды. Что именно идёт
+                // сейчас, говорит строка под полосой.
                 int total = _total, done = _done;
-                Chrome.DrawText(g, string.Format("Copying {0} of {1}", done, total),
+                Chrome.DrawText(g, string.Format("Exporting {0} of {1}", done, total),
                                 Theme.FBody, head, Theme.Text, Chrome.Left);
 
                 RectangleF bar = new RectangleF(left, head.Bottom + Sc(16), right - left, Sc(6));
@@ -374,14 +463,6 @@ namespace AbletonManager
                 Chrome.DrawText(g, _current ?? "", Theme.FLabel, now, Theme.TextDim, Chrome.Left);
                 return;
             }
-
-            // Тот же заголовок показывает и сбой копирования — окно уже прочитало сет,
-            // строки внизу остаются на месте, меняется только эта строка и её цвет.
-            string intro = _collectError.Length > 0
-                ? "Could not collect: " + _collectError
-                : "Specify which used media files are to be copied into the project.";
-            Chrome.DrawText(g, intro, Theme.FBody, head,
-                            _collectError.Length > 0 ? Theme.Red : Theme.Text, Chrome.Left);
 
             foreach (Row r in _rows)
             {
@@ -403,31 +484,36 @@ namespace AbletonManager
                 Extra(g, left, right, ref y, "Not found — left as they are",
                       Chrome.Plural(_notFound, "file"));
 
-            y += Sc(8);
-            using (Pen p = new Pen(Theme.Hairline)) g.DrawLine(p, left, y, right, y);
-            y += Sc(10);
+            int barH = Sc(Theme.ControlH);
+            Chrome.DrawText(g, ZipLabel, Theme.FBody,
+                            new Rectangle(_zip.Right + Sc(14), barTop, _cancel.Left - Sc(24) - _zip.Right, barH),
+                            Theme.Text, Chrome.Left);
 
-            if (_plan != null)
+            // Левый край полки — итог, он же место для «не влезет» и для сбоя сборки:
+            // всё это ответ на один вопрос, можно ли жать Export.
+            string sum = "";
+            Color color = Theme.Text;
+            if (_collectError.Length > 0) { sum = "Could not export: " + _collectError; color = Theme.Red; }
+            else if (_plan != null)
             {
-                bool fits = _plan.TotalBytes < _plan.FreeBytes;
-                Extra(g, left, right, ref y,
-                      string.Format("Will copy {0}, {1}", Chrome.Plural(_plan.Copy.Count, "file"), Mb(_plan.TotalBytes)),
-                      fits ? "Free: " + Mb(_plan.FreeBytes) : "Not enough space",
-                      fits ? Theme.Text : Theme.Red);
+                // Не влезает — цифры уступают место причине: они разбиты по строкам выше,
+                // а здесь важно одно, почему Export не нажимается.
+                if (Fits)
+                    sum = string.Format("Will copy {0}, {1}",
+                                        Chrome.Plural(_plan.Copy.Count, "file"), Mb(_plan.TotalBytes));
+                else { sum = "Not enough space"; color = Theme.Red; }
             }
+            if (sum.Length > 0)
+                Chrome.DrawText(g, sum, Theme.FLabel,
+                                new Rectangle(left, barTop, _zip.Left - Sc(16) - left, barH), color, Chrome.Left);
         }
 
         void Extra(Graphics g, int left, int right, ref int y, string label, string value)
         {
-            Extra(g, left, right, ref y, label, value, Theme.TextDim);
-        }
-
-        void Extra(Graphics g, int left, int right, ref int y, string label, string value, Color color)
-        {
             Rectangle l = new Rectangle(left, y, right - left - Sc(240), Sc(22));
             Rectangle v = new Rectangle(right - Sc(240), y, Sc(240), Sc(22));
-            Chrome.DrawText(g, label, Theme.FLabel, l, color, Chrome.Left);
-            Chrome.DrawText(g, value, Theme.FLabel, v, color, Chrome.Right);
+            Chrome.DrawText(g, label, Theme.FLabel, l, Theme.TextDim, Chrome.Left);
+            Chrome.DrawText(g, value, Theme.FLabel, v, Theme.TextDim, Chrome.Right);
             y += Sc(22);
         }
     }

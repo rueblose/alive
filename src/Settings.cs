@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Text;
@@ -23,8 +23,18 @@ namespace AbletonManager
         /// <summary>То же самое для таблицы плагинов — она настраивается наравне с сетами.</summary>
         public string PluginColumns = "";
 
+        /// <summary>
+        /// Порядок колонок уже приводили к каталожному. Раньше включённая колонка
+        /// вставала в конец, и таблица переставала совпадать с меню. Разовая починка:
+        /// после неё порядок снова чей угодно — заголовки по-прежнему таскаются мышью.
+        /// </summary>
+        public bool ColumnsSorted;
+
         /// <summary>Держать ли закреплённые сеты в начале списка — звёздочка в шапке.</summary>
         public bool PinnedFirst;
+
+        /// <summary>Развёрнута ли сводка над списком проектов.</summary>
+        public bool OverviewOpen = true;
 
         /// <summary>
         /// Выключить прозрачный фон окна насовсем — окна станут плоскими и тёмными.
@@ -90,6 +100,9 @@ namespace AbletonManager
         public bool CollectUserLibrary = true;
         public bool CollectFactoryPacks;
 
+        /// <summary>Складывать собранное в .zip вместо папки.</summary>
+        public bool CollectToZip;
+
         public static string Dir
         {
             get
@@ -124,7 +137,9 @@ namespace AbletonManager
                         s.DisabledRoots.Add(val);
                     else if (key == "setcolumns") s.SetColumns = val;
                     else if (key == "plugincolumns") s.PluginColumns = val;
+                    else if (key == "columnssorted") s.ColumnsSorted = val == "1";
                     else if (key == "pinnedfirst") s.PinnedFirst = val == "1";
+                    else if (key == "overviewopen") s.OverviewOpen = val == "1";
                     else if (key == "noglass") s.DisableGlass = val == "1";
                     else if (key == "smoothscroll") s.SmoothScroll = val == "1";
                     else if (key == "nosmoothscroll") s.SmoothScroll = val == "0";
@@ -140,6 +155,7 @@ namespace AbletonManager
                     else if (key == "collectotherprojects") s.CollectOtherProjects = val == "1";
                     else if (key == "collectuserlibrary") s.CollectUserLibrary = val == "1";
                     else if (key == "collectfactorypacks") s.CollectFactoryPacks = val == "1";
+                    else if (key == "collecttozip") s.CollectToZip = val == "1";
                 }
             }
             catch { }
@@ -186,6 +202,7 @@ namespace AbletonManager
                 foreach (string r in Roots) sb.Append("root=").AppendLine(r);
                 foreach (string r in DisabledRoots) sb.Append("root_off=").AppendLine(r);
                 sb.Append("pinnedfirst=").AppendLine(PinnedFirst ? "1" : "0");
+                sb.Append("overviewopen=").AppendLine(OverviewOpen ? "1" : "0");
                 sb.Append("noglass=").AppendLine(DisableGlass ? "1" : "0");
                 sb.Append("smoothscroll=").AppendLine(SmoothScroll ? "1" : "0");
                 sb.Append("groupbyfolder=").AppendLine(GroupByFolder ? "1" : "0");
@@ -200,8 +217,10 @@ namespace AbletonManager
                 sb.Append("collectotherprojects=").AppendLine(CollectOtherProjects ? "1" : "0");
                 sb.Append("collectuserlibrary=").AppendLine(CollectUserLibrary ? "1" : "0");
                 sb.Append("collectfactorypacks=").AppendLine(CollectFactoryPacks ? "1" : "0");
+                sb.Append("collecttozip=").AppendLine(CollectToZip ? "1" : "0");
                 if (SetColumns.Length > 0) sb.Append("setcolumns=").AppendLine(SetColumns);
                 if (PluginColumns.Length > 0) sb.Append("plugincolumns=").AppendLine(PluginColumns);
+                sb.Append("columnssorted=").AppendLine(ColumnsSorted ? "1" : "0");
                 File.WriteAllText(FilePath, sb.ToString(), new UTF8Encoding(false));
             }
             catch { }

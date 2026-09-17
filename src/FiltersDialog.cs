@@ -19,6 +19,7 @@ namespace AbletonManager
         readonly TagField _versions = new TagField();
         readonly TagField _roots = new TagField();
         readonly TagField _scales = new TagField();
+        readonly TagField _tags = new TagField();
         readonly FieldBox _tracksMin = new FieldBox();
         readonly FieldBox _tracksMax = new FieldBox();
         readonly FieldBox _pluginsMin = new FieldBox();
@@ -74,6 +75,11 @@ namespace AbletonManager
             }
             Cue(_from, "from  2026-01");
             Cue(_to, "to  2026-08-07");
+
+            // Дату можно по-прежнему набрать руками — ParseDate понимает и «2026»,
+            // и «2026-08». Календарь слева для тех случаев, когда проще ткнуть.
+            DatePicker(_from, false);
+            DatePicker(_to, true);
             Cue(_tracksMin, "min");
             Cue(_tracksMax, "max");
             Cue(_pluginsMin, "min");
@@ -90,7 +96,11 @@ namespace AbletonManager
             _scales.Placeholder = "any scale";
             _scales.SetSelected(IndexesForValues(_scaleValues, _filter.KeyScales));
 
-            foreach (TagField t in new TagField[] { _versions, _roots, _scales })
+            _tags.SetOptions(TagsInSets());
+            _tags.Placeholder = "any tag";
+            _tags.SetSelected(IndexesOf(_tags.Options, _filter.Tags));
+
+            foreach (TagField t in new TagField[] { _versions, _roots, _scales, _tags })
             {
                 t.Changed += delegate { Collect(); LayoutRows(); };
                 Controls.Add(t);
@@ -163,6 +173,18 @@ namespace AbletonManager
         // Своя подсказка, а не системная EM_SETCUEBANNER — см. комментарий у FieldBox.Cue.
         static void Cue(FieldBox f, string text) { f.Cue = text; f.Invalidate(); }
 
+        /// <summary>Значок календаря слева в поле; выбранный день ложится в текст —
+        /// дальше его разбирает тот же ParseDate, что и набранный вручную.</summary>
+        static void DatePicker(FieldBox f, bool upperBound)
+        {
+            f.IconLeft = Glyph.Calendar;
+            f.IconLeftClicked += delegate
+            {
+                CalendarPopup.Show(f, SetFilter.ParseDate(f.Box.Text, upperBound),
+                                   delegate (DateTime d) { f.Box.Text = SetFilter.FormatDate(d); });
+            };
+        }
+
         static List<int> IndexesOf(List<string> options, List<string> values)
         {
             List<int> res = new List<int>();
@@ -216,6 +238,22 @@ namespace AbletonManager
             _scales.SetOptions(scaleLabels);
         }
 
+        /// <summary>
+        /// Теги, которые реально стоят на этих сетах, по алфавиту. Не ProjectMeta.AllTags():
+        /// там лежат метки и тех проектов, которых в списке уже нет, — отбирать по ним
+        /// нечего.
+        /// </summary>
+        List<string> TagsInSets()
+        {
+            List<string> all = new List<string>();
+            if (_sets != null)
+                foreach (SetEntry s in _sets)
+                    foreach (string t in ProjectMeta.TagsOf(s.ProjectDir))
+                        if (!all.Contains(t)) all.Add(t);
+            all.Sort(StringComparer.CurrentCultureIgnoreCase);
+            return all;
+        }
+
         // ------------------------------------------------------------------ данные
 
         void Collect()
@@ -230,6 +268,9 @@ namespace AbletonManager
             foreach (int i in _roots.Selected) _filter.KeyRoots.Add(_rootValues[i]);
             _filter.KeyScales.Clear();
             foreach (int i in _scales.Selected) _filter.KeyScales.Add(_scaleValues[i]);
+
+            _filter.Tags.Clear();
+            foreach (int i in _tags.Selected) _filter.Tags.Add(_tags.Options[i]);
 
             _filter.TracksMin = SetFilter.ParseCount(_tracksMin.Box.Text);
             _filter.TracksMax = SetFilter.ParseCount(_tracksMax.Box.Text);
@@ -305,7 +346,21 @@ namespace AbletonManager
                     _scales.DisabledOptions.Add(i);
             }
 
-            // 4. Plugins State Toggles
+            // 4. Tags
+            _tags.DisabledOptions.Clear();
+            HashSet<string> validTags = new HashSet<string>();
+            foreach (SetEntry s in _sets)
+            {
+                if (_filter.Matches(s, ignoreTags: true))
+                    foreach (string t in ProjectMeta.TagsOf(s.ProjectDir)) validTags.Add(t);
+            }
+            for (int i = 0; i < _tags.Options.Count; i++)
+            {
+                if (!validTags.Contains(_tags.Options[i]))
+                    _tags.DisabledOptions.Add(i);
+            }
+
+            // 5. Plugins State Toggles
             int countPluginsMissing = 0, countPluginsAll = 0;
             foreach (SetEntry s in _sets)
             {
@@ -318,7 +373,7 @@ namespace AbletonManager
             _pluginsMissing.Enabled = countPluginsMissing > 0 || _pluginsMissing.Checked;
             _pluginsAll.Enabled = countPluginsAll > 0 || _pluginsAll.Checked;
 
-            // 5. File Integrity Toggles
+            // 6. File Integrity Toggles
             int countComplete = 0, countFileMissing = 0, countUnreadable = 0;
             foreach (SetEntry s in _sets)
             {
@@ -336,7 +391,7 @@ namespace AbletonManager
             _missing.Enabled = countFileMissing > 0 || _missing.Checked;
             _unreadable.Enabled = countUnreadable > 0 || _unreadable.Checked;
 
-            // 6. Render Preview Toggles
+            // 7. Render Preview Toggles
             int countHasRenders = 0, countNoRenders = 0;
             foreach (SetEntry s in _sets)
             {
@@ -360,6 +415,7 @@ namespace AbletonManager
             _versions.SetSelected(new int[0]);
             _roots.SetSelected(new int[0]);
             _scales.SetSelected(new int[0]);
+            _tags.SetSelected(new int[0]);
             _complete.Checked = false; _missing.Checked = false; _unreadable.Checked = false;
             _previewHasRenders.Checked = false; _previewNoRenders.Checked = false;
             Collect();
@@ -408,6 +464,9 @@ namespace AbletonManager
 
                 Label("Scale", pad, y, labelW);
                 y = TagRow(_scales, left, y, fieldW) + rowGap;
+
+                Label("Tags", pad, y, labelW);
+                y = TagRow(_tags, left, y, fieldW) + rowGap;
 
                 // Счётчики — половинками во всю ширину, как «from/to» выше: раньше пара
                 // коротких полей кончалась на своей вертикали, и в одном столбце было

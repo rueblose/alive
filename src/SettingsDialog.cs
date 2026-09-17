@@ -37,7 +37,6 @@ namespace AbletonManager
         readonly GlassButton _vst3Browse = new GlassButton();
         readonly GlassButton _rescan = new GlassButton();
 
-        readonly GlassButton _shortcuts = new GlassButton();
         readonly GlassButton _openCache = new GlassButton();
         readonly GlassButton _restart = new GlassButton();
 
@@ -49,8 +48,6 @@ namespace AbletonManager
         /// <summary>Пересобрать каталог: настройки плагинов поменялись.</summary>
         public bool RescanWanted;
 
-        /// <summary>Показать горячие клавиши после закрытия окна.</summary>
-        public bool ShortcutsWanted;
 
         readonly List<string> _installs = new List<string>();
 
@@ -127,11 +124,6 @@ namespace AbletonManager
             _rescan.Click += delegate { RescanWanted = true; Close(); };
             _body.Controls.Add(_rescan);
 
-            _shortcuts.Text = "Shortcuts…";
-            _shortcuts.FitToText(16);
-            _shortcuts.Click += delegate { ShortcutsWanted = true; Close(); };
-            _body.Controls.Add(_shortcuts);
-
             _restart.Text = "Restart now";
             _restart.Primary = true;
             _restart.Visible = false;
@@ -153,7 +145,7 @@ namespace AbletonManager
 
             // Одна ширина на все кнопки правого столбца: три разные ширины давали
             // три разных левых края в одной колонке, и правый столбец рассыпался.
-            GlassButton[] rightButtons = new GlassButton[] { _shortcuts, _openCache, _rescan, _restart };
+            GlassButton[] rightButtons = new GlassButton[] { _openCache, _rescan, _restart };
             int buttonW = Sc(128);
             foreach (GlassButton b in rightButtons) buttonW = Math.Max(buttonW, b.Width);
             foreach (GlassButton b in rightButtons) b.Width = buttonW;
@@ -367,7 +359,6 @@ namespace AbletonManager
             int y = -scroll;
 
             Section(x, ref y, w, "General");
-            Line(x, ref y, w, h, _shortcuts, "Keyboard shortcuts", "");
             Line(x, ref y, w, h, _openCache,
                  "Temporary files",
                  Settings.Dir);

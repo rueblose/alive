@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.IO.Compression;
 using System.Threading;
 
 namespace AbletonManager
@@ -23,12 +24,20 @@ namespace AbletonManager
         /// кто нажал не глядя.
         /// </summary>
         public bool FromFactoryPacks;
+
+        /// <summary>Сложить собранное в .zip рядом, а саму папку не оставлять.</summary>
+        public bool ToZip;
     }
 
     /// <summary>Что именно будет сделано. Считается до показа галочек и пересчитывается на каждый щелчок.</summary>
     public sealed class CollectPlan
     {
         public string TargetDir = "";
+        public bool Zip;
+
+        /// <summary>Архив вместо папки — тем же именем, рядом. Занятое имя отсеивает FreeTarget.</summary>
+        public string ZipPath { get { return TargetDir + ".zip"; } }
+
         public readonly List<SampleDep> Copy = new List<SampleDep>();
         public readonly List<SampleDep> Skipped = new List<SampleDep>();
         public readonly List<SampleDep> NotFound = new List<SampleDep>();
@@ -75,6 +84,7 @@ namespace AbletonManager
         {
             CollectPlan plan = new CollectPlan();
             plan.TargetDir = FreeTarget(set);
+            plan.Zip = opt.ToZip;
 
             string setDir = Path.GetDirectoryName(set.Path);
             HashSet<string> taken = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -140,11 +150,13 @@ namespace AbletonManager
             // создал он что-то или нет. Запоминаем сами, пока папки точно ещё нет:
             // Plan() у двух запусков по одному сету, посчитанные до того, как хоть
             // один создал папку на диске, может отдать один и тот же TargetDir.
-            bool createdHere = !Directory.Exists(plan.TargetDir);
+            // В режиме архива папки не бывает вовсе — сносить в finally нечего.
+            bool createdHere = !plan.Zip && !Directory.Exists(plan.TargetDir);
+            Target target = null;
             try
             {
-                Directory.CreateDirectory(plan.TargetDir);
-                CopyProjectInfo(set, plan.TargetDir);
+                target = plan.Zip ? (Target)new ZipTarget(plan.ZipPath) : new FolderTarget(plan.TargetDir);
+                PutProjectInfo(set, target);
 
                 int done = 0, total = plan.Copy.Count;
                 foreach (SampleDep d in plan.Copy)
@@ -153,15 +165,13 @@ namespace AbletonManager
 
                     string rel;
                     if (!plan.Dest.TryGetValue(d, out rel)) continue;
-                    string dst = Path.Combine(plan.TargetDir, rel.Replace('/', Path.DirectorySeparatorChar));
                     try
                     {
-                        Directory.CreateDirectory(Path.GetDirectoryName(dst));
                         // .amxd и .adg бывают папками-бандлами (см. RefResolver.Probe) —
-                        // File.Copy на каталоге бросает. Зависимость всё равно нужно
-                        // перенести целиком, со всем, что внутри.
-                        if (Directory.Exists(d.Path)) CopyDir(d.Path, dst);
-                        else File.Copy(d.Path, dst, true);
+                        // одним файлом их не взять. Зависимость всё равно нужно перенести
+                        // целиком, со всем, что внутри.
+                        if (Directory.Exists(d.Path)) target.PutDir(d.Path, rel);
+                        else target.PutFile(d.Path, rel);
                     }
                     catch (Exception ex)
                     {
@@ -176,12 +186,10 @@ namespace AbletonManager
                         // «сэмпл не найден» — ссылка остаётся как была, число потерь идёт в отчёт.
                         foreach (int i in d.RefIndexes) plan.Rewrites.Remove(i);
 
-                        // Бандл (.adg/.amxd — см. RefResolver.Probe) мог скопироваться
-                        // наполовину: CopyDir создаёт папку раньше, чем копирует файлы
-                        // внутрь. Недокопированный бандл на диске хуже отсутствующего —
-                        // выглядит устройством, а половины пресета внутри нет.
-                        if (Directory.Exists(d.Path))
-                        { try { Directory.Delete(dst, true); } catch { } }
+                        // Бандл (.adg/.amxd — см. RefResolver.Probe) мог лечь наполовину:
+                        // он переносится файл за файлом. Недокопированный бандл хуже
+                        // отсутствующего — выглядит устройством, а половины пресета нет.
+                        if (Directory.Exists(d.Path)) target.Undo(rel);
                     }
 
                     done++;
@@ -190,24 +198,186 @@ namespace AbletonManager
 
                 // Абсолютный путь достраиваем здесь, а не в Plan: TargetDir к этому
                 // моменту окончателен, и производное значение не разъедется с ним.
+                // В режиме архива папки TargetDir не существует, и путь верен всё равно:
+                // архив зовётся её именем, и распаковка рядом с ним даёт ровно её.
                 string root = plan.TargetDir.Replace('\\', '/');
                 foreach (KeyValuePair<int, NewRef> kv in plan.Rewrites)
                     kv.Value.AbsolutePath = root + "/" + kv.Value.RelativePath;
 
-                // .als пишется последним: прерванная сборка не должна оставить папку,
-                // которая выглядит готовой.
                 cancel.ThrowIfCancellationRequested();
-                string als = Path.Combine(plan.TargetDir, set.Name + ".als");
-                AlsSamplePatch.Rewrite(set.Path, als, plan.Rewrites, info.Files.Count);
+                PutSet(plan, set, info, target);
                 ok = true;
             }
             finally
             {
+                // Архив закрывается раньше, чем finally соберётся его удалять.
+                if (target != null) target.Dispose();
                 // Удаляем только то, что создал этот запуск. Если TargetDir уже
                 // существовал до Run — там может лежать чужая, уже собранная копия
                 // (второй Plan() по тому же сету), и её мы не трогаем.
                 if (!ok && createdHere) { try { Directory.Delete(plan.TargetDir, true); } catch { } }
+                // Недописанный архив выглядит готовым экспортом, а внутри половина сета.
+                if (!ok && plan.Zip) { try { File.Delete(plan.ZipPath); } catch { } }
             }
+        }
+
+        /// <summary>
+        /// Live считает папку проектом по наличию «Ableton Project Info». Нет её у
+        /// оригинала (сет лежит сам по себе) — заводим пустую: своё Live допишет туда
+        /// при первом сохранении.
+        /// </summary>
+        static void PutProjectInfo(SetEntry set, Target target)
+        {
+            string src = Path.Combine(set.ProjectDir, ProjectInfo);
+            string[] files = Directory.Exists(src) ? Directory.GetFiles(src) : new string[0];
+            if (files.Length == 0) { target.PutEmptyDir(ProjectInfo); return; }
+
+            try
+            {
+                foreach (string f in files)
+                    target.PutFile(f, ProjectInfo + "/" + Path.GetFileName(f));
+            }
+            catch (Exception ex) { Diag.Line("collect: project info: " + ex.Message); }
+        }
+
+        /// <summary>
+        /// .als кладётся последним: прерванная сборка не должна оставить экспорт, который
+        /// выглядит готовым.
+        ///
+        /// AlsSamplePatch.Rewrite пишет в файл, поэтому для архива сет сперва собирается
+        /// во временном и уходит в zip оттуда. Один файл на сет — не та заготовка, ради
+        /// которой стоило бы разводить Rewrite ещё и на потоки.
+        /// </summary>
+        static void PutSet(CollectPlan plan, SetEntry set, AlsInfo info, Target target)
+        {
+            string rel = set.Name + ".als";
+            if (!plan.Zip)
+            {
+                AlsSamplePatch.Rewrite(set.Path, Path.Combine(plan.TargetDir, rel),
+                                       plan.Rewrites, info.Files.Count);
+                return;
+            }
+
+            string tmp = Path.Combine(Path.GetTempPath(),
+                                      "alive-" + Guid.NewGuid().ToString("N") + ".als");
+            try
+            {
+                AlsSamplePatch.Rewrite(set.Path, tmp, plan.Rewrites, info.Files.Count);
+                target.PutFile(tmp, rel);
+            }
+            finally { try { File.Delete(tmp); } catch { } }
+        }
+
+        // ------------------------------------------------------------------ куда кладём
+
+        /// <summary>
+        /// Куда ложится собранное: папкой на диске или сразу записями архива.
+        ///
+        /// Архив пишется потоком, а не приёмом «скопировать всё в папку, упаковать её,
+        /// папку снести». Так вдвое меньше записи — гигабайтные паки проходят через диск
+        /// один раз вместо двух, — и заодно не остаётся последовательности «собрать чужие
+        /// файлы в кучу, упаковать, кучу стереть», на которую ругаются поведенческие
+        /// эвристики антивирусов.
+        /// </summary>
+        abstract class Target : IDisposable
+        {
+            public abstract void PutFile(string src, string rel);
+            public abstract void PutDir(string src, string rel);
+            public abstract void PutEmptyDir(string rel);
+
+            /// <summary>Убрать бандл, легший наполовину.</summary>
+            public abstract void Undo(string rel);
+
+            public virtual void Dispose() { }
+        }
+
+        sealed class FolderTarget : Target
+        {
+            readonly string _root;
+
+            public FolderTarget(string root)
+            {
+                _root = root;
+                Directory.CreateDirectory(root);
+            }
+
+            string Abs(string rel)
+            {
+                return Path.Combine(_root, rel.Replace('/', Path.DirectorySeparatorChar));
+            }
+
+            public override void PutFile(string src, string rel)
+            {
+                string dst = Abs(rel);
+                Directory.CreateDirectory(Path.GetDirectoryName(dst));
+                File.Copy(src, dst, true);
+            }
+
+            public override void PutDir(string src, string rel)
+            {
+                string dst = Abs(rel);
+                Directory.CreateDirectory(Path.GetDirectoryName(dst));
+                CopyDir(src, dst);
+            }
+
+            public override void PutEmptyDir(string rel) { Directory.CreateDirectory(Abs(rel)); }
+
+            public override void Undo(string rel)
+            {
+                try { Directory.Delete(Abs(rel), true); } catch { }
+            }
+        }
+
+        sealed class ZipTarget : Target
+        {
+            readonly ZipArchive _zip;
+
+            /// <summary>
+            /// Fastest, а не Optimal: сэмплы — это wav и flac, жать их нечем, а разница во
+            /// времени на гигабайтах заметна невооружённым глазом.
+            /// </summary>
+            const CompressionLevel Level = CompressionLevel.Fastest;
+
+            public ZipTarget(string path) { _zip = ZipFile.Open(path, ZipArchiveMode.Create); }
+
+            public override void PutFile(string src, string rel)
+            {
+                // Исходник может держать открытым антивирус или индексатор и отдавать
+                // «занят другим процессом». Держат недолго, поэтому ждём и пробуем снова;
+                // CreateEntryFromFile открывает файл ДО создания записи, так что повтор не
+                // оставляет в архиве половинок.
+                for (int attempt = 0; ; attempt++)
+                {
+                    try { _zip.CreateEntryFromFile(src, rel, Level); return; }
+                    catch (Exception ex)
+                    {
+                        bool busy = ex is IOException || ex is UnauthorizedAccessException;
+                        if (!busy || attempt == 5) throw;
+                        Thread.Sleep(200);
+                    }
+                }
+            }
+
+            public override void PutDir(string src, string rel)
+            {
+                foreach (string f in Directory.GetFiles(src))
+                    PutFile(f, rel + "/" + Path.GetFileName(f));
+                foreach (string d in Directory.GetDirectories(src))
+                    PutDir(d, rel + "/" + Path.GetFileName(d));
+            }
+
+            public override void PutEmptyDir(string rel) { _zip.CreateEntry(rel + "/"); }
+
+            /// <summary>
+            /// В архиве, открытом на запись, стирать нечего: ZipArchiveMode.Create пишет
+            /// потоком и назад не ходит, а Update держал бы весь архив в памяти — на
+            /// гигабайтных паках не вариант. Половина бандла так и останется внутри, но
+            /// ссылку на него из .als уже сняли (см. catch в Run), поэтому для Live его
+            /// там нет: лишние файлы в архиве, а не битое устройство в сете.
+            /// </summary>
+            public override void Undo(string rel) { }
+
+            public override void Dispose() { _zip.Dispose(); }
         }
 
         /// <summary>
@@ -227,22 +397,22 @@ namespace AbletonManager
         // ------------------------------------------------------------------ пути
 
         /// <summary>
-        /// «&lt;Проект&gt;\Collected\&lt;имя сета&gt; Project», а занято — со счётчиком.
-        /// Суффикс « Project» не декоративный: по нему SetEntry.ComputeProjectDir опознаёт
-        /// самостоятельный проект, и без него собранная копия схлопнулась бы в каталоге
-        /// с исходником в одну строку.
+        /// «&lt;Проект&gt;\&lt;имя сета&gt; Project_export», а занято — со счётчиком. Рядом с
+        /// исходником, без промежуточной папки: экспорт ищут там же, где сам проект.
         /// </summary>
         static string FreeTarget(SetEntry set)
         {
-            string root = Path.Combine(set.ProjectDir, "Collected");
             for (int n = 1; n < 1000; n++)
             {
-                string name = n == 1 ? set.Name + " Project"
-                                     : set.Name + " " + n.ToString(System.Globalization.CultureInfo.InvariantCulture) + " Project";
-                string dir = Path.Combine(root, name);
-                if (!Directory.Exists(dir)) return dir;
+                string name = set.Name + " Project_export"
+                            + (n == 1 ? "" : " " + n.ToString(System.Globalization.CultureInfo.InvariantCulture));
+                string dir = Path.Combine(set.ProjectDir, name);
+                // Имя должно быть свободно и как папка, и как архив: в режиме .zip папка
+                // после сборки удаляется, и следующий экспорт того же сета иначе нашёл бы
+                // имя «свободным» и переписал прошлый архив.
+                if (!Directory.Exists(dir) && !File.Exists(dir + ".zip")) return dir;
             }
-            return Path.Combine(root, set.Name + " " + DateTime.Now.Ticks + " Project");
+            return Path.Combine(set.ProjectDir, set.Name + " Project_export " + DateTime.Now.Ticks);
         }
 
         /// <summary>Путь относительно корня, прямыми слэшами. Пусто, если путь не внутри корня.</summary>
@@ -279,26 +449,6 @@ namespace AbletonManager
             string last = dir + stem + " " + Guid.NewGuid().ToString("N") + ext;
             taken.Add(last);
             return last;
-        }
-
-        /// <summary>
-        /// Live считает папку проектом по наличию «Ableton Project Info». Нет её у
-        /// оригинала (сет лежит сам по себе) — заводим пустую: своё Live допишет туда
-        /// при первом сохранении.
-        /// </summary>
-        static void CopyProjectInfo(SetEntry set, string targetDir)
-        {
-            string dst = Path.Combine(targetDir, ProjectInfo);
-            Directory.CreateDirectory(dst);
-
-            string src = Path.Combine(set.ProjectDir, ProjectInfo);
-            if (!Directory.Exists(src)) return;
-            try
-            {
-                foreach (string f in Directory.GetFiles(src))
-                    File.Copy(f, Path.Combine(dst, Path.GetFileName(f)), true);
-            }
-            catch (Exception ex) { Diag.Line("collect: project info: " + ex.Message); }
         }
 
         static long FreeSpace(string dir)

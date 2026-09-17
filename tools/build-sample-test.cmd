@@ -19,7 +19,7 @@ if not exist "%CSC%" (
 )
 
 set ROOT=%~dp0..
-set REFS=/reference:System.dll /reference:System.Core.dll /reference:System.Drawing.dll /reference:System.Windows.Forms.dll /reference:System.Xml.dll
+set REFS=/reference:System.dll /reference:System.Core.dll /reference:System.Drawing.dll /reference:System.Windows.Forms.dll /reference:System.Xml.dll /reference:System.IO.Compression.dll /reference:System.IO.Compression.FileSystem.dll
 
 rem Whole src except Program.cs - SampleTest brings its own Main.
 set LIST=%TEMP%\alive-sample-sources.rsp

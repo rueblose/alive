@@ -899,7 +899,15 @@ namespace AbletonManager.Nebula
 
         protected override void OnKeyDown(KeyEventArgs e)
         {
-            if (e.KeyCode == Keys.Space) { _spin.Checked = !_spin.Checked; e.Handled = true; }
+            // Ctrl+Q закрывает программу целиком и отсюда: Nebula — отдельное окно,
+            // клавиши главного до неё не доходят, и выйти из неё было нельзя.
+            if (e.Control && e.KeyCode == Keys.Q)
+            {
+                e.Handled = e.SuppressKeyPress = true;
+                Close();
+                Application.Exit();
+            }
+            else if (e.KeyCode == Keys.Space) { _spin.Checked = !_spin.Checked; e.Handled = true; }
             else if (e.KeyCode == Keys.R) { _cloud.ResetView(); e.Handled = true; }
             else if (e.KeyCode == Keys.F5) { StartScan(); e.Handled = true; }
             else if (e.KeyCode == Keys.Enter) { OpenInLive(); e.Handled = true; }

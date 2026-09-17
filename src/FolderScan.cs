@@ -106,6 +106,28 @@ namespace AbletonManager
         {
             public long Bytes;
             public int Files;
+
+            /// <summary>
+            /// Когда проект сохраняли. Live при каждом сохранении кладёт копию старого
+            /// файла в Backup и пишет в её имя момент сохранения:
+            /// «angelcore [2026-05-22 012035].als». Другой истории работы на диске нет —
+            /// сам .als помнит только последний раз.
+            ///
+            /// Берём именно скобку, а не время файла: время у копии — это момент
+            /// ПРЕДЫДУЩЕГО сохранения, копируется-то содержимое, которое было до.
+            /// Проверено: «try1 riddik [2026-08-28 140615].als» лежит с временем 14:00.
+            ///
+            /// null, а не пустой список: папок без Backup большинство, и заводить на
+            /// каждую по объекту незачем.
+            /// </summary>
+            public List<Save> Saves;
+        }
+
+        /// <summary>Одно сохранение: когда и какого сета — имя копия несёт в себе же.</summary>
+        public struct Save
+        {
+            public DateTime When;
+            public string Set;      // «angelcore» из «angelcore [2026-05-22 012035].als»
         }
 
         /// <summary>
@@ -130,6 +152,9 @@ namespace AbletonManager
                 if (cancel != null && cancel()) break;
                 string dir = todo.Pop();
 
+                // Раз на папку, а не раз на файл: внутри Backup их бывают сотни.
+                bool backups = dir.EndsWith(@"\Backup", StringComparison.OrdinalIgnoreCase);
+
                 WIN32_FIND_DATA fd;
                 IntPtr h = FindFirstFileW(SearchPattern(dir), out fd);
                 if (h == InvalidHandle) continue;
@@ -149,6 +174,13 @@ namespace AbletonManager
                         {
                             w.Bytes += ((long)fd.nFileSizeHigh << 32) | fd.nFileSizeLow;
                             w.Files++;
+
+                            Save saved;
+                            if (backups && TryBackupStamp(name, out saved))
+                            {
+                                if (w.Saves == null) w.Saves = new List<Save>();
+                                w.Saves.Add(saved);
+                            }
                         }
                     }
                     while (FindNextFileW(h, out fd));
@@ -156,6 +188,46 @@ namespace AbletonManager
                 finally { FindClose(h); }
             }
             return w;
+        }
+
+        /// <summary>
+        /// Момент сохранения из имени копии: «что угодно [2026-05-22 012035].als».
+        /// Разбираем по позициям, а не ParseExact, — вызовов тысячи, а формат Live
+        /// пишет сама, и он не зависит ни от языка системы, ни от её настроек даты.
+        /// </summary>
+        internal static bool TryBackupStamp(string name, out Save save)
+        {
+            save = default(Save);
+            if (name == null || !name.EndsWith("].als", StringComparison.OrdinalIgnoreCase)) return false;
+
+            int i = name.LastIndexOf('[');
+            // «[» + «2026-05-22 012035» (17) + «]» + «.als» — ровно 23 символа с конца.
+            if (i < 0 || name.Length - i != 23) return false;
+            if (name[i + 5] != '-' || name[i + 8] != '-' || name[i + 11] != ' ') return false;
+
+            int y, mo, d, h, mi, se;
+            if (!Num(name, i + 1, 4, out y) || !Num(name, i + 6, 2, out mo) || !Num(name, i + 9, 2, out d) ||
+                !Num(name, i + 12, 2, out h) || !Num(name, i + 14, 2, out mi) || !Num(name, i + 16, 2, out se))
+                return false;
+
+            if (mo < 1 || mo > 12 || d < 1 || d > 31 || h > 23 || mi > 59 || se > 59) return false;
+            try { save.When = new DateTime(y, mo, d, h, mi, se, DateTimeKind.Local); }
+            catch { return false; }        // 31 февраля из чужого имени файла
+
+            save.Set = name.Substring(0, i).TrimEnd();
+            return true;
+        }
+
+        static bool Num(string s, int at, int len, out int value)
+        {
+            value = 0;
+            for (int i = at; i < at + len; i++)
+            {
+                char c = s[i];
+                if (c < '0' || c > '9') return false;
+                value = value * 10 + (c - '0');
+            }
+            return true;
         }
 
         static string Combine(string dir, string name)

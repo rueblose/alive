@@ -15,6 +15,7 @@ namespace AbletonManager
         // 0..11 (C..B); -1 — сет без тональности; -2 — «любая тональность» (есть хоть какая-то)
         public readonly List<int> KeyRoots = new List<int>();
         public readonly List<int> KeyScales = new List<int>();      // индекс лада
+        public readonly List<string> Tags = new List<string>();     // теги проекта, любой из выбранных
         public int TracksMin = -1, TracksMax = -1;
         public int PluginsMin = -1, PluginsMax = -1;
         public bool FilesComplete, FilesMissing, FilesUnreadable;   // ни одного = любые
@@ -33,6 +34,7 @@ namespace AbletonManager
                 if (From.HasValue || To.HasValue) n++;
                 if (Versions.Count > 0) n++;
                 if (KeyRoots.Count > 0 || KeyScales.Count > 0) n++;
+                if (Tags.Count > 0) n++;
                 if (TracksMin >= 0 || TracksMax >= 0) n++;
                 if (PluginsMin >= 0 || PluginsMax >= 0 || PluginsMissingOnly || PluginsAllInstalled) n++;
                 if (FilesComplete || FilesMissing || FilesUnreadable) n++;
@@ -42,7 +44,8 @@ namespace AbletonManager
         }
 
         public bool Matches(SetEntry s, bool ignoreVersions = false, bool ignoreKeyRoots = false, bool ignoreKeyScales = false,
-                            bool ignorePluginsState = false, bool ignoreFileState = false, bool ignoreRenders = false)
+                            bool ignorePluginsState = false, bool ignoreFileState = false, bool ignoreRenders = false,
+                            bool ignoreTags = false)
         {
             DateTime modified = s.Modified.ToLocalTime();
             if (From.HasValue && modified < From.Value) return false;
@@ -60,6 +63,18 @@ namespace AbletonManager
                 if (!ok) return false;
             }
             if (!ignoreKeyScales && KeyScales.Count > 0 && !KeyScales.Contains(s.ScaleIndex)) return false;
+
+            // Несколько тегов — это «или», как и версии: выбрали «drum» и «vocal» —
+            // показываем всё, что помечено хотя бы одним из них. Теги живут в отдельном
+            // файле, а не в самом сете, поэтому лезем за ними только когда фильтр по
+            // ним и правда включён.
+            if (!ignoreTags && Tags.Count > 0)
+            {
+                bool any = false;
+                foreach (string t in ProjectMeta.TagsOf(s.ProjectDir))
+                    if (Tags.Contains(t)) { any = true; break; }
+                if (!any) return false;
+            }
 
             if (TracksMin >= 0 && s.Tracks < TracksMin) return false;
             if (TracksMax >= 0 && s.Tracks > TracksMax) return false;
@@ -94,7 +109,7 @@ namespace AbletonManager
         public void Clear()
         {
             From = To = null;
-            Versions.Clear(); KeyRoots.Clear(); KeyScales.Clear();
+            Versions.Clear(); KeyRoots.Clear(); KeyScales.Clear(); Tags.Clear();
             TracksMin = TracksMax = PluginsMin = PluginsMax = -1;
             FilesComplete = FilesMissing = FilesUnreadable = false;
             PluginsMissingOnly = PluginsAllInstalled = false;
@@ -108,6 +123,7 @@ namespace AbletonManager
             Versions.AddRange(o.Versions);
             KeyRoots.AddRange(o.KeyRoots);
             KeyScales.AddRange(o.KeyScales);
+            Tags.AddRange(o.Tags);
             TracksMin = o.TracksMin; TracksMax = o.TracksMax;
             PluginsMin = o.PluginsMin; PluginsMax = o.PluginsMax;
             PluginsMissingOnly = o.PluginsMissingOnly;

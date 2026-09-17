@@ -295,8 +295,13 @@ namespace AliveTools
                     foreach (int i in d.RefIndexes)
                         Check(!plan.Rewrites.ContainsKey(i), "in-project ref rewritten at " + i);
 
+            // Экспорт ложится рядом с проектом, без промежуточной папки. Проверяем до
+            // подмены TargetDir ниже: дальше стенд уводит сборку в %TEMP%.
+            Check(plan.TargetDir == Path.Combine(set.ProjectDir, set.Name + " Project_export"),
+                  "unexpected export folder: " + plan.TargetDir);
+
             string temp = Path.Combine(Path.GetTempPath(), "alive-collect-probe");
-            try { if (Directory.Exists(temp)) Directory.Delete(temp, true); } catch { }
+            Nuke(temp);
             Directory.CreateDirectory(temp);
             plan.TargetDir = Path.Combine(temp, set.Name + " Project");
 
@@ -307,7 +312,8 @@ namespace AliveTools
             // если бы не скопировалось ни одного файла. plan.Failed — то же самое место,
             // которое Run() заполняет именно при отказе копирования.
             Check(plan.Failed.Count == 0,
-                  string.Format("{0} of {1} files failed to copy", plan.Failed.Count, plan.Copy.Count));
+                  string.Format("{0} of {1} files failed to copy: {2}", plan.Failed.Count, plan.Copy.Count,
+                                string.Join(", ", plan.Failed.ToArray())));
 
             string copied = Path.Combine(plan.TargetDir, set.Name + ".als");
             Check(File.Exists(copied), "collected .als is missing");
@@ -362,6 +368,54 @@ namespace AliveTools
             Check(Directory.Exists(existingPlan.TargetDir), "cancelled Run deleted a folder it did not create");
             Check(File.Exists(marker), "cancelled Run deleted someone else's file from a pre-existing folder");
 
+            // Режим .zip: то же самое, но на выходе архив, а папки-заготовки не остаётся.
+            CollectOptions zipOpt = new CollectOptions();
+            zipOpt.FromFactoryPacks = true;
+            zipOpt.ToZip = true;
+
+            CollectPlan zipPlan = CollectAll.Plan(set, deps, zipOpt);
+            zipPlan.TargetDir = Path.Combine(temp, "zipped Project");
+
+            // Папки-заготовки не должно быть не только в конце, но и ни в один момент
+            // сборки: архив пишется потоком прямо из исходников. Проверка именно здесь,
+            // на прогрессе, — единственное место, откуда видно середину Run(). Сверка
+            // постфактум (ниже) прошла бы и на старом приёме «скопировать, упаковать,
+            // снести», а он ровно тем и плох, что заводит на диске вторую копию сета
+            // и потом её стирает.
+            bool staged = false;
+            Action<int, int, string> watch = delegate
+            {
+                if (Directory.Exists(zipPlan.TargetDir)) staged = true;
+            };
+
+            CollectAll.Run(zipPlan, set, info, watch, System.Threading.CancellationToken.None);
+
+            Check(zipPlan.Zip, "ToZip did not reach the plan");
+            Check(!staged, "zip run created a staging folder on disk");
+            Check(File.Exists(zipPlan.ZipPath), "zip run produced no archive");
+            Check(!Directory.Exists(zipPlan.TargetDir), "zip run left its staging folder behind");
+            if (File.Exists(zipPlan.ZipPath))
+                using (ZipArchive za = ZipFile.OpenRead(zipPlan.ZipPath))
+                {
+                    Check(za.GetEntry(set.Name + ".als") != null, "collected .als is missing from the archive");
+                    // Больше либо равно: бандлы (.adg, .amxd) — это папки, в архиве они
+                    // разворачиваются в несколько записей каждая.
+                    Check(za.Entries.Count >= zipPlan.Copy.Count + 1,
+                          string.Format("archive holds {0} entries for {1} copied files",
+                                        za.Entries.Count, zipPlan.Copy.Count));
+                }
+
+            // Оборванный .zip не должен остаться на диске — снаружи он выглядит готовым
+            // экспортом, а внутри половина сета.
+            CollectPlan zipCancel = CollectAll.Plan(set, deps, zipOpt);
+            zipCancel.TargetDir = Path.Combine(temp, "cancel-zip Project");
+            bool threwZip = false;
+            try { CollectAll.Run(zipCancel, set, info, null, cts.Token); }
+            catch (OperationCanceledException) { threwZip = true; }
+            Check(threwZip, "cancelled zip Run did not throw");
+            Check(!File.Exists(zipCancel.ZipPath), "cancelled zip Run left a half-written archive");
+            Check(!Directory.Exists(zipCancel.TargetDir), "cancelled zip Run left behind a folder it created itself");
+
             // Тот самый снимок с начала функции — после всех Run() выше, успешного и
             // двух отменённых. Малейшее расхождение здесь означает, что где-то в Run
             // src открылся на запись, а не только на чтение.
@@ -369,7 +423,24 @@ namespace AliveTools
             Check(srcAfter.Length == srcLenBefore, "original .als size changed after collect");
             Check(srcAfter.LastWriteTimeUtc == srcWriteBefore, "original .als write time changed after collect");
 
-            try { Directory.Delete(temp, true); } catch { }
+            Nuke(temp);
+        }
+
+        /// <summary>
+        /// Снести папку стенда. Копии наследуют «только чтение» у исходников (у сэмплов из
+        /// паков атрибут сплошь и рядом), а такой файл Delete не берёт — и мусор прошлого
+        /// прогона ломает следующий: File.Copy поверх readonly-файла падает отказом в доступе.
+        /// </summary>
+        static void Nuke(string dir)
+        {
+            if (!Directory.Exists(dir)) return;
+            try
+            {
+                foreach (string f in Directory.GetFiles(dir, "*", SearchOption.AllDirectories))
+                    try { File.SetAttributes(f, FileAttributes.Normal); } catch { }
+                Directory.Delete(dir, true);
+            }
+            catch { }
         }
 
         /// <summary>

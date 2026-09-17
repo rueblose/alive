@@ -24,6 +24,7 @@ namespace AbletonManager
         public event Action<SetEntry> RevealRequested;
         public event Action<SetEntry> DetailsRequested; // ПКМ → уйти к сету во вкладку Sets
         public event Action<SetEntry> RescueRequested;  // ПКМ → помощник по восстановлению
+        public event Action<SetEntry> NotesRequested;   // клик по значку тегов — редактор тегов
         public event Action NewProjectRequested;       // первая карточка в Recent
 
         public SetFilter SetFilter;
@@ -33,6 +34,23 @@ namespace AbletonManager
 
         /// <summary>Одна плитка на папку, а не на каждую версию сета. См. настройки.</summary>
         public bool GroupByFolder = true;
+
+        /// <summary>
+        /// Закреплённые — наверх списка. Тот же переключатель, что звёздочка в шапке
+        /// таблицы: вид разный, а вопрос один, и держать под него две настройки значило
+        /// бы, что на одной вкладке закреплено, а на другой нет.
+        /// </summary>
+        public bool PinnedFirst;
+        public event Action PinnedFirstToggled;
+
+        /// <summary>
+        /// Сводка над списком. Стоит внутри прокрутки, поэтому не контрол, а рисовалка:
+        /// раскладку у неё просим сами, мышь пересылаем сами — см. OverviewPanel.
+        /// </summary>
+        public readonly OverviewPanel Overview = new OverviewPanel();
+
+        /// <summary>Пользователь свернул сводку или переключил в ней срок — надо запомнить.</summary>
+        public event Action OverviewStateChanged;
 
         const int PinnedMax = 16;
 
@@ -106,6 +124,8 @@ namespace AbletonManager
             public Rectangle Thumb;
             public Rectangle Play;
             public Rectangle Pin;
+            public Rectangle TagBox;      // значок тегов слева вверху превью
+            public string TagText = "";   // теги через «, »; пусто — значка нет
             public bool HasPlay;
             public bool IsNewProject;     // первая карточка в Recent — «New Live Set»
             public string Subtitle;
@@ -125,6 +145,7 @@ namespace AbletonManager
             public string Note;
             public Rectangle Bounds;
             public int NoteShift;
+            public Rectangle Star;      // пусто — звёздочки у заголовка нет
 
             public float AnimY;
             public float TargetY;
@@ -146,6 +167,12 @@ namespace AbletonManager
         int _dragOffset;
         int _hot = -1;
         bool _playHot, _pinHot;
+
+        /// <summary>Курсор на звёздочке заголовка — она подсвечивается.</summary>
+        bool _headStarHot;
+
+        /// <summary>Курсор на значке тегов плитки _hot — тогда под ним всплывают сами теги.</summary>
+        bool _tagsHot;
         SetEntry _selected;
 
         static readonly string[] Splashes = new string[]
@@ -413,6 +440,15 @@ namespace AbletonManager
             _scroller = new SmoothScroller(this,
                 delegate (int s) { _scroll = s; _scrollCurrent = s; ClampScroll(); },
                 delegate { return Math.Max(0, _contentHeight - Height); });
+
+            // Свернули сводку — плитки не влетают заново, а переезжают на освободившееся
+            // место: видно, что подвинулось именно оно, а список остался тем же.
+            Overview.LayoutChanged += delegate { RebuildTransition(); };
+            Overview.Repaint += delegate { Invalidate(); };
+            Overview.StateChanged += delegate
+            {
+                if (OverviewStateChanged != null) OverviewStateChanged();
+            };
         }
 
         // ------------------------------------------------------------- содержимое
@@ -603,29 +639,41 @@ namespace AbletonManager
                         if (Matches(s)) result.Add(s);
                         break;
                     }
-                if (result.Count >= PinnedMax) break;
             }
             return result;
         }
 
-        List<SetEntry> Recent(List<SetEntry> exclude)
+        /// <summary>
+        /// Один список вместо двух секций. Прежние «Pinned» и «Recent» показывали одно и
+        /// то же двумя кучами, и закреплённый проект пропадал из ленты свежих — искать
+        /// его приходилось глазами в другом месте экрана. Теперь лента одна, а
+        /// закрепление либо поднимает наверх, либо остаётся просто пометкой на плитке.
+        /// </summary>
+        List<SetEntry> Projects()
         {
             List<SetEntry> all = new List<SetEntry>();
             if (Index == null) return all;
 
             foreach (SetEntry s in Index.Sets)
-            {
-                if (s.IsBackup || !Matches(s)) continue;
-                bool skip = false;
-                foreach (SetEntry p in exclude)
-                    if (ReferenceEquals(p, s)) { skip = true; break; }
-                if (!skip) all.Add(s);
-            }
+                if (!s.IsBackup && Matches(s)) all.Add(s);
 
             if (GroupByFolder) all = ProjectIndex.CollapseByFolder(all);
 
+            List<SetEntry> pins = Pinned();
+
+            // Закрепили версию, а потом сохранили рядом свежую — старая уходит под
+            // схлопнутую строку, и закрепление молча перестало бы работать. Возвращаем.
+            foreach (SetEntry p in pins)
+                if (!all.Contains(p)) all.Add(p);
+
             all.Sort(delegate (SetEntry a, SetEntry b) { return b.Modified.CompareTo(a.Modified); });
-            return all;
+            if (!PinnedFirst || pins.Count == 0) return all;
+
+            // Наверх — в порядке закрепления: он не должен скакать от даты правки.
+            List<SetEntry> ordered = new List<SetEntry>(pins);
+            foreach (SetEntry s in all)
+                if (!pins.Contains(s)) ordered.Add(s);
+            return ordered;
         }
 
         // --------------------------------------------------------------- раскладка
@@ -647,15 +695,14 @@ namespace AbletonManager
             _thumbBudget = Math.Max(MinThumbs, cols * bandRows);
 
             int y = 0;
-            List<SetEntry> pinned = Pinned();
-            if (pinned.Count > 0)
-            {
-                y = Section("Pinned", "", pinned, y, cols, tileW, tileH, thumbH, gap, false);
-                y += Sc(32);                       // S6 — между секциями
-            }
 
-            List<SetEntry> recent = Recent(pinned);
-            y = Section("Recent", "", recent, y, cols, tileW, tileH, thumbH, gap, true);
+            Overview.Index = Index;
+            Overview.Dpi = DeviceDpi / 96f;
+            y = Overview.Layout(Width, y) + Sc(28);
+
+            List<SetEntry> projects = Projects();
+            string note = Index != null && Index.Sets.Count == 0 ? "nothing indexed yet" : "";
+            y = Section("Projects", note, projects, y, cols, tileW, tileH, thumbH, gap);
 
             _contentHeight = y;
             ClampScroll();
@@ -668,7 +715,7 @@ namespace AbletonManager
             _layoutTransitioning = false;
             _tiles.Clear();
             _heads.Clear();
-            _hot = -1; _playHot = _pinHot = false;
+            _hot = -1; _playHot = _pinHot = _tagsHot = false;
             _pinHoverFactor = _playHoverFactor = 0f;
             if (Width <= 0) return;
 
@@ -715,7 +762,7 @@ namespace AbletonManager
             _tiles.Clear();
             _heads.Clear();
 
-            _hot = -1; _playHot = _pinHot = false;
+            _hot = -1; _playHot = _pinHot = _tagsHot = false;
             _pinHoverFactor = _playHoverFactor = 0f;
             _layoutTransitioning = true;
             ComputeLayout();
@@ -819,41 +866,34 @@ namespace AbletonManager
         }
 
         int Section(string title, string note, List<SetEntry> sets, int y, int cols,
-                    int tileW, int tileH, int thumbH, int gap, bool leadingNewTile)
+                    int tileW, int tileH, int thumbH, int gap)
         {
             Header h = new Header();
             h.Text = title;
             h.Note = note;
             h.Bounds = new Rectangle(0, y, Width, Sc(38));
-            h.NoteShift = title.Length > 0 ? TextRenderer.MeasureText(title, Theme.FHead).Width + Sc(12) : 0;
+            int titleW = title.Length > 0 ? TextRenderer.MeasureText(title, Theme.FHead).Width + Sc(12) : 0;
+
+            // Звёздочка сразу за названием, а примечание — за ней: иначе они наезжают.
+            int star = Sc(26);
+            h.Star = new Rectangle(titleW, h.Bounds.Y + (h.Bounds.Height - star) / 2, star, star);
+            h.NoteShift = titleW + star + Sc(6);
+
             h.AnimY = h.TargetY = h.Bounds.Y;
             h.Alpha = h.TargetAlpha = 1f;
             _heads.Add(h);
             y += h.Bounds.Height + Sc(16);
 
-            if (sets.Count == 0 && !leadingNewTile)
-            {
-                Header emptyH = new Header {
-                    Text = "", Note = "nothing here yet",
-                    Bounds = new Rectangle(0, y, Width, Sc(30)) };
-                emptyH.AnimY = emptyH.TargetY = emptyH.Bounds.Y;
-                emptyH.Alpha = emptyH.TargetAlpha = 1f;
-                _heads.Add(emptyH);
-                return y + Sc(30);
-            }
-
-            int slot = 0;
-            if (leadingNewTile)
-            {
-                Tile nt = new Tile();
-                nt.IsNewProject = true;
-                nt.Bounds = new Rectangle(0, y, tileW, tileH);
-                nt.AnimX = nt.TargetX = nt.Bounds.X;
-                nt.AnimY = nt.TargetY = nt.Bounds.Y;
-                nt.Alpha = nt.TargetAlpha = 1f;
-                _tiles.Add(nt);
-                slot = 1;
-            }
+            // Первая плитка — всегда «New Live Set»: завести сет отсюда должно быть
+            // ближе, чем найти его среди уже заведённых.
+            Tile nt = new Tile();
+            nt.IsNewProject = true;
+            nt.Bounds = new Rectangle(0, y, tileW, tileH);
+            nt.AnimX = nt.TargetX = nt.Bounds.X;
+            nt.AnimY = nt.TargetY = nt.Bounds.Y;
+            nt.Alpha = nt.TargetAlpha = 1f;
+            _tiles.Add(nt);
+            int slot = 1;
 
             for (int i = 0; i < sets.Count; i++)
             {
@@ -887,10 +927,15 @@ namespace AbletonManager
                                        t.Thumb.Bottom - picBottom - btn - margin, btn, btn);
                 int pin = Sc(28);
                 t.Pin = new Rectangle(t.Thumb.Right - picRight - margin - pin, t.Thumb.Y + picTop + margin, pin, pin);
+
+                // Значок тегов — зеркально звёздочке: слева картинка отбита от рамки
+                // ровно так же, как справа, поэтому отступ тот же picRight.
+                t.TagText = ProjectMeta.JoinTags(ProjectMeta.TagsOf(sets[i].ProjectDir));
+                t.TagBox = new Rectangle(t.Thumb.X + picRight + margin, t.Thumb.Y + picTop + margin, pin, pin);
                 _tiles.Add(t);
             }
 
-            int total = slot + sets.Count;
+            int total = slot + sets.Count;   // slot — та самая первая плитка
             int rows = (total + cols - 1) / cols;
             return y + rows * tileH + (rows - 1) * gap + Sc(18);
         }
@@ -930,9 +975,9 @@ namespace AbletonManager
 
         // ------------------------------------------------------------------- мышь
 
-        int TileAt(Point p, out bool onPlay, out bool onPin)
+        int TileAt(Point p, out bool onPlay, out bool onPin, out bool onTags)
         {
-            onPlay = onPin = false;
+            onPlay = onPin = onTags = false;
             // Вместе с резиновым перелётом: во время отскока плитки уезжают, а попадания
             // считались по старому месту — звёздочка срабатывала там, где её уже нет.
             int over = _scroller != null ? (int)Math.Round(_scroller.Overscroll) : 0;
@@ -949,9 +994,31 @@ namespace AbletonManager
                 Rectangle curPin = new Rectangle(t.Pin.X + dx, t.Pin.Y + dy, t.Pin.Width, t.Pin.Height);
                 onPlay = t.HasPlay && curPlay.Contains(q);
                 onPin = curPin.Contains(q);
+                onTags = !string.IsNullOrEmpty(t.TagText)
+                      && new Rectangle(t.TagBox.X + dx, t.TagBox.Y + dy, t.TagBox.Width, t.TagBox.Height).Contains(q);
                 return i;
             }
             return -1;
+        }
+
+        /// <summary>
+        /// Точка окна в координатах содержимого. Вместе с резиновым перелётом: во время
+        /// отскока всё уезжает, а попадания считались по старому месту.
+        /// </summary>
+        Point Content(Point p)
+        {
+            int over = _scroller != null ? (int)Math.Round(_scroller.Overscroll) : 0;
+            return new Point(p.X, p.Y + _scroll + over);
+        }
+
+        /// <summary>Курсор на звёздочке заголовка? Заголовок один, искать не в чем.</summary>
+        bool OnHeadStar(Point p)
+        {
+            int over = _scroller != null ? (int)Math.Round(_scroller.Overscroll) : 0;
+            Point q = new Point(p.X, p.Y + _scroll + over);
+            foreach (Header h in _heads)
+                if (!h.Star.IsEmpty && h.Alpha > 0.3f && h.Star.Contains(q)) return true;
+            return false;
         }
 
         protected override void OnMouseMove(MouseEventArgs e)
@@ -978,7 +1045,7 @@ namespace AbletonManager
                 {
                     if (_hot >= 0)
                     {
-                        _hot = -1; _playHot = _pinHot = false;
+                        _hot = -1; _playHot = _pinHot = _tagsHot = false;
                         Cursor = Cursors.Default;
                         Invalidate();
                     }
@@ -987,18 +1054,23 @@ namespace AbletonManager
                 }
             }
 
-            bool play, pin;
-            int hot = TileAt(e.Location, out play, out pin);
+            if (Overview.MouseMove(Content(e.Location))) Invalidate();
 
-            if (hot != _hot || play != _playHot || pin != _pinHot)
+            bool starHot = OnHeadStar(e.Location);
+            if (starHot != _headStarHot) { _headStarHot = starHot; Invalidate(); }
+
+            bool play, pin, tags;
+            int hot = TileAt(e.Location, out play, out pin, out tags);
+
+            if (hot != _hot || play != _playHot || pin != _pinHot || tags != _tagsHot)
             {
                 bool isNewHot = hot >= 0 && hot < _tiles.Count && _tiles[hot].IsNewProject;
                 bool wasNewHot = _hot >= 0 && _hot < _tiles.Count && _tiles[_hot].IsNewProject;
                 if (isNewHot && !wasNewHot)
                     PickNextSplash();
 
-                _hot = hot; _playHot = play; _pinHot = pin;
-                Cursor = hot >= 0 ? Cursors.Hand : Cursors.Default;
+                _hot = hot; _playHot = play; _pinHot = pin; _tagsHot = tags;
+                Cursor = hot >= 0 || starHot ? Cursors.Hand : Cursors.Default;
                 AnimEngine.Register(this);
                 Invalidate();
             }
@@ -1007,9 +1079,11 @@ namespace AbletonManager
 
         protected override void OnMouseLeave(EventArgs e)
         {
+            if (Overview.MouseLeave()) Invalidate();
+            if (_headStarHot) { _headStarHot = false; Invalidate(); }
             if (_hot >= 0)
             {
-                _hot = -1; _playHot = _pinHot = false;
+                _hot = -1; _playHot = _pinHot = _tagsHot = false;
                 Cursor = Cursors.Default;
                 AnimEngine.Register(this);
                 Invalidate();
@@ -1038,8 +1112,19 @@ namespace AbletonManager
                 }
             }
 
-            bool play, pin;
-            int hit = TileAt(e.Location, out play, out pin);
+            if (e.Button == MouseButtons.Left && Overview.MouseDown(Content(e.Location))) return;
+
+            if (e.Button == MouseButtons.Left && OnHeadStar(e.Location))
+            {
+                PinnedFirst = !PinnedFirst;
+                Invalidate();                      // значок меняется сразу
+                if (PinnedFirstToggled != null) PinnedFirstToggled();
+                else RebuildTransition();          // некому пересобрать — сами
+                return;
+            }
+
+            bool play, pin, tags;
+            int hit = TileAt(e.Location, out play, out pin, out tags);
 
             if (e.Button == MouseButtons.Right)
             {
@@ -1074,11 +1159,12 @@ namespace AbletonManager
 
             SetEntry s = _tiles[hit].Set;
             if (play) { if (PlayRequested != null) PlayRequested(s); return; }
+            if (tags) { if (NotesRequested != null) NotesRequested(s); return; }
             if (pin)
             {
                 _lastPinTime = Environment.TickCount;
                 _lastPinPos = e.Location;
-                _hot = -1; _playHot = _pinHot = false;
+                _hot = -1; _playHot = _pinHot = _tagsHot = false;
                 _pinHoverFactor = _playHoverFactor = 0f;
                 if (_tileHoverFactors != null)
                 {
@@ -1105,8 +1191,11 @@ namespace AbletonManager
 
         protected override void OnMouseDoubleClick(MouseEventArgs e)
         {
-            bool play, pin;
-            int hit = TileAt(e.Location, out play, out pin);
+            bool play, pin, tags;
+            int hit = TileAt(e.Location, out play, out pin, out tags);
+            // Значок тегов уже открыл редактор по первому клику — второй просто глотаем,
+            // иначе он поверх редактора ещё и запустил бы проект в Live.
+            if (hit >= 0 && tags) { base.OnMouseDoubleClick(e); return; }
             if (hit >= 0 && (play || pin))
             {
                 OnMouseDown(e);
@@ -1147,11 +1236,12 @@ namespace AbletonManager
             ToolStripMenuItem pin = new ToolStripMenuItem(
                 HomeStore.IsPinned(s.Path) ? "Unpin" : "Pin project");
             pin.Checked = HomeStore.IsPinned(s.Path);
+            pin.ShortcutKeyDisplayString = "Q";
             pin.Click += delegate
             {
                 _lastPinTime = Environment.TickCount;
                 _lastPinPos = at;
-                _hot = -1; _playHot = _pinHot = false;
+                _hot = -1; _playHot = _pinHot = _tagsHot = false;
                 _pinHoverFactor = _playHoverFactor = 0f;
                 if (_tileHoverFactors != null)
                 {
@@ -1161,6 +1251,14 @@ namespace AbletonManager
                 RebuildTransition();
             };
             m.Items.Add(pin);
+
+            ToolStripMenuItem notes = new ToolStripMenuItem(
+                ProjectMeta.HasAnything(s.ProjectDir)
+                    ? "Tags and notes…"
+                    : "Add tags or a note…");
+            notes.ShortcutKeyDisplayString = "Ctrl+T";
+            notes.Click += delegate { if (NotesRequested != null) NotesRequested(s); };
+            m.Items.Add(notes);
 
             ToolStripMenuItem details = new ToolStripMenuItem("Show details");
             details.Click += delegate { if (DetailsRequested != null) DetailsRequested(s); };
@@ -1440,6 +1538,7 @@ namespace AbletonManager
             int over = _scroller != null ? (int)Math.Round(_scroller.Overscroll) : 0;
             int scroll = _scroll + over;
 
+            Overview.Paint(g, this, scroll);
             foreach (Header h in _heads) PaintHeader(g, h, scroll);
             foreach (Header lh in _leavingHeads) PaintHeader(g, lh, scroll);
 
@@ -1454,6 +1553,31 @@ namespace AbletonManager
             for (int i = 0; i < _tiles.Count; i++)
             {
                 PaintOneTile(g, _tiles[i], i, false, scroll, bufferTop, bufferBottom);
+            }
+
+            // Плитки у верхней и нижней кромки чуть растворяются в фоне — тонкая
+            // полоска, втрое короче первой попытки. На стекле не нужен: там край и
+            // так размыт подложкой окна.
+            if (!Glass.Enabled && _contentHeight > Height)
+            {
+                int fadeH = Sc(36);
+
+                // Сверху — только если реально прокрутили: у самого верха фейд гасил бы
+                // заголовок Overview, а прятать нечего, там ничего не обрезано.
+                if (scroll > 0)
+                {
+                    Rectangle top = new Rectangle(0, 0, Width, fadeH);
+                    using (LinearGradientBrush lb = new LinearGradientBrush(
+                        new Rectangle(top.X, top.Y - 1, top.Width, top.Height + 2),
+                        Surface, Color.FromArgb(0, Surface), LinearGradientMode.Vertical))
+                        g.FillRectangle(lb, top);
+                }
+
+                Rectangle bottom = new Rectangle(0, Height - fadeH, Width, fadeH);
+                using (LinearGradientBrush lb = new LinearGradientBrush(
+                    new Rectangle(bottom.X, bottom.Y - 1, bottom.Width, bottom.Height + 2),
+                    Color.FromArgb(0, Surface), Surface, LinearGradientMode.Vertical))
+                    g.FillRectangle(lb, bottom);
             }
 
             // Полоса прокрутки поверх сетки: Sc(4) в покое, Sc(8) под курсором,
@@ -1473,6 +1597,18 @@ namespace AbletonManager
             if (h.Text.Length > 0)
                 Chrome.DrawText(g, h.Text, Theme.FHead, r, textC,
                                 Chrome.Left | TextFormatFlags.NoClipping);
+
+            if (!h.Star.IsEmpty)
+            {
+                // Тот же значок и те же три состояния, что у звёздочки в шапке таблицы.
+                Color ink = PinnedFirst ? Theme.Light
+                          : (_headStarHot ? Theme.Text : Color.FromArgb(0xFF, 0x8E, 0x8E, 0x93));
+                if (h.Alpha < 0.99f) ink = Color.FromArgb((int)Math.Round(ink.A * h.Alpha), ink);
+                RectangleF sr = new RectangleF(h.Star.X, hy + (h.Star.Y - h.Bounds.Y),
+                                               h.Star.Width, h.Star.Height);
+                Icons.Draw(g, PinnedFirst ? Glyph.StarFill : Glyph.Star,
+                           RectangleF.Inflate(sr, -Sc(4), -Sc(4)), ink, 1.3f);
+            }
             if (h.Note.Length > 0)
             {
                 Chrome.DrawText(g, h.Note, Theme.FLabel,
@@ -1723,6 +1859,86 @@ namespace AbletonManager
                 Icons.Draw(g, pinned ? Glyph.StarFill : Glyph.Star, RectangleF.Inflate(nb, -Sc(6), -Sc(6)),
                            starC, 1.2f);
             }
+
+            PaintTileTags(g, t, dx, dy, thumb, hot, entrance);
+        }
+
+        /// <summary>
+        /// Бирка слева вверху превью — «у проекта есть теги». Видна всегда, как
+        /// закреплённая звезда: иначе о тегах узнаёшь, только наведя курсор на каждую
+        /// плитку по очереди. Сами теги в плитку не влезают, поэтому под курсором на
+        /// значке они всплывают полоской под ним — что не поместилось, обрезается
+        /// многоточием.
+        /// </summary>
+        void PaintTileTags(Graphics g, Tile t, int dx, int dy, Rectangle thumb, bool hot, float entrance)
+        {
+            if (string.IsNullOrEmpty(t.TagText)) return;
+
+            Rectangle tb = new Rectangle(t.TagBox.X + dx, t.TagBox.Y + dy, t.TagBox.Width, t.TagBox.Height);
+            bool th = hot && _tagsHot;
+            if (th) Theme.PaintGlassSurface(this, g, tb, tb.Height / 2f, (int)Math.Round(Theme.GlassSurfacePressedAlpha * entrance));
+
+            Color ink = th ? Theme.Text : Theme.Light;
+            if (entrance < 0.99f) ink = Color.FromArgb((int)Math.Round(ink.A * entrance), ink);
+            Icons.Draw(g, Glyph.Tag, RectangleF.Inflate(tb, -Sc(6), -Sc(6)), ink, 1.2f);
+
+            if (!th) return;
+
+            string[] tags = t.TagText.Split(new string[] { ", " }, StringSplitOptions.RemoveEmptyEntries);
+            if (tags.Length == 0) return;
+
+            // Пилюли лежат прямо на картинке, без общей подложки под ними, поэтому
+            // каждая непрозрачна сама по себе и обведена волоском: поверх светлого
+            // аранжемента полупрозрачная пилюля не читалась бы вовсе.
+            Font f = Theme.FBadge;
+            int chipH = Chrome.PillHeight(f), gap = Sc(4), chipPadX = Sc(10);
+            int right = thumb.Right - Sc(ThumbInset + PicInset);
+            int x = tb.X, y = tb.Bottom + Sc(4);
+
+            for (int i = 0; i < tags.Length; i++)
+            {
+                int w = TextRenderer.MeasureText(tags[i], f, new Size(short.MaxValue, chipH),
+                    TextFormatFlags.NoPrefix | TextFormatFlags.SingleLine).Width + chipPadX * 2;
+
+                if (x + w > right)
+                {
+                    // Первый же тег шире ячейки — режем его сам, иначе на месте
+                    // единственного тега осталось бы одно многоточие ни о чём.
+                    if (i == 0 && right - x > chipH)
+                        PaintTagChip(g, new Rectangle(x, y, right - x, chipH), tags[i], f, true);
+                    else if (x + chipH <= right)
+                        PaintTagDots(g, new Rectangle(x, y, chipH, chipH));
+                    break;
+                }
+
+                PaintTagChip(g, new Rectangle(x, y, w, chipH), tags[i], f);
+                x += w + gap;
+            }
+        }
+
+        /// <summary>Пилюля «есть ещё теги» — та же, только с точками вместо слова.</summary>
+        void PaintTagDots(Graphics g, Rectangle chip)
+        {
+            PaintTagPill(g, chip);
+            Chrome.DrawDots(g, chip, Theme.Text, Sc(3));
+        }
+
+        /// <summary>Подложка пилюли: плотная, с волоском обводки — поверх превью.</summary>
+        void PaintTagPill(Graphics g, Rectangle chip)
+        {
+            float r = chip.Height / 2f;
+            Theme.FillRound(g, chip, r, Color.FromArgb(0xEE, 0x3A, 0x3A, 0x3D));
+            Theme.DrawRound(g, chip, r, Color.FromArgb(0x3C, 0xFF, 0xFF, 0xFF), 1f);
+        }
+
+        /// <summary>Одна пилюля тега поверх превью.</summary>
+        void PaintTagChip(Graphics g, Rectangle chip, string text, Font f, bool clipped = false)
+        {
+            PaintTagPill(g, chip);
+            Chrome.DrawText(g, text, f,
+                            new Rectangle(chip.X, chip.Y + Chrome.PillTop(g, f, chip.Height),
+                                          chip.Width, chip.Height),
+                            Theme.Text, clipped ? Chrome.PillTextClipped : Chrome.PillText);
         }
 
         protected override void Dispose(bool disposing)
@@ -1732,6 +1948,7 @@ namespace AbletonManager
                 PlayPulse.Detach(this);
                 if (_barFade != null) _barFade.Dispose();
                 if (_scroller != null) _scroller.Dispose();
+                Overview.Dispose();
                 DropThumbs();
             }
             base.Dispose(disposing);

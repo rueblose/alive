@@ -1,7 +1,8 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.Drawing.Drawing2D;
+using System.IO;
 using System.Windows.Forms;
 
 namespace AbletonManager
@@ -153,6 +154,7 @@ namespace AbletonManager
         public event Action<int> RowPinClicked;        // клик по звёздочке закрепления
         public event Action<int, Point> RowRightClicked;
         public event Action<int> RowCountClicked;      // клик по хвостику «+3» / «−3»
+        public event Action<int> RowTagsClicked;       // клик по тегам строки (или по «+» в пустой ячейке)
 
         public int SortColumn = -1;
         public bool SortDescending;
@@ -180,6 +182,13 @@ namespace AbletonManager
         /// в этом промежутке между пилюлей выделения и правым краем контрола.
         /// </summary>
         public int PillRightGap;
+
+        /// <summary>
+        /// Путь к файлу для строки — если задан (не null и не пустой), строку можно
+        /// вытащить наружу как файл (в проводник, в другое приложение). null для
+        /// строки без файла — например, версии проекта без ссылки на рендер.
+        /// </summary>
+        public Func<RowData, string> DragFilePath;
 
         /// <summary>Строка, чью кнопку play сейчас держит курсор, иначе -1.</summary>
         int _playHot = -1;
@@ -225,6 +234,29 @@ namespace AbletonManager
             if (_countHit == null || row < 0 || row >= _countHit.Length) return;
             int pad = Sc(6);
             _countHit[row] = new Rectangle(x - pad, y, Math.Max(1, w) + pad * 2, h);
+        }
+
+        // Ячейка тегов — тем же приёмом, что и хвостик «+N»: что нарисовали, по тому и
+        // кликаем. Кликабельны именно пилюли (или «+» у пустой ячейки), а не вся ширина
+        // колонки: пустое место справа от тегов должно просто выделять строку.
+        Rectangle[] _tagsHit;
+
+        /// <summary>Строка, чьи теги сейчас под курсором, иначе -1.</summary>
+        int _tagsHot = -1;
+
+        int TagsAtPoint(Point p)
+        {
+            if (_tagsHit == null) return -1;
+            for (int i = 0; i < _tagsHit.Length; i++)
+                if (!_tagsHit[i].IsEmpty && _tagsHit[i].Contains(p)) return i;
+            return -1;
+        }
+
+        void RememberTags(int row, Rectangle r, int clipLeft)
+        {
+            if (_tagsHit == null || row < 0 || row >= _tagsHit.Length) return;
+            if (r.Left < clipLeft) r = Rectangle.FromLTRB(clipLeft, r.Top, r.Right, r.Bottom);
+            if (r.Width > 0) _tagsHit[row] = r;
         }
 
         /// <summary>Строка, которая сейчас загружена в плеер (необязательно играет —
@@ -298,16 +330,19 @@ namespace AbletonManager
         bool _headPinHot;
 
         /// <summary>
-        /// Растворять ли нижние строки в фон — как в макете у длинного списка. На стекле
-        /// эффекта не даёт: градиент подмешивает свой же полупрозрачный фон поверх уже
-        /// размытых обоев, альфа копится слоями, и вместо мягкого исчезновения получается
-        /// чёткий тёмный прямоугольник в самом низу списка. На непрозрачном окне это не
-        /// проблема — там гасим как раньше.
+        /// Растворять ли нижние строки в фон. На стекле эффекта не даёт: градиент
+        /// подмешивает свой же полупрозрачный фон поверх уже размытых обоев, альфа
+        /// копится слоями, и вместо мягкого исчезновения получается чёткий тёмный
+        /// прямоугольник в самом низу списка. На непрозрачном окне это не проблема.
         /// </summary>
         public bool FadeBottom = true;
 
         // Перетаскивание правого края колонки: индекс колонки или -1.
         int _resizeCol = -1;
+        // Где взялись и какой ширина была в тот момент. Ширина считается от этой пары,
+        // а не от текущей раскладки: раскладка сама зависит от ширины, и счёт от неё
+        // замыкался сам на себя — см. DoResize.
+        int _resizeStartX, _resizeStartW;
 
         // Перетаскивание самого заголовка — как в проводнике.
         //
@@ -321,6 +356,11 @@ namespace AbletonManager
         int _dragCol = -1;
         int _dragX;
         int _dropAt = -1;      // куда встанет колонка, если отпустить сейчас
+
+        // Строку тоже нажимают раньше, чем становится ясно — клик это или перетаскивание
+        // наружу (в проводник, в другое приложение), тем же порогом, что и колонки.
+        int _rowDragIdx = -1;
+        Point _rowDragStart;
 
         int DragThreshold { get { return Sc(5); } }
 
@@ -742,6 +782,17 @@ namespace AbletonManager
 
         protected override void OnMouseMove(MouseEventArgs e)
         {
+            if (_rowDragIdx >= 0 && e.Button == MouseButtons.Left
+                && (Math.Abs(e.X - _rowDragStart.X) > DragThreshold || Math.Abs(e.Y - _rowDragStart.Y) > DragThreshold))
+            {
+                int dragIdx = _rowDragIdx;
+                _rowDragIdx = -1;
+                string path = dragIdx < _rows.Count ? DragFilePath(_rows[dragIdx]) : null;
+                if (!string.IsNullOrEmpty(path) && File.Exists(path))
+                    DoDragDrop(new DataObject(DataFormats.FileDrop, new string[] { path }), DragDropEffects.Copy);
+                return;
+            }
+
             if (_resizeCol >= 0) { DoResize(e.X); return; }
 
             // Заголовок уже тащат — ведём его и считаем, куда он встанет.
@@ -757,7 +808,8 @@ namespace AbletonManager
             // Взялись за заголовок и повели в сторону — это перетаскивание, а не клик
             // по сортировке. Порог нужен, чтобы дрожь руки на обычном щелчке не
             // считалась переносом колонки.
-            if (_pressCol >= 0 && e.Button == MouseButtons.Left
+            // _pressCol > 0 — там же, где и DropIndexAt: первую колонку не таскают.
+            if (_pressCol > 0 && e.Button == MouseButtons.Left
                 && Math.Abs(e.X - _pressX) > DragThreshold
                 && ColumnsConfigurable && _columns.Count > 1)
             {
@@ -811,8 +863,8 @@ namespace AbletonManager
                 Cursor = grip >= 0 ? Cursors.VSplit : Cursors.Hand;
                 bool headPin = OnHeaderPin(e.Location);
                 if (headPin != _headPinHot) { _headPinHot = headPin; Invalidate(); }
-                if (_hot != -1 || _playHot != -1 || _pinHot != -1)
-                { _hot = -1; _playHot = -1; _pinHot = -1; Invalidate(); }
+                if (_hot != -1 || _playHot != -1 || _pinHot != -1 || _tagsHot != -1)
+                { _hot = -1; _playHot = -1; _pinHot = -1; _tagsHot = -1; Invalidate(); }
                 return;
             }
             if (_headPinHot) { _headPinHot = false; Invalidate(); }
@@ -831,9 +883,12 @@ namespace AbletonManager
                     pinHot = idx;
             }
             int countHot = CountAtPoint(e.Location);
-            if (idx != _hot || playHot != _playHot || pinHot != _pinHot || countHot != _countHot)
+            int tagsHot = TagsAtPoint(e.Location);
+            if (tagsHot != idx) tagsHot = -1;
+            if (idx != _hot || playHot != _playHot || pinHot != _pinHot
+                || countHot != _countHot || tagsHot != _tagsHot)
             {
-                _hot = idx; _playHot = playHot; _pinHot = pinHot; _countHot = countHot;
+                _hot = idx; _playHot = playHot; _pinHot = pinHot; _countHot = countHot; _tagsHot = tagsHot;
                 AnimEngine.Register(this);
                 Invalidate();
             }
@@ -853,7 +908,10 @@ namespace AbletonManager
         {
             int[] widths = ComputeWidths();
             if (_columns.Count == 0) return 0;
-            if (px < LeftX + widths[0]) return 0;
+            // Первая колонка прибита: это имя сета (плагина), единственное, по чему
+            // строку вообще можно опознать, и тянется она на всю свободную ширину.
+            // Вставлять перед ней некуда — самое левое место для остальных это 1.
+            if (px < LeftX + widths[0]) return 1;
             for (int c = 1; c < _columns.Count; c++)
             {
                 int x = ColX(widths, c);
@@ -888,12 +946,13 @@ namespace AbletonManager
 
         void DoResize(int mouseX)
         {
-            int[] widths = ComputeWidths();
             float scale = DeviceDpi / 96f;
+            int[] before = ComputeWidths();
+            int rightBefore = ColX(before, _resizeCol) + before[_resizeCol];
 
             if (_resizeCol == 0 && _columns.Count > 0)
             {
-                int newScaled = mouseX - LeftX;
+                int newScaled = _resizeStartW + (mouseX - _resizeStartX);
                 int minW = Sc(100);
                 int maxW = Width - LeftX - PadRight - Sc(100);
                 if (maxW < minW) maxW = minW;
@@ -903,8 +962,13 @@ namespace AbletonManager
             }
             else if (_resizeCol > 0 && _resizeCol < _columns.Count)
             {
-                int rightX = ColX(widths, _resizeCol) + widths[_resizeCol];
-                int newScaled = rightX - mouseX;
+                // Ширина — от того, что было в момент захвата, плюс пройденный путь. Раньше
+                // считали от правого края текущей раскладки, а он стоит на месте, только пока
+                // колонка имени тянется и гасит разницу собой. Как только колонки переставали
+                // влезать, имя упиралось в минимум, край начинал ехать вместе с шириной — и ширина
+                // разгоняла сама себя на каждом MouseMove. От точки захвата обратной связи нет,
+                // и тянется всегда одна и та же колонка — та, за чей левый край взялись.
+                int newScaled = _resizeStartW + (_resizeStartX - mouseX);
 
                 int minW = Sc(48);
                 int maxW = Width - LeftX - PadRight - Sc(80);
@@ -914,14 +978,24 @@ namespace AbletonManager
 
                 _columns[_resizeCol].Width = Math.Max(1, (int)Math.Round(newScaled / scale));
             }
+            // Правее границы ничего шевелиться не должно. Пока колонки влезают, это выходит
+            // само собой: тянущаяся колонка имени гасит разницу собой, и всё остальное стоит
+            // прижатым к правому краю. Когда не влезают, гасить нечем — тогда ровно на ту же
+            // разницу доворачиваем прокрутку, и картинка получается та же, что во весь экран.
+            // В первом случае прокручивать нечего и ClampScrollX вернёт ноль — ветка не нужна.
+            int[] after = ComputeWidths();
+            _scrollX += ColX(after, _resizeCol) + after[_resizeCol] - rightBefore;
+            ClampScrollX();
+            _scrollXTarget = _scrollXCurrent = _scrollX;
             Invalidate();
         }
 
         protected override void OnMouseLeave(EventArgs e)
         {
-            if (_hot != -1 || _playHot != -1 || _pinHot != -1 || _countHot != -1 || _headPinHot)
+            if (_hot != -1 || _playHot != -1 || _pinHot != -1 || _countHot != -1
+                || _tagsHot != -1 || _headPinHot)
             {
-                _hot = -1; _playHot = -1; _pinHot = -1; _countHot = -1; _headPinHot = false;
+                _hot = -1; _playHot = -1; _pinHot = -1; _countHot = -1; _tagsHot = -1; _headPinHot = false;
                 AnimEngine.Register(this);
                 Invalidate();
             }
@@ -987,7 +1061,13 @@ namespace AbletonManager
 
                 int[] widths = ComputeWidths();
                 int grip = GripAt(e.X, widths);
-                if (grip >= 0) { _resizeCol = grip; return; }
+                if (grip >= 0)
+                {
+                    _resizeCol = grip;
+                    _resizeStartX = e.X;
+                    _resizeStartW = widths[grip];
+                    return;
+                }
 
                 // Ни сортировки, ни перетаскивания прямо сейчас — только запоминаем, за
                 // что взялись: что это было, станет ясно по движению мыши. См. _pressCol.
@@ -1038,6 +1118,13 @@ namespace AbletonManager
                 if (RowCountClicked != null) { RowCountClicked(idx); return; }
             }
 
+            // Теги — тоже своя кнопка: клик по пилюлям (или по «+» у пустой ячейки)
+            // открывает редактор тегов, а не просто выделяет строку.
+            if (idx >= 0 && TagsAtPoint(e.Location) == idx)
+            {
+                if (RowTagsClicked != null) { RowTagsClicked(idx); return; }
+            }
+
             if (idx >= 0 && ShowPinIndicator)
             {
                 int pinTop = HeaderHeight + idx * RowHeight - ScrollY;
@@ -1076,11 +1163,22 @@ namespace AbletonManager
                 Invalidate();
                 if (SelectionChanged != null) SelectionChanged(this, EventArgs.Empty);
             }
+
+            // Тащить наружу можно, только если для строки вообще есть файл — курсор
+            // подтверждает это раньше, чем движение мыши решит, клик это или перенос.
+            if (idx >= 0 && e.Button == MouseButtons.Left && DragFilePath != null)
+            {
+                _rowDragIdx = idx;
+                _rowDragStart = e.Location;
+            }
+
             base.OnMouseDown(e);
         }
 
         protected override void OnMouseUp(MouseEventArgs e)
         {
+            _rowDragIdx = -1;
+
             if (_resizeCol >= 0)
             {
                 _resizeCol = -1;
@@ -1147,10 +1245,11 @@ namespace AbletonManager
         }
 
         /// <summary>Курсор сейчас над одной из кнопок строки idx — хвостиком «+N»,
-        /// звёздочкой, play или чекбоксом, — а не над самой строкой.</summary>
+        /// тегами, звёздочкой, play или чекбоксом, — а не над самой строкой.</summary>
         bool OnRowAccessory(int idx, Point p)
         {
             if (CountAtPoint(p) == idx) return true;
+            if (TagsAtPoint(p) == idx) return true;
 
             if (ShowPinIndicator)
             {
@@ -1302,6 +1401,10 @@ namespace AbletonManager
                     _countHit = new Rectangle[_rows.Count];
                 Array.Clear(_countHit, 0, _countHit.Length);
 
+                if (_tagsHit == null || _tagsHit.Length != _rows.Count)
+                    _tagsHit = new Rectangle[_rows.Count];
+                Array.Clear(_tagsHit, 0, _tagsHit.Length);
+
                 int first = Math.Max(0, (_scroll - slack) / rowH);
                 int last = Math.Min(_rows.Count - 1, (_scroll + ViewH + slack) / rowH);
 
@@ -1432,11 +1535,11 @@ namespace AbletonManager
                         g.DrawLine(divPen, scrollLeft - 1, HeaderHeight, scrollLeft - 1, Height);
                 }
 
-                // Нижние строки растворяются в фоне — список не обрывается ровным срезом.
-                // На стекле это гасим целиком, см. комментарий у FadeBottom.
+                // Нижние строки чуть растворяются в фоне — тонкая полоска, не прошлый
+                // на треть экрана. На стекле это гасим целиком, см. комментарий у FadeBottom.
                 if (FadeBottom && !Glass.Enabled && ContentHeight > Height)
                 {
-                    int fadeH = Sc(110);
+                    int fadeH = Sc(36);
                     int fadeW = Math.Max(0, Width - PillRightGap);
                     Rectangle fr = new Rectangle(0, Height - fadeH, fadeW, fadeH);
                     using (LinearGradientBrush lb = new LinearGradientBrush(
@@ -1494,7 +1597,12 @@ namespace AbletonManager
             if (cellX + cellW > maxRight) cellW = Math.Max(0, maxRight - cellX);
             if (cellW <= 0 && cellX >= maxRight) return;
             Rectangle cr = new Rectangle(cellX, topAnim, cellW, rowH);
-            if (col.Chips) PaintChips(g, cr, row.Cells[c], color);
+            // Последним аргументом — левая граница кликабельной зоны: прокручиваемая
+            // колонка может заехать под закреплённую первую, рисунок там обрезан клипом,
+            // а вот попадание мышью надо обрезать самим.
+            if (col.Chips)
+                PaintChips(g, cr, row.Cells[c], color, rowIndex, rowIndex == _hot, rowIndex == _tagsHot,
+                           c >= 1 ? LeftX + widths[0] : 0);
             else
             {
                 string cellText = row.Cells[c];
@@ -1621,38 +1729,124 @@ namespace AbletonManager
         }
 
         /// <summary>
-        /// Теги пилюлями в один ряд, тем же приёмом, что в панели сведений — только
-        /// мельче, строка таблицы вдвое ниже блока в панели. Дорожку не переносим:
-        /// в неё и так лезет три-четыре тега, а перенос раздул бы строку таблицы вдвое
-        /// ради довеска, который у большинства проектов вообще пуст. Тег, который не
-        /// поместился целиком, просто не начинаем рисовать — обрезанная наполовину
-        /// пилюля выглядела бы как брак верстки, а не как «тегов больше, чем видно».
+        /// Теги пилюлями, тем же приёмом, что в панели сведений — только мельче.
+        /// В одну дорожку, а если в неё всё не влезло — в две: строка таблицы держит
+        /// ровно две пилюли по высоте, а больше и не нужно. Что не поместилось и во
+        /// вторую, сворачивается в многоточие: обрезанная наполовину пилюля читалась бы
+        /// как брак вёрстки, а не как «тегов больше, чем видно».
+        ///
+        /// Сами пилюли — кнопка правки: по ним кликают, чтобы открыть редактор тегов.
+        /// У пустой ячейки кликать нечего, поэтому под курсором на строке появляется
+        /// «+» — постоянно держать его во всех строках значило бы засеять плюсами
+        /// всю таблицу, у большинства проектов тегов нет.
         /// </summary>
-        void PaintChips(Graphics g, Rectangle cell, string joined, Color textColor)
-        {
-            if (string.IsNullOrEmpty(joined)) return;
-            string[] tags = joined.Split(new string[] { ", " }, StringSplitOptions.RemoveEmptyEntries);
-            if (tags.Length == 0) return;
+        const string AddTagsLabel = "Add tags";
 
-            Font f = Theme.FBadge;
-            int h = Sc(18);
-            int y = cell.Y + (cell.Height - h) / 2;
-            int x = cell.X;
+        void PaintChips(Graphics g, Rectangle cell, string joined, Color textColor,
+                        int rowIndex, bool rowHot, bool hot, int clipLeft)
+        {
+            // Кегль мельче, чем у остального текста строки: одиннадцатым пилюли выходят
+            // по 21 px, две дорожки съедают строку почти целиком, и пилюли соседних строк
+            // оказываются друг от друга на том же расстоянии, что и две дорожки внутри
+            // одной, — теги перестают читаться как теги одного проекта.
+            Font f = Theme.FMini;
+            int vgap = Sc(3);
+
+            // Высота пилюли — по шрифту, а не по остатку строки: текст, которому нужно
+            // 17 px, в пилюлю 16 не влезет, и выносные элементы упрутся в края. Две
+            // пилюли с зазором занимают 39 px из 53, остаток строки сам становится
+            // полями сверху и снизу (блок центрируется ниже).
+            int h = Math.Min(Chrome.PillHeight(f, 4), (cell.Height - vgap) / 2);
+
+            string[] tags = string.IsNullOrEmpty(joined)
+                ? new string[0]
+                : joined.Split(new string[] { ", " }, StringSplitOptions.RemoveEmptyEntries);
+
+            if (tags.Length == 0)
+            {
+                if (!rowHot) return;
+
+                // Бирка и подпись, как в панели сведений, — голый плюс не говорил, что
+                // именно он добавит. Иконка и текст делят одну коробку высотой с пилюлю:
+                // иконка стоит по её центру, текст — по тому же правилу, что и в пилюлях
+                // (Chrome.PillTop), так что буквы и значок выровнены друг с другом.
+                Color ink = hot ? Theme.Text : Theme.TextDim;
+                // Бирка вписана в квадрат, а сама она широкая и низкая (14×10 в исходнике),
+                // поэтому по ширине занимает весь квадрат, а по высоте — две трети.
+                int icon = Math.Max(Sc(12), h - Sc(4));
+                int iconGap = Sc(6);
+                int textW = TextRenderer.MeasureText(AddTagsLabel, f, new Size(short.MaxValue, h),
+                    TextFormatFlags.NoPrefix | TextFormatFlags.SingleLine).Width;
+                int hintW = icon + iconGap + textW;
+                if (hintW > cell.Width) return;
+
+                int hintY = cell.Y + (cell.Height - h) / 2;
+                Icons.Draw(g, Glyph.Tag,
+                           new RectangleF(cell.X, hintY + (h - icon) / 2f, icon, icon), ink, 1.2f);
+                // NoClipping в Chrome.PillText: прямоугольник тут ровно по мерке текста,
+                // и без него хвост «g» обрезался бы своей же коробкой.
+                Chrome.DrawText(g, AddTagsLabel, f,
+                                new Rectangle(cell.X + icon + iconGap, hintY + Chrome.PillTop(g, f, h), textW, h),
+                                ink, Chrome.PillText);
+                RememberTags(rowIndex, new Rectangle(cell.X - Sc(3), cell.Y, hintW + Sc(6), cell.Height), clipLeft);
+                return;
+            }
+
             int gap = Sc(5);
             int padX = Sc(8);
 
+            int[] chipW = new int[tags.Length];
+            int total = 0;
             for (int i = 0; i < tags.Length; i++)
             {
-                Size ts = TextRenderer.MeasureText(tags[i], f, new Size(short.MaxValue, h),
-                    TextFormatFlags.NoPrefix | TextFormatFlags.SingleLine);
-                int w = ts.Width + padX * 2;
-                if (x + w > cell.Right) break;
-
-                Rectangle chip = new Rectangle(x, y, w, h);
-                Theme.FillRound(g, chip, h / 2f, Color.FromArgb(0x22, 0xFF, 0xFF, 0xFF));
-                Chrome.DrawText(g, tags[i], f, chip, textColor, Chrome.CellCenter);
-                x += w + gap;
+                chipW[i] = TextRenderer.MeasureText(tags[i], f, new Size(short.MaxValue, h),
+                    TextFormatFlags.NoPrefix | TextFormatFlags.SingleLine).Width + padX * 2;
+                total += chipW[i] + (i > 0 ? gap : 0);
             }
+
+            // Вторую дорожку заводим, только когда в одну и правда не влезло: ради пары
+            // коротких тегов раздёргивать строку по вертикали незачем. А если не влезает
+            // даже первый тег, второй дорожке тем более нечего показать — только многоточие.
+            int lines = (total <= cell.Width || chipW[0] > cell.Width) ? 1 : 2;
+            int top = cell.Y + (cell.Height - (lines * h + (lines - 1) * vgap)) / 2;
+
+            Color fill = Color.FromArgb(hot ? 0x3D : 0x22, 0xFF, 0xFF, 0xFF);
+            Color chipInk = hot ? Theme.Text : textColor;
+            int textTop = Chrome.PillTop(g, f, h);
+
+            int next = 0, right = cell.X;
+            for (int line = 0; line < lines; line++)
+            {
+                int x = cell.X;
+                int y = top + line * (h + vgap);
+
+                while (next < tags.Length && x + chipW[next] <= cell.Right)
+                {
+                    Rectangle chip = new Rectangle(x, y, chipW[next], h);
+                    Theme.FillRound(g, chip, h / 2f, fill);
+                    Chrome.DrawText(g, tags[next], f,
+                                    new Rectangle(chip.X, chip.Y + textTop, chip.Width, chip.Height),
+                                    chipInk, Chrome.PillText);
+                    x += chipW[next] + gap;
+                    next++;
+                }
+
+                if (line == lines - 1 && next < tags.Length)
+                {
+                    int dot = Sc(3), ew = Chrome.DotsWidth(dot);
+                    int ex = Math.Min(x, cell.Right - ew);
+                    if (ex >= cell.X)
+                    {
+                        Chrome.DrawDots(g, new Rectangle(ex, y, ew, h), chipInk, dot);
+                        x = ex + ew + gap;
+                    }
+                }
+
+                right = Math.Max(right, Math.Min(cell.Right, x - gap));
+            }
+
+            if (right > cell.X)
+                RememberTags(rowIndex, new Rectangle(cell.X, cell.Y, right - cell.X, cell.Height), clipLeft);
         }
 
         void PaintMark(Graphics g, int[] widths, int top, int rowH, CellMark m)

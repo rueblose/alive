@@ -292,7 +292,9 @@ namespace AbletonManager
         /// </summary>
         int Flow(Graphics g, List<Entry> items, int x, int top, int w, bool draw)
         {
-            int keyW = Math.Min(Sc(150), w / 3);
+            // По колпачку на клавишу — самое длинное сочетание шире, чем прежняя треть
+            // колонки, и наезжало на описание справа.
+            int keyW = Math.Min(Sc(150), w * 2 / 5);
             int keyGap = Sc(12);
             int textX = x + keyW + keyGap;
             int textW = w - keyW - keyGap;
@@ -319,7 +321,7 @@ namespace AbletonManager
 
                     case Kind.Note:
                         {
-                            int h = Wrap(it.Text, Theme.FLabel, w);
+                            int h = Wrap(g, it.Text, Theme.FLabel, w);
                             if (draw)
                                 TextRenderer.DrawText(g, it.Text, Theme.FLabel,
                                                       new Rectangle(x, y, w, h), Theme.TextDim, Chrome.Wrap);
@@ -330,21 +332,11 @@ namespace AbletonManager
                     case Kind.Key:
                     case Kind.Term:
                         {
-                            int h = Wrap(it.Text, Theme.FLabel, textW);
+                            int h = Wrap(g, it.Text, Theme.FLabel, textW);
                             if (draw)
                             {
                                 if (it.Kind == Kind.Key)
-                                {
-                                    // Клавиша — в «колпачке», чтобы её было видно как клавишу,
-                                    // а не как ещё одно слово в строке.
-                                    Size ks = TextRenderer.MeasureText(it.Key, Theme.FBadge);
-                                    Rectangle cap = new Rectangle(x, y - Sc(2),
-                                                                  Math.Min(keyW, ks.Width + Sc(14)),
-                                                                  LineH(Theme.FBadge) + Sc(6));
-                                    Theme.FillRound(g, cap, Sc(5), Color.FromArgb(0x1C, 0xFF, 0xFF, 0xFF));
-                                    Chrome.DrawText(g, it.Key, Theme.FBadge, cap, Theme.Text,
-                                                    Chrome.Center | TextFormatFlags.NoClipping);
-                                }
+                                    DrawCaps(g, it.Key, x, y);
                                 else
                                 {
                                     Chrome.DrawText(g, it.Key, Theme.FLabel,
@@ -362,9 +354,43 @@ namespace AbletonManager
             return y - top;
         }
 
-        static int Wrap(string text, Font f, int w)
+        /// <summary>
+        /// Сочетание — по колпачку на клавишу: «Shift Enter» это две клавиши, и на одной
+        /// общей подложке они читались как одна длинная. Разделители («/» между
+        /// вариантами) остаются просто текстом между колпачками.
+        /// </summary>
+        void DrawCaps(Graphics g, string combo, int x, int y)
         {
-            return TextRenderer.MeasureText(text, f, new Size(w, int.MaxValue), Chrome.Wrap).Height;
+            int capH = LineH(Theme.FBadge) + Sc(6);
+            int top = y - Sc(2);
+            foreach (string token in combo.Split(' '))
+            {
+                if (token.Length == 0) continue;
+                Size ts = TextRenderer.MeasureText(token, Theme.FBadge);
+                if (token == "/" || token == "+" || token == "..")
+                {
+                    Chrome.DrawText(g, token, Theme.FBadge, new Rectangle(x, top, ts.Width, capH),
+                                    Theme.TextDim, Chrome.Center | TextFormatFlags.NoClipping);
+                    x += ts.Width + Sc(5);
+                    continue;
+                }
+                Rectangle cap = new Rectangle(x, top, ts.Width + Sc(14), capH);
+                Theme.FillRound(g, cap, Sc(5), Color.FromArgb(0x1C, 0xFF, 0xFF, 0xFF));
+                Chrome.DrawText(g, token, Theme.FBadge, cap, Theme.Text,
+                                Chrome.Center | TextFormatFlags.NoClipping);
+                x += cap.Width + Sc(5);
+            }
+        }
+
+        /// <summary>
+        /// Высота строки с переносами. Мерить обязательно той же Graphics, которой
+        /// строку потом рисуют: у буфера колонок включён ClearTypeGridFit, у экранного
+        /// DC — нет, и самые длинные подписи мерились в две строки, а рисовались в одну.
+        /// Место под несуществующую вторую строку так и оставалось дырой в столбце.
+        /// </summary>
+        static int Wrap(Graphics g, string text, Font f, int w)
+        {
+            return TextRenderer.MeasureText(g, text, f, new Size(w, int.MaxValue), Chrome.Wrap).Height;
         }
 
         /// <summary>
@@ -410,8 +436,7 @@ namespace AbletonManager
             {
                 Section("Navigation & Views"),
                 Key("F1", "Toggle this help dialog"),
-                Key("Tab", "Switch sets tiles/list view"),
-                Key("Ctrl 1 / 2", "Switch Sets/Plugins tabs"),
+                Key("Ctrl 1 .. 3", "Home / Sets / Plugins"),
                 Key("F", "Open filters dialog"),
                 Key("Shift F", "Open scan folders window"),
                 Key("Ctrl F", "Focus search field"),
@@ -428,6 +453,7 @@ namespace AbletonManager
                 Key("Shift Enter", "Open set in Explorer"),
                 Key("Space", "Play or pause audio render"),
                 Key("Ctrl Space", "Open or close set preview"),
+                Key("Q", "Pin or unpin selected set"),
                 Key("Ctrl T", "Edit set tags and notes"),
                 Key("Ctrl R", "Rescue a set that will not open"),
                 Key("F5", "Rescan catalog"),

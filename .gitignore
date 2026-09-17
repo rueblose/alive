@@ -19,3 +19,9 @@ scratch/
 
 # Superpowers SDD scratch (ledger, briefs, review packages)
 .superpowers/
+
+# Export output (tools/export-svg.cmd)
+export/
+
+# Внутренние планы разработки — не для публичного репозитория
+docs/superpowers/

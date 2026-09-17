@@ -16,10 +16,12 @@ namespace AbletonManager
         readonly Segmented _mode = new Segmented();
         readonly FieldBox _search = new FieldBox();
         readonly FiltersButton _filtersBtn = new FiltersButton();
+        readonly IconButton _resetBtn = new IconButton();
 
         // Действия — круглые значки: папка, настройки, новый проект.
         readonly IconButton _folders = new IconButton();
         readonly IconButton _settingsBtn = new IconButton();
+        readonly IconButton _helpBtn = new IconButton();
         readonly GlassButton _newProject = new GlassButton();
 
         // Мини-транспорт плеера в футере — переключить сет и play/pause, не поднимая
@@ -49,7 +51,6 @@ namespace AbletonManager
         readonly PluginSummary _summary = new PluginSummary();
         readonly HomeView _home = new HomeView();
 
-        readonly IconToggle _viewToggle = new IconToggle();
         readonly IconButton _dice = new IconButton();
         readonly Random _rng = new Random();
 
@@ -57,8 +58,21 @@ namespace AbletonManager
         // прочее, о чём стоит сказать, но не стоит спрашивать.
         readonly Toast _toast = new Toast();
 
-        const int ModeSets = 0, ModePlugins = 1;
-        const int ViewTiles = 0, ViewList = 1;
+        const int ModeHome = 0, ModeSets = 1, ModePlugins = 2;
+
+        /// <summary>
+        /// Три вкладки — это два вопроса, а не один: про что смотрим (сеты или плагины)
+        /// и в каком виде (плитки или таблица). Home и Sets — один и тот же каталог, у
+        /// них общие фильтры, поиск и горячие клавиши; свои у них только раскладка и
+        /// выделение. Поэтому в коде спрашивают не номер вкладки, а один из трёх
+        /// признаков — так место, где нужен именно вид, видно от места, где нужен
+        /// именно каталог.
+        /// </summary>
+        bool _wasPlugins;    // с какой стороны пришли — см. _mode.SelectedChanged
+
+        bool SetsDomain { get { return _mode.SelectedIndex != ModePlugins; } }
+        bool Tiles      { get { return _mode.SelectedIndex == ModeHome; } }
+        bool TableView  { get { return _mode.SelectedIndex == ModeSets; } }
 
         readonly Settings _settings;
         readonly ProjectIndex _index = new ProjectIndex();
@@ -109,12 +123,35 @@ namespace AbletonManager
             return false;
         }
 
+        /// <summary>Место колонки в каноническом каталоге — он же порядок пунктов меню.</summary>
+        static int CatalogPos(bool sets, string id)
+        {
+            if (sets)
+            {
+                for (int i = 0; i < Catalog.Count; i++)
+                    if (string.Equals(Catalog[i].Id, id, StringComparison.OrdinalIgnoreCase)) return i;
+            }
+            else
+            {
+                for (int i = 0; i < PluginCatalog.Count; i++)
+                    if (string.Equals(PluginCatalog[i].Id, id, StringComparison.OrdinalIgnoreCase)) return i;
+            }
+            return int.MaxValue;
+        }
+
+        static void SortByCatalog(List<string> order, bool sets)
+        {
+            order.Sort(delegate (string a, string b)
+                { return CatalogPos(sets, a).CompareTo(CatalogPos(sets, b)); });
+        }
+
         string _setSortId;
         string _pluginSortId;
         List<ColDef> _setVisible = new List<ColDef>();
         List<PluginColDef> _pluginVisible = new List<PluginColDef>();
 
         Rectangle _rCount, _rStatus;
+        int _total;                  // сколько всего в каталоге — знаменатель «N / M shown»
 
         readonly HelpOverlay _help = new HelpOverlay();
 
@@ -126,11 +163,26 @@ namespace AbletonManager
 
         public MainForm()
         {
-            Text = "Alive — Ableton Live Manager b1.3";
+            Text = "Alive " + Application.ProductVersion + " — Ableton Live Manager";
             FormBorderStyle = FormBorderStyle.None;
             StartPosition = FormStartPosition.CenterScreen;
-            ClientSize = new Size(1475, 950);
-            MinimumSize = new Size(1320, 740);
+            // Размеры окна — тоже по макету, значит тоже через масштаб экрана. Раньше
+            // 1475 и 1320 стояли в физических пикселях: на экране со 125% окно выходило
+            // в 1180 макетных точек вместо 1475, и панель инструментов в него уже не
+            // помещалась — счётчик наезжал на кнопки справа. DeviceDpi тут спрашивать
+            // рано (окна ещё нет), поэтому берём масштаб у экранного DC.
+            float k;
+            using (Graphics g = Graphics.FromHwnd(IntPtr.Zero)) k = g.DpiX / 96f;
+            Rectangle work = Screen.PrimaryScreen.WorkingArea;
+
+            ClientSize = new Size(Math.Min((int)(1475 * k), work.Width),
+                                  Math.Min((int)(950 * k), work.Height));
+
+            // Ширина не с потолка: при ней панель инструментов ещё помещается целиком —
+            // вкладки, кубик, фильтры со счётчиком, поиск, «N / N» со сбросом и кнопки
+            // панели справа. Экран уже этого — окно во всю его ширину, но не шире.
+            MinimumSize = new Size(Math.Min((int)(1340 * k), work.Width),
+                                   Math.Min((int)(740 * k), work.Height));
             BackColor = Theme.Bg;
             if (Glass.AppIcon != null) Icon = Glass.AppIcon;
             KeyPreview = true;
@@ -168,9 +220,11 @@ namespace AbletonManager
         // Порядок здесь — это и порядок колонок на экране, и порядок пунктов в меню.
         static readonly List<ColDef> Catalog = BuildCatalog();
 
-        // Что показываем при первом запуске и по «сбросить».
+        // Что показываем при первом запуске и по «сбросить». Порядок — как в Catalog, иначе
+        // включённая потом колонка встанет не туда: ToggleColumn ищет первую соседку,
+        // которая в каталоге позже, а в перепутанном списке такая находится слишком рано.
         static readonly string[] DefaultSetCols =
-            { "Set", "Modified", "BPM", "Key", "PluginCount", "FileCount"};
+            { "Set", "Modified", "BPM", "PluginCount", "FileCount", "Tags", "Size"};
 
         static List<ColDef> BuildCatalog()
         {
@@ -424,6 +478,17 @@ namespace AbletonManager
         {
             LoadColumnSpec(_settings.SetColumns, _setOrder, _setColW, DefaultSetCols, "Set", true);
             LoadColumnSpec(_settings.PluginColumns, _pluginOrder, _pluginColW, DefaultPluginCols, "Plugin", false);
+
+            // Разовая починка старых настроек: до этого включённая колонка падала в конец,
+            // и сохранённый порядок — это просто история нажатий, а не чей-то замысел.
+            // Дальше порядок снова пользовательский и больше не трогается.
+            if (!_settings.ColumnsSorted)
+            {
+                SortByCatalog(_setOrder, true);
+                SortByCatalog(_pluginOrder, false);
+                _settings.ColumnsSorted = true;
+                SaveColumns();
+            }
         }
 
         /// <summary>
@@ -495,6 +560,8 @@ namespace AbletonManager
         {
             _folders.Icon = Glyph.Folder;
             _settingsBtn.Icon = Glyph.Settings;
+            _helpBtn.Icon = Glyph.Keyboard;
+            _helpBtn.Click += delegate { ShowHelp(); };
             _min.Icon = Glyph.Minimize;
             _max.Icon = Glyph.Maximize;
             _close.Icon = Glyph.Close;
@@ -504,7 +571,7 @@ namespace AbletonManager
             _min.Click += delegate { WindowState = FormWindowState.Minimized; };
             _max.Click += delegate { ToggleMaximize(); };
             _close.Click += delegate { Close(); };
-            foreach (IconButton b in new IconButton[] { _folders, _settingsBtn, _min, _max, _close })
+            foreach (IconButton b in new IconButton[] { _folders, _settingsBtn, _helpBtn, _min, _max, _close })
                 Controls.Add(b);
 
             // Кнопка нового сета переехала в футер и стала подписанной — доставать
@@ -667,47 +734,49 @@ namespace AbletonManager
             {
                 _list.ScrollOffsetX = 0;
                 _list.ScrollOffset = 0;
-                _pluginView = -1;
-                _summary.Selected = -1;
-                _setSortId = null; _pluginSortId = null; _sortDesc = false;
-                _list.SortColumn = -1;
-                UpdateFiltersButton();
-                LayoutAll();
-                Refill();
 
-                if (_mode.SelectedIndex == ModeSets) RestoreLastSetSelection();
-            };
-            Controls.Add(_mode);
+                // Сортировка и состав колонок у сетов и плагинов разные, и на переходе
+                // между ними их надо сбрасывать. А Home и Sets — один каталог в двух
+                // видах: сбивать там сортировку не за что, человек к ней и вернётся.
+                bool domainChanged = _wasPlugins != !SetsDomain;
+                _wasPlugins = !SetsDomain;
+                if (domainChanged)
+                {
+                    _pluginView = -1;
+                    _summary.Selected = -1;
+                    _setSortId = null; _pluginSortId = null; _sortDesc = false;
+                    _list.SortColumn = -1;
+                }
 
-            _viewToggle.SelectedChanged += delegate
-            {
-                _list.ScrollOffsetX = 0;
-                _list.ScrollOffset = 0;
+                // Выделенный сет переезжает из плиток в таблицу и обратно: вкладки
+                // показывают одно и то же, и терять на переходе место незачем.
                 SetEntry setFromTiles = _home.Selected;
                 RowData listRowBefore = _list.Selected;
                 SetEntry setFromList = listRowBefore != null ? listRowBefore.Tag as SetEntry : null;
 
+                UpdateFiltersButton();
+                LayoutAll();
                 Refill();
 
-                if (_viewToggle.SelectedIndex == ViewList)
-                {
-                    SetEntry target = setFromTiles ?? setFromList;
-                    if (target != null)
-                        _list.SelectRow(r => ReferenceEquals(r.Tag, target));
-                }
-                else
+                if (Tiles)
                 {
                     SetEntry target = setFromList ?? setFromTiles;
-                    if (target != null)
-                        _home.Selected = target;
+                    if (target != null) _home.Selected = target;
+                    else RestoreLastSetSelection();
+                }
+                else if (TableView)
+                {
+                    SetEntry target = setFromTiles ?? setFromList;
+                    if (target != null) _list.SelectRow(r => ReferenceEquals(r.Tag, target));
+                    else RestoreLastSetSelection();
                 }
                 OnSelectionChanged();
             };
-            Controls.Add(_viewToggle);
+            Controls.Add(_mode);
 
             _dice.Icon = Glyph.Dice;
             _dice.SpinOnClick = true;
-            _dice.Click += delegate { RollRandomSet(); };
+            _dice.Click += delegate { RollDiceFace(); RollRandomSet(); };
             Controls.Add(_dice);
 
             _summary.CardClicked += OnSummaryCard;
@@ -721,10 +790,16 @@ namespace AbletonManager
 
             _filtersBtn.Click += delegate
             {
-                if (_mode.SelectedIndex == ModeSets) EditFilters();
+                if (SetsDomain) EditFilters();
                 else EditPluginFilters();
             };
             Controls.Add(_filtersBtn);
+
+            _resetBtn.Icon = Glyph.Refresh;
+            _resetBtn.Quiet = true;
+            _resetBtn.Visible = false;
+            _resetBtn.Click += delegate { ResetSearchAndFilters(); };
+            Controls.Add(_resetBtn);
 
             _newProject.Click += delegate { NewProject(); };
             _folders.Click += delegate { EditRoots(); };
@@ -737,18 +812,17 @@ namespace AbletonManager
             _list.RowPlayClicked += OnRowPlay;
             _list.RowRightClicked += OnListRowRightClick;
             _list.RowCountClicked += OnRowCountClicked;
+            _list.RowTagsClicked += delegate (int idx)
+            {
+                if (idx >= 0 && idx < _list.Rows.Count) EditNotes(_list.Rows[idx].Tag as SetEntry);
+            };
             _list.ColumnsReordered += OnColumnsReordered;
             _list.RowPinClicked += delegate (int idx)
             {
                 if (idx >= 0 && idx < _list.Rows.Count) TogglePinAndRefresh(_list.Rows[idx].Tag as SetEntry);
             };
             _list.PinnedFirst = _settings.PinnedFirst;
-            _list.PinnedFirstToggled += delegate
-            {
-                _settings.PinnedFirst = _list.PinnedFirst;
-                _settings.Save();
-                Refill();
-            };
+            _list.PinnedFirstToggled += delegate { PinnedFirstChanged(_list.PinnedFirst); };
             Controls.Add(_list);
 
             _detail.Index = _index;
@@ -765,6 +839,14 @@ namespace AbletonManager
             _detail.NotesRequested += EditNotes;
             Controls.Add(_detail);
 
+            _home.Overview.Open = _settings.OverviewOpen;
+            _home.OverviewStateChanged += delegate
+            {
+                _settings.OverviewOpen = _home.Overview.Open;
+                _settings.Save();
+            };
+            _home.PinnedFirst = _settings.PinnedFirst;
+            _home.PinnedFirstToggled += delegate { PinnedFirstChanged(_home.PinnedFirst); };
             _home.Index = _index;
             _home.SetFilter = _filter;
             _home.GroupByFolder = _settings.GroupByFolder;
@@ -775,6 +857,7 @@ namespace AbletonManager
             _home.RevealRequested += RevealSet;
             _home.DetailsRequested += OnSetRequested;   // «Show details» — уйти к сету в Sets
             _home.RescueRequested += RescueSet;
+            _home.NotesRequested += EditNotes;
             _home.SelectionChanged += delegate { OnSelectionChanged(); };
             _home.NewProjectRequested += delegate { NewProject(); };
 
@@ -804,8 +887,7 @@ namespace AbletonManager
 
         void ApplyTexts()
         {
-            _mode.SetItems("Sets", "Plugins");
-            _viewToggle.SetGlyphs(Glyph.ViewTiles, Glyph.ViewList);
+            _mode.SetItems("Home", "Sets", "Plugins");
             _filtersBtn.Text = "Filters";
             _filtersBtn.Count = _filter.ActiveCount;
             _newProject.Text = "New Live Set";
@@ -815,17 +897,38 @@ namespace AbletonManager
 
         void UpdateFiltersButton()
         {
-            if (_mode.SelectedIndex == ModeSets)
+            if (SetsDomain)
                 _filtersBtn.Count = _filter.ActiveCount;
             else
                 _filtersBtn.Count = _pluginFilterObj.ActiveCount;
+            // Со счётчиком пилюля шире — а за ней стоит вся правая половина панели.
+            if (_filtersBtn.Width != Math.Max(Sc(140), _filtersBtn.PreferredWidth)) LayoutAll();
             _filtersBtn.Invalidate();
+        }
+
+        /// <summary>Показанное сейчас — это выборка, а не весь каталог.</summary>
+        bool Filtering
+        {
+            get
+            {
+                if (_search.Box.Text.Trim().Length > 0) return true;
+                return SetsDomain ? !_filter.IsEmpty : !_pluginFilterObj.IsEmpty;
+            }
+        }
+
+        void ResetSearchAndFilters()
+        {
+            if (SetsDomain) _filter.Clear(); else _pluginFilterObj.Clear();
+            UpdateFiltersButton();
+            // Текст поля сам зовёт Refill через TextChanged — но только если он менялся.
+            if (_search.Box.Text.Length > 0) _search.Box.Text = "";
+            else Refill(false);
         }
 
         void SetSearchCue()
         {
             string cue;
-            if (_mode.SelectedIndex == ModePlugins)
+            if (!SetsDomain)
                 cue = "Search in plugins…";
             else
                 cue = "Search in sets…";
@@ -864,30 +967,33 @@ namespace AbletonManager
 
             _folders.SetBounds(panelX + step, y, icon, icon);
             _settingsBtn.SetBounds(panelX + step * 2, y, icon, icon);
+            _helpBtn.SetBounds(panelX + step * 3, y, icon, icon);
 
             _mode.Height = h;
             _mode.Location = new Point(left, y);
-            bool setsMode = _mode.SelectedIndex == ModeSets;
-            bool isTiles = setsMode && _viewToggle.SelectedIndex == ViewTiles;
-            bool isList = setsMode && _viewToggle.SelectedIndex == ViewList;
+            bool setsMode = SetsDomain;
 
             // Кнопку «New Live Set» из футера убрали: нижняя полоса теперь только плеер.
             // Создать сет по-прежнему можно первой плиткой в Recent.
             _newProject.Visible = false;
 
-            _viewToggle.Height = h;
-            _viewToggle.Location = new Point(_mode.Right + Sc(16), y);
-            _dice.SetBounds(_viewToggle.Right + Sc(16), y, icon, icon);
-
-            _viewToggle.Visible = setsMode;
+            _dice.SetBounds(_mode.Right + Sc(16), y, icon, icon);
             _dice.Visible = setsMode;
 
-            _filtersBtn.SetBounds(_dice.Right + Sc(16), y, Sc(140), h);
+            _filtersBtn.SetBounds(_dice.Right + Sc(16), y,
+                                  Math.Max(Sc(140), _filtersBtn.PreferredWidth), h);
             _filtersBtn.Visible = true;
             int searchX = _filtersBtn.Right + Sc(15);
-            _search.SetBounds(searchX, y, Sc(315), h);
-            _rCount = new Rectangle(_search.Right + Sc(16), y,
-                                    Math.Max(0, panelX - Sc(16) - _search.Right - Sc(16)), h);
+            // Поиск не залезает на кнопки панели даже когда окно уже минимума (экран
+            // маленький и минимум упёрся в его ширину) — тогда он просто ужимается.
+            int searchW = Math.Max(Sc(120), Math.Min(Sc(315), panelX - Sc(10) - searchX));
+            _search.SetBounds(searchX, y, searchW, h);
+            // Полоса счётчика забирает весь просвет между поиском и кнопками панели:
+            // «368 / 599 shown» со кнопкой сброса в прежние поля по 16 не влезало и
+            // уходило в многоточие уже на обычном размере окна.
+            _rCount = new Rectangle(_search.Right + Sc(12), y,
+                                    Math.Max(0, panelX - Sc(10) - _search.Right - Sc(12)), h);
+            LayoutReset();
 
             // Содержимое
             int top = Sc(Theme.ContentY);
@@ -903,7 +1009,7 @@ namespace AbletonManager
             // забирает её высоту себе, а не оставляет пустой прогал во всю ширину.
             bool playerOpen = _player != null && !_player.IsDisposed;
             bool showTransport = playerOpen;
-            bool scanLine = _mode.SelectedIndex == ModeSets && _status.Length > 0;
+            bool scanLine = SetsDomain && _status.Length > 0;
             int listBottom = showTransport || scanLine ? footerControlY - Sc(10) : footerBottom;
 
             _newProject.SetBounds(panelX - listGap - _newProject.Width, footerControlY, _newProject.Width, controlH);
@@ -911,7 +1017,6 @@ namespace AbletonManager
             int statusY = footerControlY + (controlH - statusH) / 2;
             _rStatus = new Rectangle(left + Sc(2), statusY, Sc(700), statusH);
 
-            bool plugins = _mode.SelectedIndex == ModePlugins;
             int listTop = top;
 
             // Мини-транспорт — везде, где есть что играть, включая вкладку плагинов:
@@ -1004,15 +1109,15 @@ namespace AbletonManager
 
             _summary.Visible = false;
 
-            _home.Visible = isTiles;
-            _list.Visible = isList || plugins;
-            _detail.Visible = isList || plugins;
+            _home.Visible = Tiles;
+            _list.Visible = !Tiles;
+            _detail.Visible = !Tiles;
 
-            if (isTiles)
+            if (Tiles)
                 _home.SetBounds(left, top, Math.Max(Sc(200), right - left),
                                 Math.Max(Sc(80), listBottom - top));
 
-            if (isList || plugins)
+            if (!Tiles)
             {
                 _list.PillRightGap = listGap;
                 _list.SetBounds(left, listTop, Math.Max(Sc(200), panelX - left),
@@ -1266,17 +1371,15 @@ namespace AbletonManager
         /// </summary>
         void ShowSettings()
         {
-            bool rescan, help;
+            bool rescan;
             using (SettingsDialog d = new SettingsDialog(_settings))
             {
                 d.ShowDialog(this);
                 rescan = d.RescanWanted;
-                help = d.ShortcutsWanted;
             }
 
             _settings.Save();
             if (rescan) StartScan(true);
-            if (help) ShowHelp();
         }
 
         // ----------------------------------------------------------------- справка
@@ -1296,14 +1399,13 @@ namespace AbletonManager
         }
 
         /// <summary>
-        /// Tab как хоткей переключения вкладок — специально ProcessCmdKey, а не
-        /// OnKeyDown. Замерено: OnKeyDown для Tab не срабатывает вовсе, даже с
-        /// KeyPreview — Control.PreProcessMessage сперва спрашивает IsInputKey у
-        /// того, что сейчас в фокусе, и раз обычные кнопки на Tab отвечают «нет, это
-        /// не моя клавиша», клавиша тут же уходит в фокус-навигацию (ProcessDialogKey)
-        /// и молча переставляет фокус на соседний control — до OnKeyDown она просто
-        /// не доходит. ProcessCmdKey — единственная точка, которая получает клавишу
-        /// РАНЬШЕ фокус-навигации, независимо от того, что сейчас выделено.
+        /// Стрелки и Ctrl+1/2/3 — специально ProcessCmdKey, а не OnKeyDown. Замерено:
+        /// до OnKeyDown они не доходят — Control.PreProcessMessage сперва спрашивает
+        /// IsInputKey у того, что сейчас в фокусе, и раз обычные кнопки отвечают «нет,
+        /// это не моя клавиша», клавиша уходит в фокус-навигацию (ProcessDialogKey) и
+        /// молча переставляет фокус на соседний control. ProcessCmdKey — единственная
+        /// точка, которая получает клавишу РАНЬШЕ фокус-навигации, независимо от того,
+        /// что сейчас выделено.
         /// </summary>
         protected override bool ProcessCmdKey(ref Message msg, Keys keyData)
         {
@@ -1318,14 +1420,6 @@ namespace AbletonManager
                 if ((keyData & Keys.Alt) == 0) return true;   // Alt+F4 и прочее системное — мимо нас
             }
 
-            if ((keyData & Keys.KeyCode) == Keys.Tab && !_search.Box.Focused)
-            {
-                if (_mode.SelectedIndex == ModeSets)
-                {
-                    _viewToggle.SelectedIndex = _viewToggle.SelectedIndex == ViewTiles ? ViewList : ViewTiles;
-                    return true;
-                }
-            }
             // Стрелки ведут по каталогу независимо от того, где сейчас фокус. Через
             // ProcessCmdKey, а не OnKeyDown: иначе их сперва разбирает навигация по
             // фокусу и выделение уезжает в соседний контрол, а не по сетам.
@@ -1339,10 +1433,15 @@ namespace AbletonManager
 
             if (keyData == (Keys.Control | Keys.D1) || keyData == (Keys.Control | Keys.NumPad1))
             {
-                _mode.SelectedIndex = ModeSets;
+                _mode.SelectedIndex = ModeHome;
                 return true;
             }
             if (keyData == (Keys.Control | Keys.D2) || keyData == (Keys.Control | Keys.NumPad2))
+            {
+                _mode.SelectedIndex = ModeSets;
+                return true;
+            }
+            if (keyData == (Keys.Control | Keys.D3) || keyData == (Keys.Control | Keys.NumPad3))
             {
                 _mode.SelectedIndex = ModePlugins;
                 return true;
@@ -1372,7 +1471,7 @@ namespace AbletonManager
             }
             else if (e.KeyCode == Keys.F && !e.Control && !e.Alt && !e.Shift && !typing)
             {
-                if (_mode.SelectedIndex == ModeSets) EditFilters();
+                if (SetsDomain) EditFilters();
                 else EditPluginFilters();
                 e.Handled = e.SuppressKeyPress = true;
             }
@@ -1385,13 +1484,13 @@ namespace AbletonManager
                 e.Handled = e.SuppressKeyPress = true;
             }
             else if (e.Control && e.KeyCode == Keys.N) { NewProject(); e.Handled = true; }
-            else if (e.Control && e.KeyCode == Keys.T && !typing && _mode.SelectedIndex == ModeSets)
+            else if (e.Control && e.KeyCode == Keys.T && !typing && SetsDomain)
             {
                 EditNotes(SelectedSet());
                 e.Handled = e.SuppressKeyPress = true;
             }
 
-            else if (e.Control && e.KeyCode == Keys.R && !typing && _mode.SelectedIndex == ModeSets)
+            else if (e.Control && e.KeyCode == Keys.R && !typing && SetsDomain)
             {
                 RescueSet(SelectedSet());
                 e.Handled = e.SuppressKeyPress = true;
@@ -1414,15 +1513,20 @@ namespace AbletonManager
             // Ctrl+Пробел — аранжировка выбранного сета во весь экран. Проверяется до
             // голого пробела: тот на модификаторы не смотрит и иначе перехватил бы
             // сочетание себе, запустив прослушку вместо превью.
-            else if (e.Control && e.KeyCode == Keys.Space && !typing && _mode.SelectedIndex == ModeSets)
+            else if (e.Control && e.KeyCode == Keys.Space && !typing && SetsDomain)
             {
                 OpenPreview();
                 e.Handled = e.SuppressKeyPress = true;
             }
-            else if (e.KeyCode == Keys.Space && !typing && _mode.SelectedIndex == ModeSets)
+            else if (e.KeyCode == Keys.Space && !typing && SetsDomain)
             {
                 // В поле поиска пробел остаётся пробелом — иначе искать станет нечем.
                 TogglePlaySelected();
+                e.Handled = e.SuppressKeyPress = true;
+            }
+            else if (e.KeyCode == Keys.Q && !e.Control && !e.Alt && !e.Shift && !typing && SetsDomain)
+            {
+                TogglePinAndRefresh(SelectedSet());
                 e.Handled = e.SuppressKeyPress = true;
             }
             else if (e.KeyCode == Keys.Enter && (_list.Selected != null || SelectedSet() != null))
@@ -1445,8 +1549,16 @@ namespace AbletonManager
             Chrome.PaintBase(this, g, ClientRectangle, Theme.Backdrop);
             Theme.Smooth(g);
 
-            Chrome.DrawText(g, CountText(), Theme.FButton, _rCount, Theme.TextDim,
-                TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix);
+            // Счётчик кончается там, где начинается кнопка сброса. В обычном случае
+            // она стоит сразу за текстом и ничего не режет; на узком окне её упирают
+            // в правый край полосы (см. LayoutReset) — и тогда обрезается уже текст,
+            // а не наоборот.
+            Rectangle count = _rCount;
+            if (_resetBtn.Visible)
+                count.Width = Math.Max(0, Math.Min(count.Width, _resetBtn.Left - count.X));
+            Chrome.DrawText(g, CountLabel(CountRoom()), Theme.FButton, count, Theme.TextDim,
+                TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.SingleLine |
+                TextFormatFlags.NoPrefix | TextFormatFlags.EndEllipsis);
 
             // Над окном держат папку — обводим его, чтобы было видно, что бросать
             // можно сюда. Обычным светлым, не акцентом — тот же принцип, что и у
@@ -1480,7 +1592,7 @@ namespace AbletonManager
                 if (!string.IsNullOrEmpty(trackName) && !_rPlayerTrack.IsEmpty)
                     Chrome.DrawText(g, trackName, Theme.FTitle, _rPlayerTrack, Theme.Text, tfC);
             }
-            else if (_mode.SelectedIndex == ModeSets)
+            else if (SetsDomain)
             {
                 Chrome.DrawText(g, StatusText(), Theme.FLabel, _rStatus, Theme.TextDim, Chrome.Left);
             }
@@ -1509,6 +1621,44 @@ namespace AbletonManager
             }
         }
 
+        /// <summary>Кнопка сброса встаёт вплотную за счётчиком, поэтому её место зависит
+        /// от ширины уже готового текста — считаем отдельно от общей раскладки и заново
+        /// после каждой пересборки, когда число могло измениться.</summary>
+        void LayoutReset()
+        {
+            bool on = Filtering && !_scanning;
+            _resetBtn.Visible = on;
+            if (!on) return;
+
+            int icon = Sc(Theme.IconSize);
+            int w = TextRenderer.MeasureText(CountLabel(CountRoom()), Theme.FButton).Width;
+            // Полоса под счётчик кончается там, где начинаются кнопки панели: без
+            // упора кнопка сброса на узком окне уезжала прямо на них.
+            int x = Math.Min(_rCount.X + w + Sc(6), Math.Max(_rCount.X, _rCount.Right - icon));
+            _resetBtn.SetBounds(x, _rCount.Y + (_rCount.Height - icon) / 2, icon, icon);
+        }
+
+        /// <summary>Сколько места остаётся счётчику: полоса минус кнопка сброса, если она есть.</summary>
+        int CountRoom()
+        {
+            bool on = Filtering && !_scanning;
+            return _rCount.Width - (on ? Sc(Theme.IconSize) + Sc(6) : 0);
+        }
+
+        /// <summary>
+        /// Подпись счётчика под отведённую ширину. Не влезла целиком — убираем слово
+        /// «shown»: обрезанное «368 / 5…» читается как совсем другое число, а короткое
+        /// «368 / 599» — как то же самое.
+        /// </summary>
+        string CountLabel(int room)
+        {
+            string t = CountText();
+            if (room > 0 && t.EndsWith(" shown")
+                && TextRenderer.MeasureText(t, Theme.FButton).Width > room)
+                t = t.Substring(0, t.Length - " shown".Length);
+            return t;
+        }
+
         string CountText()
         {
             if (_scanning)
@@ -1521,9 +1671,9 @@ namespace AbletonManager
             // VisibleCount, а не VisibleSets().Count: счётчик рисуется на каждой
             // перерисовке окна (при открытом плеере — двадцать раз в секунду), и строить
             // ради него список сетов незачем.
-            if (_mode.SelectedIndex == ModeSets && _viewToggle.SelectedIndex == ViewTiles)
-                return _home.VisibleCount + " shown";
-            return _list.Rows.Count + " shown";
+            int n = (Tiles)
+                  ? _home.VisibleCount : _list.Rows.Count;
+            return Filtering ? n + " / " + _total + " shown" : n + " shown";
         }
 
         string StatusText()
@@ -1556,7 +1706,7 @@ namespace AbletonManager
 
             if (keepPath != null)
             {
-                if (_viewToggle.SelectedIndex == ViewTiles && _mode.SelectedIndex == ModeSets)
+                if (Tiles)
                 {
                     foreach (SetEntry s in _home.VisibleSets())
                         if (string.Equals(s.Path, keepPath, StringComparison.OrdinalIgnoreCase))
@@ -1589,9 +1739,10 @@ namespace AbletonManager
         {
             SetSearchCue();
             LayoutAll();
-            if (_mode.SelectedIndex == ModeSets)
+            if (SetsDomain)
             {
-                if (_viewToggle.SelectedIndex == ViewTiles)
+                _total = _index.Sets.Count;
+                if (Tiles)
                 {
                     _home.Filter = _search.Box.Text;
                     _home.Rebuild(animate);
@@ -1605,6 +1756,7 @@ namespace AbletonManager
             {
                 FillPlugins(animate);
             }
+            LayoutReset();
             Invalidate();
         }
 
@@ -1812,7 +1964,7 @@ namespace AbletonManager
         /// <summary>Щёлкнули по «+3» — показать или снова спрятать версии этой папки.</summary>
         void OnRowCountClicked(int idx)
         {
-            if (_mode.SelectedIndex != ModeSets) return;
+            if (!SetsDomain) return;
             if (idx < 0 || idx >= _list.Rows.Count) return;
             SetEntry s = _list.Rows[idx].Tag as SetEntry;
             if (s == null) return;
@@ -1872,6 +2024,7 @@ namespace AbletonManager
             _list.SortDescending = _sortDesc;
 
             List<PluginStat> all = _index.PluginUsage();
+            _total = all.Count;
             _summary.Update(_index.Health(all));
 
             string q = _search.Box.Text.Trim();
@@ -1998,7 +2151,7 @@ namespace AbletonManager
             int scroll = _list.ScrollOffset;
             int scrollX = _list.ScrollOffsetX;
 
-            if (_mode.SelectedIndex == ModeSets)
+            if (SetsDomain)
             {
                 if (column < 0 || column >= _setVisible.Count) return;
                 string id = _setVisible[column].Id;
@@ -2044,7 +2197,7 @@ namespace AbletonManager
         /// </summary>
         void OnHeaderRightClick(Point pt)
         {
-            bool sets = _mode.SelectedIndex == ModeSets;
+            bool sets = SetsDomain;
 
             ContextMenuStrip menu = DarkMenu.Create();
             menu.ShowCheckMargin = true;   // видно, какие колонки уже включены — как в проводнике
@@ -2124,7 +2277,7 @@ namespace AbletonManager
 
         void ToggleColumn(string id)
         {
-            bool sets = _mode.SelectedIndex == ModeSets;
+            bool sets = SetsDomain;
             List<string> order = sets ? _setOrder : _pluginOrder;
             if (id == (sets ? "Set" : "Plugin")) return;
 
@@ -2134,9 +2287,16 @@ namespace AbletonManager
                     if (string.Equals(order[i], id, StringComparison.OrdinalIgnoreCase))
                     { order.RemoveAt(i); break; }
             }
-            // Включённая колонка встаёт в конец, а не на своё «каноническое» место:
-            // порядок теперь пользовательский, и вклиниваться в него самим неправильно.
-            else order.Add(id);
+            // Включённая колонка встаёт на своё место в каталоге, а не в конец: иначе
+            // таблица читается совсем не в том порядке, что меню, из которого её только
+            // что собрали. Перетащить заголовок потом по-прежнему можно.
+            else
+            {
+                int pos = CatalogPos(sets, id), at = order.Count;
+                for (int i = 0; i < order.Count; i++)
+                    if (CatalogPos(sets, order[i]) > pos) { at = i; break; }
+                order.Insert(at, id);
+            }
 
             // Сортировка могла стоять по спрятанной колонке — вернёмся к порядку по умолчанию.
             if (sets) { if (_setSortId != null && !HasCol(order, _setSortId)) _setSortId = null; }
@@ -2154,7 +2314,7 @@ namespace AbletonManager
 
         void ResetColumns()
         {
-            bool sets = _mode.SelectedIndex == ModeSets;
+            bool sets = SetsDomain;
             List<string> order = sets ? _setOrder : _pluginOrder;
             Dictionary<string, int> widths = sets ? _setColW : _pluginColW;
 
@@ -2169,7 +2329,7 @@ namespace AbletonManager
 
         void OnColumnsResized()
         {
-            Dictionary<string, int> widths = _mode.SelectedIndex == ModeSets ? _setColW : _pluginColW;
+            Dictionary<string, int> widths = SetsDomain ? _setColW : _pluginColW;
             foreach (Column c in _list.ColumnList)
                 if (c.Width > 0 && !string.IsNullOrEmpty(c.Id)) widths[c.Id] = c.Width;
             SaveColumns();
@@ -2181,7 +2341,7 @@ namespace AbletonManager
         /// </summary>
         void OnColumnsReordered(int from, int to)
         {
-            List<string> order = _mode.SelectedIndex == ModeSets ? _setOrder : _pluginOrder;
+            List<string> order = SetsDomain ? _setOrder : _pluginOrder;
             if (from < 0 || from >= order.Count || to < 0 || to > order.Count || from == to) return;
 
             string moved = order[from];
@@ -2229,7 +2389,7 @@ namespace AbletonManager
 
         void OnSelectionChanged()
         {
-            if (_mode.SelectedIndex == ModePlugins)
+            if (!SetsDomain)
             {
                 RowData sel = _list.Selected;
                 _detail.ShowPlugin(sel == null ? null : sel.Tag as PluginStat);
@@ -2240,7 +2400,7 @@ namespace AbletonManager
             _detail.Show(s);
             if (s != null) _lastSetPath = s.Path;
 
-            if (_viewToggle.SelectedIndex == ViewTiles)
+            if (Tiles)
             {
                 RowData cur = _list.Selected;
                 if (s != null && (cur == null || !ReferenceEquals(cur.Tag, s)))
@@ -2264,7 +2424,7 @@ namespace AbletonManager
             // По плагину активировать нечего: раньше двойной клик утаскивал на вкладку
             // Sets с фильтром по этому плагину — неожиданный прыжок вместо действия над
             // тем, по чему ткнули. Сеты плагина и так перечислены в панели сведений.
-            if (_mode.SelectedIndex == ModePlugins) return;
+            if (!SetsDomain) return;
             OpenSelected();
         }
 
@@ -2275,11 +2435,6 @@ namespace AbletonManager
             if (set == null) return;
             _search.Box.Text = "";
             _mode.SelectedIndex = ModeSets;
-            if (_viewToggle.SelectedIndex != ViewList)
-            {
-                _viewToggle.SelectedIndex = ViewList;
-                Refill();
-            }
             _list.SelectRow(delegate (RowData r) { return ReferenceEquals(r.Tag, set); });
 
             // Версия, спрятанная под схлопнутой строкой, своей строки в списке не имеет —
@@ -2326,14 +2481,10 @@ namespace AbletonManager
                 UpdateFiltersButton();
             }
 
-            bool modeChanged = _mode.SelectedIndex != ModeSets;
-            bool viewChanged = _viewToggle.SelectedIndex != ViewList;
-
+            // Смена вкладки сама перестроит список; если уже на ней — перестроим тут.
+            bool tabChanged = !TableView;
             _mode.SelectedIndex = ModeSets;
-            _viewToggle.SelectedIndex = ViewList;
-
-            if (modeChanged || viewChanged)
-                Refill();
+            if (!tabChanged) Refill();
 
             SetEntry matched = null;
             _list.SelectRow(delegate (RowData r)
@@ -2379,7 +2530,7 @@ namespace AbletonManager
 
         SetEntry SelectedSet()
         {
-            if (_mode.SelectedIndex == ModeSets && _viewToggle.SelectedIndex == ViewTiles)
+            if (Tiles)
                 return _home.Selected;
             RowData sel = _list.Selected;
             return sel == null ? null : sel.Tag as SetEntry;
@@ -2391,12 +2542,28 @@ namespace AbletonManager
         /// пути тот же сет и выделяем его заново. Тихо ничего не делает, если сета с
         /// таким путём сейчас не видно — например, его исключил фильтр.
         /// </summary>
+        /// <summary>
+        /// Звёздочку переключили — на плитках или в шапке таблицы, неважно. Настройка
+        /// одна на оба вида, и второй вид обязан узнать об этом сразу, а не при
+        /// следующем заходе.
+        /// </summary>
+        void PinnedFirstChanged(bool on)
+        {
+            _settings.PinnedFirst = on;
+            _settings.Save();
+            _list.PinnedFirst = on;
+            _home.PinnedFirst = on;
+            // Плитки не пересобираем заново, а переставляем: закреплённые уезжают
+            // наверх на глазах, и видно, что именно поменялось.
+            if (Tiles) _home.RebuildTransition(); else Refill();
+        }
+
         void RestoreLastSetSelection()
         {
             if (_lastSetPath == null) return;
             string path = _lastSetPath;
 
-            if (_viewToggle.SelectedIndex == ViewTiles)
+            if (Tiles)
             {
                 foreach (SetEntry s in _home.VisibleSets())
                     if (string.Equals(s.Path, path, StringComparison.OrdinalIgnoreCase))
@@ -2417,9 +2584,22 @@ namespace AbletonManager
         /// набора, что сейчас на экране (с учётом фильтров и поиска), и не трогает
         /// сам вид: плитки остаются плитками, список — списком.
         /// </summary>
+        /// <summary>
+        /// Кубик показывает новую грань на каждый бросок. Повтор выбрасываем: одна и та
+        /// же грань дважды подряд читается как «кнопка не сработала», а не как честный
+        /// случай — за проворотом значка должна быть видна перемена.
+        /// </summary>
+        void RollDiceFace()
+        {
+            int cur = _dice.Icon - Glyph.Dice1;
+            int next = _rng.Next(5);
+            if (next >= cur) next++;          // 0..5 без текущей грани
+            _dice.Icon = Glyph.Dice1 + next;
+        }
+
         void RollRandomSet()
         {
-            bool tiles = _viewToggle.SelectedIndex == ViewTiles;
+            bool tiles = Tiles;
             SetEntry pick;
             if (tiles)
             {
@@ -2530,16 +2710,21 @@ namespace AbletonManager
                 if (d.Produced.Length > 0)
                 {
                     Notify(d.Failed > 0
-                        ? string.Format("Collected to {0} — {1} file(s) could not be copied, see the log",
+                        ? string.Format("Exported to {0} — {1} file(s) could not be copied, see the log",
                                         Path.GetFileName(d.Produced), d.Failed)
-                        : "Collected to " + Path.GetFileName(d.Produced));
+                        : "Exported to " + Path.GetFileName(d.Produced));
 
                     // Не открывать проводник на наполовину собранной папке: тост про
                     // отказы уже отправил человека в журнал, а не смотреть на то, чего
                     // там не хватает.
                     if (d.Failed == 0)
                     {
-                        try { Process.Start("explorer.exe", "\"" + d.Produced + "\""); }
+                        // Архив показываем выделенным в его папке: открывать .zip как
+                        // папку — значит прятать то, что человек только что собрал.
+                        string arg = File.Exists(d.Produced)
+                            ? "/select,\"" + d.Produced + "\""
+                            : "\"" + d.Produced + "\"";
+                        try { Process.Start("explorer.exe", arg); }
                         catch (Exception ex) { Diag.Line("collect: explorer: " + ex.Message); }
                     }
                 }
@@ -2548,7 +2733,7 @@ namespace AbletonManager
 
         void RevealSelected()
         {
-            if (_mode.SelectedIndex == ModePlugins)
+            if (!SetsDomain)
             {
                 PluginStat st = SelectedPlugin();
                 if (st == null || st.Installed == null || st.Installed.Path.Length == 0) return;
@@ -2609,7 +2794,7 @@ namespace AbletonManager
         /// <summary>Стрелка — на соседний сет. Список и плитки ходят по-разному.</summary>
         bool MoveSelection(Keys k)
         {
-            if (_mode.SelectedIndex == ModeSets && _viewToggle.SelectedIndex == ViewTiles)
+            if (Tiles)
             {
                 switch (k)
                 {
@@ -2634,8 +2819,8 @@ namespace AbletonManager
         /// <summary>Клавиша вызова меню — то же меню, что по правой кнопке мыши.</summary>
         void ShowMenuForSelection()
         {
-            if (_mode.SelectedIndex != ModeSets) return;
-            if (_viewToggle.SelectedIndex == ViewTiles) { _home.ShowMenuForSelected(); return; }
+            if (!SetsDomain) return;
+            if (Tiles) { _home.ShowMenuForSelected(); return; }
 
             int idx = _list.SelectedIndex;
             if (idx >= 0) OnListRowRightClick(idx, _list.RowMenuPoint(idx));
@@ -2663,7 +2848,7 @@ namespace AbletonManager
                 return;
             }
 
-            if (_viewToggle.SelectedIndex == ViewTiles) { OpenPlayer(s); return; }
+            if (Tiles) { OpenPlayer(s); return; }
             int idx = _list.SelectedIndex;
             if (idx >= 0) OnRowPlay(idx);
         }
@@ -2701,7 +2886,7 @@ namespace AbletonManager
                 case MediaKeys.Cmd.Play:
                 case MediaKeys.Cmd.PlayPause:
                     if (player) _player.PlayPause();
-                    else if (_mode.SelectedIndex == ModeSets) TogglePlaySelected();
+                    else if (SetsDomain) TogglePlaySelected();
                     else return false;
                     break;
 
@@ -2729,7 +2914,7 @@ namespace AbletonManager
                 // Refill пересобирает список с нуля (SetRows всегда сбрасывает выделение —
                 // так и панель справа, и подсветка строки гаснут посреди правки её же
                 // тегов). Объект сета не меняется, поэтому просто выделяем его снова.
-                if (_viewToggle.SelectedIndex == ViewTiles) _home.Selected = s;
+                if (Tiles) _home.Selected = s;
                 else
                 {
                     _list.SelectRow(delegate (RowData r) { return ReferenceEquals(r.Tag, s); });
@@ -2759,7 +2944,7 @@ namespace AbletonManager
         /// </summary>
         void OnRowPlay(int idx)
         {
-            if (_mode.SelectedIndex != ModeSets) return;
+            if (!SetsDomain) return;
             if (idx < 0 || idx >= _list.Rows.Count) return;
             SetEntry s = _list.Rows[idx].Tag as SetEntry;
             if (s == null) return;
@@ -2794,7 +2979,7 @@ namespace AbletonManager
         /// чтобы закреплять проекты можно было не выходя из основного каталога.</summary>
         void OnListRowRightClick(int idx, Point at)
         {
-            if (_mode.SelectedIndex != ModeSets) return;
+            if (!SetsDomain) return;
             if (idx < 0 || idx >= _list.Rows.Count) return;
             SetEntry s = _list.Rows[idx].Tag as SetEntry;
             if (s == null) return;
@@ -2817,6 +3002,7 @@ namespace AbletonManager
             ToolStripMenuItem pin = new ToolStripMenuItem(
                 HomeStore.IsPinned(s.Path) ? "Unpin" : "Pin project");
             pin.Checked = HomeStore.IsPinned(s.Path);
+            pin.ShortcutKeyDisplayString = "Q";
             pin.Click += delegate { TogglePinAndRefresh(s); };
             m.Items.Add(pin);
 
@@ -2995,13 +3181,13 @@ namespace AbletonManager
         void NavigateToSet(SetEntry target)
         {
             if (target == null) return;
-            if (_mode.SelectedIndex != ModeSets)
+            if (!SetsDomain)
             {
                 _mode.SelectedIndex = ModeSets;
             }
             _lastSetPath = target.Path;
 
-            if (_viewToggle.SelectedIndex == ViewTiles)
+            if (Tiles)
             {
                 bool found = false;
                 foreach (SetEntry s in _home.VisibleSets())

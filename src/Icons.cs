@@ -16,8 +16,10 @@ namespace AbletonManager
         Volume = VolumeHigh, Mute = Volume0,
         Volume1_50 = VolumeLow, Volume51_100 = VolumeHigh,
         Star, StarFill, Plus,
-        NextSet, PrevSet, NextTrack, PrevTrack, OpenPlaylist, ViewTiles, ViewList,
-        Note, Tag, Dice, Nebula, HiddenBtnsOpen, HiddenBtnsClose
+        NextSet, PrevSet, NextTrack, PrevTrack, OpenPlaylist, ViewList,
+        Note, Tag, Nebula, Keyboard, Calendar, HiddenBtnsOpen, HiddenBtnsClose,
+        // Грани кубика идут подряд: MainForm берёт случайную как Dice1 + n.
+        Dice1, Dice2, Dice3, Dice4, Dice5, Dice6, Dice = Dice1
     }
 
     public static class Icons
@@ -92,25 +94,29 @@ namespace AbletonManager
                     break;
 
                 case Glyph.Minimize:
-                    DrawSvg(g, p, null, r, 16, 16, () => {
-                        g.DrawLine(p, 1f, 8f, 15f, 8f);
+                    DrawSvg(g, p, null, r, 15, 2, () => {
+                        g.DrawLine(p, 1f, 1f, 14f, 1f);
                     });
                     break;
 
                 case Glyph.Maximize:
-                    DrawSvg(g, p, null, r, 16, 16, () => {
-                        g.DrawPath(p, GetSvgPath("M5.82887 13.8333H1V9.25M9.69197 1H14.5208V5.58333"));
+                    DrawSvg(g, p, null, r, 14, 14, () => {
+                        g.DrawPath(p, GetSvgPath("M6 13H1V8M8 1H13V6"));
                     });
                     break;
 
                 case Glyph.CloseFullscreen:
-                    DrawSvg(g, p, null, r, 18, 17, () => {
-                        g.DrawPath(p, GetSvgPath("M5.82887 15.8333V11.25H1M11.692 1V5.58333H16.5208"));
-                    });
+                    // Тот же холст 17x17, что и в файле, но с поправкой масштаба: сам
+                    // Maximize нарисован на 14x14, и оба экспортированы по краям своей
+                    // фигуры, а не в общий холст. Без contentScale эта иконка — второе
+                    // состояние той же кнопки — выходила заметно тоньше первой.
+                    DrawSvg(g, p, null, r, 17, 17, () => {
+                        g.DrawPath(p, GetSvgPath("M6 16V11H1M11 1V6H16"));
+                    }, false, 17f / 14f);
                     break;
 
                 case Glyph.Close:
-                    DrawSvg(g, p, null, r, 16, 16, () => {
+                    DrawSvg(g, p, null, r, 15, 15, () => {
                         g.DrawPath(p, GetSvgPath("M14 1L7.50919 7.49999L14 14L7.5 7.50919L1.00001 14L7.49081 7.49999L1.00001 1L7.5 7.4908L14 1Z"));
                     });
                     break;
@@ -134,22 +140,13 @@ namespace AbletonManager
                     break;
                 }
 
-                // Ярлык-бирка: пятиугольник остриём влево и дырка под шнурок. Пропорции
-                // подобраны под мелкий размер (15 px в панели сведений): у более острого
-                // угла и крупной дырки на нём вместо бирки читалась стрелка.
+                // Ярлык-бирка остриём вправо, с дыркой под шнурок — рисунок из src/icons/tag.svg.
                 case Glyph.Tag:
-                {
-                    float top = y + h * 0.20f, bot = r.Bottom - h * 0.20f;
-                    g.DrawLines(p, new PointF[] {
-                        new PointF(x + w * 0.06f, cy),
-                        new PointF(x + w * 0.30f, top),
-                        new PointF(r.Right - w * 0.08f, top),
-                        new PointF(r.Right - w * 0.08f, bot),
-                        new PointF(x + w * 0.30f, bot),
-                        new PointF(x + w * 0.06f, cy) });
-                    g.DrawEllipse(p, x + w * 0.30f, cy - h * 0.05f, w * 0.10f, h * 0.10f);
+                    DrawSvg(g, p, b, r, 14, 10, () => {
+                        g.DrawPath(p, GetSvgPath("M1 3C1 1.89543 1.89543 1 3 1H9C9.62951 1 10.2223 1.29639 10.6 1.8L12.1 3.8C12.6333 4.51111 12.6333 5.48889 12.1 6.2L10.6 8.2C10.2223 8.70361 9.62951 9 9 9H3C1.89543 9 1 8.10457 1 7V3Z"));
+                        g.FillEllipse(b, 7f, 4f, 2f, 2f);
+                    });
                     break;
-                }
 
                 case Glyph.Filters:
                     DrawSvg(g, p, null, r, 20, 13, () => {
@@ -173,17 +170,13 @@ namespace AbletonManager
                         new PointF(cx + w * 0.26f, cy - h * 0.12f) });
                     break;
 
+                // Бургер: три линии симметричны по высоте, поэтому одно и то же рисуем
+                // и для открытого, и для закрытого попапа — переворачивать нечего.
                 case Glyph.HiddenBtnsOpen:
-                    DrawSvg(g, p, null, r, 15, 8, () => {
-                        g.DrawLine(p, 1f, 7.00002f, 7f, 1.00002f);
-                        g.DrawLine(p, 7f, 1.00002f, 14f, 7.00002f);
-                    });
-                    break;
-
                 case Glyph.HiddenBtnsClose:
                     DrawSvg(g, p, null, r, 15, 12, () => {
-                        g.DrawLine(p, 1f, 1.00002f, 8f, 7.00002f);
-                        g.DrawLine(p, 8f, 7.00002f, 14f, 1.00001f);
+                        g.DrawLine(p, 1f, 1f, 14f, 1f);
+                        g.DrawLine(p, 1f, 6f, 14f, 6f);
                         g.DrawLine(p, 1f, 11f, 14f, 11f);
                     });
                     break;
@@ -265,15 +258,6 @@ namespace AbletonManager
                     });
                     break;
 
-                case Glyph.ViewTiles:
-                    DrawSvg(g, p, null, r, 20, 20, () => {
-                        DrawRoundRect(g, p, 1f, 1f, 7.33333f, 7.33333f, 3.66667f);
-                        DrawRoundRect(g, p, 11.6667f, 1f, 7.33333f, 7.33333f, 3.66667f);
-                        DrawRoundRect(g, p, 11.6667f, 11.6667f, 7.33333f, 7.33333f, 3.66667f);
-                        DrawRoundRect(g, p, 1f, 11.6667f, 7.33333f, 7.33333f, 3.66667f);
-                    });
-                    break;
-
                 case Glyph.ViewList:
                     DrawSvg(g, p, null, r, 20, 20, () => {
                         DrawRoundRect(g, p, 1f, 1f, 18f, 3.33333f, 1.66667f);
@@ -282,16 +266,33 @@ namespace AbletonManager
                     });
                     break;
 
-                // New Icons/Dice.svg: гранёный квадрат и пять точек — «кинуть кость»
+                // src/icons/New Icons/Dice.svg: гранёный квадрат и пять точек — «кинуть кость»
                 // для случайного выбора сета.
-                case Glyph.Dice:
-                    DrawSvg(g, p, b, r, 20, 20, () => {
-                        DrawRoundRect(g, p, 1f, 1f, 18f, 18f, 5f);
-                        FillDot(g, b, 5.5f, 5.5f, 1.5f);
-                        FillDot(g, b, 14.5f, 5.5f, 1.5f);
-                        FillDot(g, b, 10f, 10f, 1.5f);
-                        FillDot(g, b, 5.5f, 14.5f, 1.5f);
-                        FillDot(g, b, 14.5f, 14.5f, 1.5f);
+                case Glyph.Dice1:
+                case Glyph.Dice2:
+                case Glyph.Dice3:
+                case Glyph.Dice4:
+                case Glyph.Dice5:
+                case Glyph.Dice6:
+                    DrawSvg(g, p, b, r, 17, 17, () => {
+                        DrawRoundRect(g, p, 1f, 1f, 15f, 15f, 2f);
+                        foreach (PointF d in DiceDots(glyph - Glyph.Dice1 + 1))
+                            FillDot(g, b, d.X, d.Y, 1.25f);
+                    });
+                    break;
+
+                case Glyph.Keyboard:
+                    DrawSvg(g, p, null, r, 22, 14, () => {
+                        g.DrawPath(p, GetSvgPath("M17 10H18M8 10H14M5 10H4M4 7H18M4 4H18M1 9.8002V4.2002C1 3.08009 1 2.51962 1.21799 2.0918C1.40973 1.71547 1.71547 1.40974 2.0918 1.21799C2.51962 1 3.08009 1 4.2002 1H17.8002C18.9203 1 19.4796 1 19.9074 1.21799C20.2837 1.40974 20.5905 1.71547 20.7822 2.0918C21 2.5192 21 3.079 21 4.19691V9.80309C21 10.921 21 11.48 20.7822 11.9074C20.5905 12.2837 20.2837 12.5905 19.9074 12.7822C19.48 13 18.921 13 17.8031 13H4.19691C3.07899 13 2.5192 13 2.0918 12.7822C1.71547 12.5905 1.40973 12.2837 1.21799 11.9074C1 11.4796 1 10.9203 1 9.8002Z"));
+                    });
+                    break;
+
+                case Glyph.Calendar:
+                    DrawSvg(g, p, null, r, 18, 18, () => {
+                        DrawRoundRect(g, p, 1f, 3f, 16f, 14f, 2.5f);
+                        g.DrawLine(p, 1f, 7.5f, 17f, 7.5f);
+                        g.DrawLine(p, 5.5f, 1f, 5.5f, 4f);
+                        g.DrawLine(p, 12.5f, 1f, 12.5f, 4f);
                     });
                     break;
 
@@ -359,6 +360,23 @@ namespace AbletonManager
                 path.AddArc(x, y + h - rx * 2, rx * 2, rx * 2, 90, 90);
                 path.CloseFigure();
                 g.DrawPath(p, path);
+            }
+        }
+
+        /// <summary>Точки грани в системе координат кубика 17x17 — прямо из dice_N.svg.</summary>
+        static PointF[] DiceDots(int face)
+        {
+            const float a = 5.5f, m = 8.5f, z = 11.5f;
+            switch (face)
+            {
+                case 1: return new[] { new PointF(m, m) };
+                case 2: return new[] { new PointF(m, a), new PointF(m, z) };
+                case 3: return new[] { new PointF(a, a), new PointF(m, m), new PointF(z, z) };
+                case 4: return new[] { new PointF(a, a), new PointF(a, z), new PointF(z, a), new PointF(z, z) };
+                case 5: return new[] { new PointF(a, a), new PointF(a, z), new PointF(m, m),
+                                       new PointF(z, a), new PointF(z, z) };
+                default: return new[] { new PointF(a, a), new PointF(a, m), new PointF(a, z),
+                                        new PointF(z, a), new PointF(z, m), new PointF(z, z) };
             }
         }
 

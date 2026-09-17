@@ -64,7 +64,7 @@ namespace AbletonManager
 
         static readonly TextFormatFlags PillText =
             TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter |
-            TextFormatFlags.NoPrefix | TextFormatFlags.EndEllipsis;
+            TextFormatFlags.SingleLine | TextFormatFlags.NoPrefix | TextFormatFlags.EndEllipsis;
 
         /// <summary>Раскладывает чипы по ширине и возвращает высоту, которая для этого нужна.</summary>
         public int Relayout()
@@ -178,7 +178,7 @@ namespace AbletonManager
 
             if (Selected.Count == 0)
                 Chrome.DrawText(g, Placeholder, Font,
-                    new Rectangle(Sc(16), 0, Width - Sc(40), Sc(Theme.ControlH)), Theme.TextDim, Chrome.Left);
+                    new Rectangle(Sc(16), 0, Width - Sc(40), Height), Theme.TextDim, Chrome.Left);
 
             for (int i = 0; i < _chips.Count && i < Selected.Count; i++)
             {

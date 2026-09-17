@@ -13,14 +13,17 @@ using System.Windows.Forms;
 namespace AbletonManager
 {
     /// <summary>
-    /// Выгрузка окон программы в SVG — подложка под разметку подсказок.
+    /// Выгрузка окон программы — подложка под разметку подсказок (.png/.svg) и вектор
+    /// для презентаций (.emf).
     ///
     /// Рисует всё настоящий код приложения: окна создаются как в жизни, показываются и
     /// снимаются as is. Стекло выключается ДО первого обращения к Theme — иначе сквозь
     /// акрил в снимок попадут обои рабочего стола, а для подложки нужен ровный фон.
     ///
     /// В каждом svg два слоя: картинка окна и векторные рамки контролов с их именами из
-    /// кода — к ним и цеплять выноски.
+    /// кода — к ним и цеплять выноски. .emf снимается тем же приёмом, что и системная
+    /// печать окна: WM_PRINT прямо в HDC метафайла — рамки, текст и иконки остаются
+    /// настоящими контурами, а превью рендеров и прочие растровые куски входят как есть.
     /// </summary>
     static class SvgExport
     {
@@ -52,16 +55,16 @@ namespace AbletonManager
             WaitScan(f);
             Pump(600);
 
-            Shot(f, "01-sets-tiles", "Sets - tiles (default view)");
+            Shot(f, "01-home", "Home (overview + tiles)");
 
-            SetIndex(f, "_viewToggle", 1); Pump(700);
+            SetIndex(f, "_mode", 1); Pump(700);
             Shot(f, "02-sets-list", "Sets - list");
 
             // Выделим первый сет, чтобы панель справа была не пустой.
             SelectFirstRow(f); Pump(700);
             Shot(f, "03-sets-list-selected", "Sets - list with details panel");
 
-            SetIndex(f, "_mode", 1); Pump(900);
+            SetIndex(f, "_mode", 2); Pump(900);
             Shot(f, "04-plugins", "Plugins - default view");
 
             SelectFirstRow(f); Pump(700);
@@ -76,6 +79,8 @@ namespace AbletonManager
         static void Dialogs(MainForm f)
         {
             ProjectIndex index = (ProjectIndex)Field(f, "_index");
+            Settings settings = (Settings)Field(f, "_settings");
+            SetEntry sample = FirstOk(index.Sets);
 
             Try("06-filters", "Filters dialog", 1500, delegate
             {
@@ -94,7 +99,7 @@ namespace AbletonManager
             Try("08-folders", "Folders dialog", 2500, delegate
             {
                 // Подольше: число сетов в колонке досчитывается в фоне.
-                return new RootsDialog(new string[] { @"D:\Music" }, false, new string[0]);
+                return new RootsDialog(new string[] { @"D:\Music" }, new string[0]);
             });
 
             Try("09-preview", "Arrangement preview", 6000, delegate
@@ -111,6 +116,52 @@ namespace AbletonManager
                 if (best == null) return null;
                 return new PreviewDialog(best, loader);
             });
+
+            Try("10-settings", "Settings dialog", 800, delegate
+            {
+                return new SettingsDialog(settings);
+            });
+
+            Try("11-notes-tags", "Tags & Notes dialog", 800, delegate
+            {
+                if (sample == null) return null;
+                return new NotesDialog(sample);
+            });
+
+            Try("12-rescue", "Rescue dialog", 1200, delegate
+            {
+                if (sample == null) return null;
+                return new RescueDialog(sample, index.Inventory);
+            });
+
+            Try("13-collect-all", "Collect All dialog", 1200, delegate
+            {
+                if (sample == null) return null;
+                return new CollectDialog(sample, index.Env, settings);
+            });
+
+            Try("14-forks", "Forks - version history", 3000, delegate
+            {
+                if (sample == null) return null;
+                return new Reel.ReelWindow(sample.Path);
+            });
+
+            Try("15-stat", "Stat - library point cloud", 4000, delegate
+            {
+                return new AbletonManager.Nebula.NebulaForm();
+            });
+        }
+
+        /// <summary>Первый сет без ошибки чтения — если такого нет, вообще первый.</summary>
+        static SetEntry FirstOk(IEnumerable<SetEntry> sets)
+        {
+            SetEntry any = null;
+            foreach (SetEntry e in sets)
+            {
+                if (any == null) any = e;
+                if (e.Error.Length == 0) return e;
+            }
+            return any;
         }
 
         delegate Form MakeDialog();
@@ -164,8 +215,60 @@ namespace AbletonManager
             File.WriteAllText(Path.Combine(_out, name + ".svg"),
                               Svg(f, bmp, png, title), new UTF8Encoding(false));
             bmp.Dispose();
-            Console.WriteLine(name + "  " + r.Width + "x" + r.Height);
+
+            string emfError = CaptureEmf(f, name);
+            Console.WriteLine(name + "  " + r.Width + "x" + r.Height
+                             + (emfError == null ? "  +emf" : "  emf failed: " + emfError));
         }
+
+        // ------------------------------------------------------------------ вектор (emf)
+
+        /// <summary>
+        /// Тот же трюк, которым Windows печатает произвольное окно: WM_PRINT с HDC
+        /// метафайла вместо экрана. Контролы рисуют себя как обычно (OnPaint зовётся с
+        /// этим HDC через встроенный в Control обработчик WM_PRINTCLIENT), поэтому линии,
+        /// текст и заливки попадают в .emf настоящими векторными записями. Растром войдёт
+        /// только то, что и само по себе растр — превью рендера, миниатюры аранжировки.
+        ///
+        /// Акриловый фон (Glass.cs) сюда не попадёт в принципе: это DWM-композитинг поверх
+        /// готового кадра, а не рисование в HDC окна. Экспорт всегда идёт с Glass.Enabled
+        /// = false (см. Main), так что фон и так ровный — WM_PRINT добросовестно рисует
+        /// именно его.
+        /// </summary>
+        static string CaptureEmf(Form f, string name)
+        {
+            Rectangle r = f.Bounds;
+            string path = Path.Combine(_out, name + ".emf");
+            try
+            {
+                using (Graphics refG = Graphics.FromHwnd(IntPtr.Zero))
+                {
+                    IntPtr refHdc = refG.GetHdc();
+                    try
+                    {
+                        using (Metafile mf = new Metafile(path, refHdc,
+                                   new RectangleF(0, 0, r.Width, r.Height), MetafileFrameUnit.Pixel,
+                                   EmfType.EmfPlusDual, name))
+                        using (Graphics mg = Graphics.FromImage(mf))
+                        {
+                            IntPtr mfHdc = mg.GetHdc();
+                            try { SendMessage(f.Handle, WM_PRINT, mfHdc, (IntPtr)PRF_ALL); }
+                            finally { mg.ReleaseHdc(mfHdc); }
+                        }
+                    }
+                    finally { refG.ReleaseHdc(refHdc); }
+                }
+                return null;
+            }
+            catch (Exception ex) { return ex.Message; }
+        }
+
+        const int WM_PRINT = 0x317;
+        // PRF_CHECKVISIBLE | PRF_NONCLIENT | PRF_CLIENT | PRF_ERASEBKGND | PRF_CHILDREN
+        const int PRF_ALL = 0x1 | 0x2 | 0x4 | 0x8 | 0x10;
+
+        [DllImport("user32.dll")]
+        static extern IntPtr SendMessage(IntPtr hWnd, int msg, IntPtr wParam, IntPtr lParam);
 
         /// <summary>Снимок вышел одноцветным — значит окно так и не отрисовалось в него.</summary>
         static bool Blank(Bitmap b)

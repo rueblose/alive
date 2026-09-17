@@ -243,7 +243,7 @@ namespace AbletonManager
             else
             {
                 // Порядок как у прежнего столбика пилюль: Collect All сверху.
-                ToolStripMenuItem collect = new ToolStripMenuItem("Collect All");
+                ToolStripMenuItem collect = new ToolStripMenuItem("Export");
                 collect.Click += delegate { if (CollectRequested != null) CollectRequested(); };
                 m.Items.Add(collect);
 
@@ -439,21 +439,7 @@ namespace AbletonManager
             if (_set == null)
             {
                 _thumbRect = _linkRect = _topRect = Rectangle.Empty;
-
-                // Раньше это была строка в левом верхнем углу пустой панели — читалась
-                // как забытая подпись. Значок и две строки по центру: заголовок и что
-                // делать дальше.
-                int gl = Sc(30);
-                float cy = Height / 2f - Sc(34);
-                Icons.Draw(g, Glyph.ViewList,
-                           new RectangleF(Pad + (w - gl) / 2f, cy, gl, gl),
-                           Color.FromArgb(0x4A, 0xFF, 0xFF, 0xFF), 1.3f);
-                Chrome.DrawText(g, "No set selected", Theme.FTitle,
-                    new Rectangle(Pad, (int)(cy + gl + Sc(12)), w, Sc(24)),
-                    Color.FromArgb(0xB4, 0xFF, 0xFF, 0xFF), Chrome.CellCenter);
-                Chrome.DrawText(g, "Pick one from the list", Theme.FLabel,
-                    new Rectangle(Pad, (int)(cy + gl + Sc(34)), w, Sc(22)),
-                    Theme.TextDim, Chrome.CellCenter);
+                PaintEmpty(g, Pad, w, "No set selected", "Pick one from the list");
                 return;
             }
 
@@ -483,7 +469,7 @@ namespace AbletonManager
 
             // Файлы
             y = Line(g, "Files:", Theme.FLabel, Theme.TextDim, Pad, y, w) + Sc(8);
-            Chrome.DrawText(g, Chrome.Plural(_set.TotalRefs, "reference"), Theme.FLabel,
+            Chrome.DrawText(g, Chrome.Plural(_set.TotalRefs, "file"), Theme.FLabel,
                 new Rectangle(Pad, y, w, Sc(28)), Theme.Text, PanelLeft);
             // Цвет — только когда плохо. Зелёный ноль обещал событие, которого нет,
             // и красное среди него переставало бросаться в глаза.
@@ -612,8 +598,11 @@ namespace AbletonManager
             if (tags.Count == 0 && note.Length == 0)
             {
                 Rectangle line = new Rectangle(iconLeft, y, w + iconOffset, Sc(24));
-                Icons.Draw(g, Glyph.Note,
-                           new RectangleF(iconLeft, y + (Sc(24) - icon) / 2f - Sc(2), icon, icon),
+                Icons.Draw(g, Glyph.Tag,
+                           // Ровно по центру строки: подъём на 2 px тут подгонялся под
+                           // текст, который на столько же поднимала прежняя поправка
+                           // в Chrome.DrawText. Поправки больше нет — и подгонки тоже.
+                           new RectangleF(iconLeft, y + (Sc(24) - icon) / 2f, icon, icon),
                            _notesHot ? Theme.Text : Theme.TextDim, 1.3f);
                 Chrome.DrawText(g, "Add tags or a note…",
                                 Theme.FBadge, new Rectangle(textX, y, textW, Sc(24)),
@@ -624,6 +613,8 @@ namespace AbletonManager
 
             if (tags.Count > 0)
             {
+                // Высота — от шрифта, одним расчётом со всеми остальными пилюлями.
+                int chipH = Chrome.PillHeight(Theme.FBadge);
                 // Без иконки: пилюли сами по себе читаются как теги, значок только
                 // отъедал место у первой строки.
                 int cx = Pad, cy = y;
@@ -631,24 +622,26 @@ namespace AbletonManager
                 {
                     Size ts = TextRenderer.MeasureText(tag, Theme.FBadge);
                     int cw = Math.Min(w, ts.Width + Sc(18));
-                    if (cx > Pad && cx + cw > Pad + w) { cx = Pad; cy += Sc(24); }
-                    Rectangle chip = new Rectangle(cx, cy, cw, Sc(21));
+                    if (cx > Pad && cx + cw > Pad + w) { cx = Pad; cy += chipH + Sc(3); }
+                    Rectangle chip = new Rectangle(cx, cy, cw, chipH);
                     Theme.FillRound(g, chip, chip.Height / 2f, Color.FromArgb(0x26, 0xFF, 0xFF, 0xFF));
-                    Chrome.DrawText(g, tag, Theme.FBadge, chip, Theme.Text, Chrome.Center);
+                    Chrome.DrawText(g, tag, Theme.FBadge,
+                                    new Rectangle(chip.X, chip.Y + Chrome.PillTop(g, Theme.FBadge, chip.Height),
+                                                  chip.Width, chip.Height),
+                                    Theme.Text, Chrome.PillText);
                     cx += cw + Sc(6);
                 }
-                y = cy + Sc(21) + Sc(8);
+                y = cy + chipH + Sc(8);
             }
 
+            // Заметка — такая же секция панели, как «Files:» и «Plugins (8):»: тусклый
+            // заголовок и текст под ним, тем же кеглем и по той же левой границе.
+            // Значка нет: у соседних секций его тоже нет, и он один торчал из ряда.
             if (note.Length > 0)
             {
-                if (tags.Count == 0)
-                    Icons.Draw(g, Glyph.Note, new RectangleF(iconLeft, y + Sc(1), icon, icon),
-                               _notesHot ? Theme.Text : Theme.TextDim, 1.3f);
-                y = Wrapped(g, note, Theme.FBadge,
-                            _notesHot ? Theme.Text : Theme.TextDim,
-                            tags.Count == 0 ? textX : Pad,
-                            y, tags.Count == 0 ? textW : w);
+                y = Line(g, "Note:", Theme.FLabel, _notesHot ? Theme.Text : Theme.TextDim,
+                         Pad, y, w) + Sc(8);
+                y = Wrapped(g, note, Theme.FLabel, Theme.Text, Pad, y, w);
             }
 
             _notesRect = new Rectangle(iconLeft, top, w + iconOffset, Math.Max(Sc(24), y - top));
@@ -702,6 +695,26 @@ namespace AbletonManager
             return y + Sc(14);
         }
 
+        /// <summary>
+        /// Пустая панель: заголовок и что делать дальше. Значка тут больше нет — три
+        /// серых полоски над словами «ничего не выбрано» читались как элемент списка,
+        /// который почему-то не кликается. Высоты строк меряем шрифтом, а не константами:
+        /// на фиксированных 24 и 22 пикселях у «g» и «p» срезало хвосты, а сами строки
+        /// слипались в одну.
+        /// </summary>
+        void PaintEmpty(Graphics g, int pad, int w, string title, string hint)
+        {
+            int th = TextRenderer.MeasureText("Ayg", Theme.FTitle).Height;
+            int hh = TextRenderer.MeasureText("Ayg", Theme.FLabel).Height;
+            int gap = Sc(10);
+            int top = (Height - th - gap - hh) / 2;
+
+            Chrome.DrawText(g, title, Theme.FTitle, new Rectangle(pad, top, w, th),
+                            Color.FromArgb(0xB4, 0xFF, 0xFF, 0xFF), Chrome.Center);
+            Chrome.DrawText(g, hint, Theme.FLabel, new Rectangle(pad, top + th + gap, w, hh),
+                            Theme.TextDim, Chrome.Center);
+        }
+
         void PaintPlugin(Graphics g, int pad, int y, int w, int over)
         {
             _thumbRect = _linkRect = _topRect = Rectangle.Empty;
@@ -712,18 +725,7 @@ namespace AbletonManager
             PluginStat p = _plugin;
             if (p == null)
             {
-                // Тот же пустой экран, что и у сетов: значок и две строки по центру.
-                int gl = Sc(30);
-                float cy = Height / 2f - Sc(34);
-                Icons.Draw(g, Glyph.ViewList,
-                           new RectangleF(pad + (w - gl) / 2f, cy, gl, gl),
-                           Color.FromArgb(0x4A, 0xFF, 0xFF, 0xFF), 1.3f);
-                Chrome.DrawText(g, "No plug-in selected", Theme.FTitle,
-                    new Rectangle(pad, (int)(cy + gl + Sc(12)), w, Sc(24)),
-                    Color.FromArgb(0xB4, 0xFF, 0xFF, 0xFF), Chrome.CellCenter);
-                Chrome.DrawText(g, "Pick one to see where it is used", Theme.FLabel,
-                    new Rectangle(pad, (int)(cy + gl + Sc(34)), w, Sc(22)),
-                    Theme.TextDim, Chrome.CellCenter);
+                PaintEmpty(g, pad, w, "No plug-in selected", "Pick one to see where it is used");
                 return;
             }
             InstalledPlugin inst = p.Installed;

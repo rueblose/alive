@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.Drawing.Drawing2D;
@@ -97,6 +97,72 @@ namespace AbletonManager
             TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter | TextFormatFlags.SingleLine |
             TextFormatFlags.NoPrefix;
 
+        /// <summary>
+        /// Текст в пилюле: коробку строки кладём по верху, потому что верх мы считаем
+        /// сами — см. PillTop.
+        /// </summary>
+        public static readonly TextFormatFlags PillText =
+            TextFormatFlags.HorizontalCenter | TextFormatFlags.Top | TextFormatFlags.SingleLine |
+            TextFormatFlags.NoPrefix | TextFormatFlags.NoClipping;
+
+        /// <summary>То же, но с обрезкой: для пилюли, ширину которой задали силой.</summary>
+        public static readonly TextFormatFlags PillTextClipped =
+            TextFormatFlags.HorizontalCenter | TextFormatFlags.Top | TextFormatFlags.SingleLine |
+            TextFormatFlags.NoPrefix | TextFormatFlags.EndEllipsis;
+
+        /// <summary>
+        /// Отступ от верха пилюли до верха коробки строки, при котором по центру пилюли
+        /// встают САМИ БУКВЫ. TextFormatFlags.VerticalCenter центрирует коробку целиком,
+        /// а в ней над строчными заложено место под выносные элементы, которого в слове
+        /// обычно нет: в пилюле 19 px одиннадцатым кеглем над буквами оставалось 5 px,
+        /// под ними 3 — это и читается как «текст съехал вниз».
+        ///
+        /// Высоту прописных GDI+ не отдаёт, поэтому берём долю кегля: 0.72 em — замерено
+        /// отрисовкой Segoe UI Variable Text в битмап на высотах пилюли 19, 21 и 24.
+        /// </summary>
+        /// <summary>
+        /// Какой высоты должна быть пилюля под этот шрифт: коробка строки плюс воздух.
+        /// Коробки впритык мало — она кончается ровно на хвосте выносного элемента, и
+        /// «y» в пилюле выглядит срезанным её краем (замерено: под хвостом оставался
+        /// один пиксель).
+        ///
+        /// Высота идёт от шрифта, а не от Sc(): кегль задан в пунктах и от DeviceDpi не
+        /// зависит, так что пилюля, привязанная к Sc, на другом мониторе разъехалась бы
+        /// с собственным текстом.
+        /// </summary>
+        public static int PillHeight(Font f) { return PillHeight(f, 6); }
+
+        /// <summary>
+        /// «Есть ещё» — три точки, нарисованные вручную и ровно по центру прямоугольника.
+        /// Глиф «…» для этого не годится: его чернила лежат на базовой линии, а пилюли
+        /// рядом выровнены по прописным (см. PillTop), и многоточие среди них
+        /// оказывалось заметно ниже середины.
+        /// </summary>
+        public static void DrawDots(Graphics g, Rectangle r, Color ink, int dot)
+        {
+            float cx = r.X + r.Width / 2f, cy = r.Y + r.Height / 2f;
+            for (int i = -1; i <= 1; i++)
+                g.FillEllipse(Theme.GetBrush(ink), cx + i * dot * 2f - dot / 2f, cy - dot / 2f, dot, dot);
+        }
+
+        /// <summary>Ширина, которую займут точки из DrawDots.</summary>
+        public static int DotsWidth(int dot) { return dot * 5; }
+
+        /// <summary>
+        /// Тот же расчёт с явным запасом воздуха. Меньше шести берут там, где по высоте
+        /// тесно, — например две дорожки тегов в строке таблицы.
+        /// </summary>
+        public static int PillHeight(Font f, int air)
+        {
+            return TextRenderer.MeasureText("Ag", f).Height + air;
+        }
+
+        public static int PillTop(Graphics g, Font f, int pillH)
+        {
+            float capH = f.SizeInPoints * g.DpiY / 72f * 0.72f;
+            return (int)Math.Round(pillH / 2f + capH / 2f - Theme.Baseline(f));
+        }
+
         public static readonly TextFormatFlags Wrap =
             TextFormatFlags.Left | TextFormatFlags.Top | TextFormatFlags.WordBreak |
             TextFormatFlags.NoPrefix | TextFormatFlags.NoPadding;
@@ -144,18 +210,22 @@ namespace AbletonManager
         }
 
         /// <summary>
-        /// GDI (TextRenderer) центрирует однострочный текст по высоте box'а шрифта, а не
-        /// по видимым чернилам — у Segoe UI Variable это стабильно сдвигает текст на
-        /// 1.5–2 px ниже геометрического центра (замерено VCenterCal на реальном рендере).
-        /// В высокой строке таблицы это незаметно, а в невысокой пилюле — заметно и
-        /// выглядит криво. Поправка на VerticalCenter — во всех остальных случаях сдвиг
-        /// не нужен.
+        /// Здесь была поправка «поднять на 2 px всё, что с VerticalCenter»: считалось,
+        /// что GDI сажает строку ниже геометрического центра. Перемерено по чернилам
+        /// (рендер в Bitmap, границы непрозрачных пикселей): DT_VCENTER|DT_SINGLELINE
+        /// центрирует ровно, отклонение 0–0.5 px на всех кеглях от 9.5 до 22 pt и любой
+        /// высоте пилюли. Прежний замер обманула нижняя выносная: у строки с «g» или «р»
+        /// чернила уходят вниз, и центр чернил оказывается ниже центра коробки — так и
+        /// должно быть. Поправка же поднимала текст на честные 2 px выше центра, что и
+        /// было видно во всех пилюлях и подсказках.
+        ///
+        /// Важно: DT_VCENTER без DT_SINGLELINE система игнорирует молча — текст встаёт
+        /// по верху прямоугольника. Все однострочные наборы флагов ниже включают
+        /// SingleLine именно поэтому.
         /// </summary>
         public static void DrawText(Graphics g, string text, Font font, Rectangle rect, Color color,
                                     TextFormatFlags flags)
         {
-            if ((flags & TextFormatFlags.VerticalCenter) != 0)
-                rect.Y -= (int)Math.Round(2 * (g.DpiY / 96f));
             TextRenderer.DrawText(g, text, font, rect, color, flags);
         }
 
@@ -591,6 +661,18 @@ namespace AbletonManager
     {
         public int Count;
 
+        /// <summary>Подпись со счётчиком — она же задаёт ширину пилюли.</summary>
+        string Label { get { return Count > 0 ? Text + " · " + Count : Text; } }
+
+        /// <summary>
+        /// Ширина под текущую подпись. Фиксированных 140 пикселей хватало ровно на
+        /// «Filters»: стоило появиться счётчику, и число уезжало в многоточие.
+        /// </summary>
+        public int PreferredWidth
+        {
+            get { return Sc(15) + Sc(17) + Sc(8) + TextRenderer.MeasureText(Label, Font).Width + Sc(16); }
+        }
+
         protected override float PillRadius { get { return Height / 2f; } }
 
         public FiltersButton()
@@ -625,10 +707,8 @@ namespace AbletonManager
             Icons.Draw(g, Glyph.Filters,
                        new RectangleF(Sc(15), (Height - box) / 2f, box, box), iconColor, 1.5f);
 
-            string text = Text;
-            if (Count > 0) text += " · " + Count;
             Color textColor = Theme.Interpolate(Theme.TextDim, Theme.Text, HoverFactor);
-            Chrome.DrawText(g, text, Font,
+            Chrome.DrawText(g, Label, Font,
                 new Rectangle(Sc(15) + (int)box + Sc(8), 0, Width - Sc(15) - (int)box - Sc(16), Height),
                 textColor, Chrome.Left);
         }
@@ -714,8 +794,12 @@ namespace AbletonManager
             float inset = PressInset * 0.5f;
             RectangleF ir = new RectangleF((Width - box) / 2f + inset, (Height - box) / 2f + inset,
                                            box - inset * 2, box - inset * 2);
+            // Значок светлеет под курсором в любом виде кнопки: у обычной он раньше
+            // держал ровно один цвет, и единственным признаком наведения оставалась
+            // подложка — а её на размытом фоне почти не видно.
             Color ink = Danger ? Theme.Interpolate(Theme.Light, Color.White, HoverFactor)
-                      : (Quiet ? Theme.Interpolate(Theme.TextDim, Theme.Text, HoverFactor) : Theme.Light);
+                      : (Quiet ? Theme.Interpolate(Theme.TextDim, Theme.Text, HoverFactor)
+                               : Theme.Interpolate(Theme.Light, Color.White, HoverFactor));
 
             if (_spin > 0.5f)
             {
@@ -1095,84 +1179,6 @@ namespace AbletonManager
         }
     }
 
-    /// <summary>Переключатель вида иконками без подложки и обводки.</summary>
-    public class IconToggle : GlassControl
-    {
-        Glyph[] _glyphs = new Glyph[0];
-        int _index;
-
-        public event EventHandler SelectedChanged;
-
-        public IconToggle()
-        {
-            SetStyle(ControlStyles.StandardDoubleClick, false);
-            Height = Sc(Theme.ControlH);
-            Cursor = Cursors.Hand;
-        }
-
-        public void SetGlyphs(params Glyph[] glyphs)
-        {
-            _glyphs = glyphs;
-            int itemW = Sc(20);
-            int gap = Sc(8);
-            Width = _glyphs.Length * itemW + Math.Max(0, _glyphs.Length - 1) * gap;
-            Invalidate();
-        }
-
-        public int SelectedIndex
-        {
-            get { return _index; }
-            set
-            {
-                if (_index == value) return;
-                _index = value; Invalidate();
-                if (SelectedChanged != null) SelectedChanged(this, EventArgs.Empty);
-            }
-        }
-
-        RectangleF IconDrawRect(int i)
-        {
-            int iconSize = Sc(20);
-            int itemW = Sc(20);
-            int gap = Sc(8);
-            float totalW = _glyphs.Length * itemW + Math.Max(0, _glyphs.Length - 1) * gap;
-            float startX = (Width - totalW) / 2f;
-            float x = startX + i * (itemW + gap);
-            float y = (Height - iconSize) / 2f;
-            return new RectangleF(x, y, iconSize, iconSize);
-        }
-
-        protected override void OnMouseDown(MouseEventArgs e)
-        {
-            if (_glyphs.Length > 0)
-                SelectedIndex = (_index + 1) % _glyphs.Length;
-            base.OnMouseDown(e);
-        }
-
-        protected override void OnDoubleClick(EventArgs e)
-        {
-            if (_glyphs.Length > 0)
-                SelectedIndex = (_index + 1) % _glyphs.Length;
-            base.OnDoubleClick(e);
-        }
-
-        protected override void OnPaint(PaintEventArgs e)
-        {
-            Graphics g = e.Graphics;
-            PaintSurface(g);
-            Theme.Smooth(g);
-
-            for (int i = 0; i < _glyphs.Length; i++)
-            {
-                RectangleF r = IconDrawRect(i);
-                bool sel = i == _index;
-                Color col = sel ? Theme.Text : (Hot ? Color.FromArgb(210, 210, 210) : Theme.TextDim);
-                float stroke = 2.0f;
-                Icons.Draw(g, _glyphs[i], r, col, stroke);
-            }
-        }
-    }
-
     /// <summary>
     /// Поле ввода — единственное настоящее нативное окно во всём интерфейсе, и на
     /// стеклянном окне оно ведёт себя не как остальные контролы. Edit рисует свой фон
@@ -1223,22 +1229,45 @@ namespace AbletonManager
         public string Glyph;      // необязательный значок слева
         public bool ShowClear;    // крестик справа, пока в поле есть текст — очищает его
 
+        /// <summary>Кнопка-значок в том же левом слоте: клик по ней не ставит каретку,
+        /// а зовёт IconLeftClicked (календарь у полей с датой).</summary>
+        public AbletonManager.Glyph? IconLeft;
+        public event Action IconLeftClicked;
+
         public string Cue
         {
             get { return Box.Cue; }
             set { Box.Cue = value ?? ""; Invalidate(); }
         }
 
-        bool _focused, _clearHot, _caretVisible, _dragSelecting;
-        int _dragStartIdx;
+        bool _focused, _clearHot, _caretVisible, _dragSelecting, _iconHot;
+        int _anchor;      // неподвижный конец выделения: от него считаем, где сейчас каретка
+        int _scroll;      // на сколько пикселей текст уехал влево под левый край поля
         Rectangle _clearRect;
         Timer _timer = new Timer();
+
+        /// <summary>
+        /// Один набор флагов на замер и на отрисовку — иначе позиция каретки расходится
+        /// с тем, где реально стоит буква. NoPadding обязателен: без него TextRenderer
+        /// добавляет к строке несколько пикселей полей, и их приходится вычитать
+        /// подобранными на глаз константами (так тут и было). С ним ширина подстроки
+        /// ровно равна смещению следующего символа, включая хвостовые пробелы.
+        /// SingleLine — чтобы работал VerticalCenter, см. Chrome.DrawText.
+        /// </summary>
+        static readonly TextFormatFlags TextFlags =
+            TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.SingleLine |
+            TextFormatFlags.NoPrefix | TextFormatFlags.NoPadding;
 
         protected override float PillRadius { get { return Height / 2f; } }
 
         public FieldBox()
         {
             Height = Theme.ControlH;
+            // Пилюля — только оболочка: фокус держит спрятанный Box. Пока оболочка была
+            // своим таб-стопом, Tab сначала вставал на неё — без каретки и видимой
+            // рамки, то есть впустую, — и в поле попадали со второго нажатия.
+            SetStyle(ControlStyles.Selectable, false);
+            TabStop = false;
             Box.Size = new Size(0, 0);
             Box.Location = new Point(-100, -100);
             Controls.Add(Box);
@@ -1248,10 +1277,27 @@ namespace AbletonManager
 
             Box.GotFocus += delegate { _focused = true; _caretVisible = true; _timer.Start(); Invalidate(); };
             Box.LostFocus += delegate { _focused = false; _caretVisible = false; _timer.Stop(); Invalidate(); };
-            Box.TextChanged += delegate { UpdateLayout(); Invalidate(); };
-            Box.KeyDown += delegate { Invalidate(); };
-            Box.KeyUp += delegate { Invalidate(); };
-            Box.Click += delegate { Invalidate(); };
+            Box.TextChanged += delegate { UpdateLayout(); Sync(); Invalidate(); };
+            Box.KeyDown += OnBoxKeyDown;
+            Box.KeyUp += delegate { Sync(); Invalidate(); };
+            Box.Click += delegate { Sync(); Invalidate(); };
+        }
+
+        /// <summary>Схлопнулось выделение — значит якорь там же, где каретка.</summary>
+        void Sync() { if (Box.SelectionLength == 0) _anchor = Box.SelectionStart; }
+
+        /// <summary>
+        /// Каретка — подвижный конец выделения. EM_GETSEL отдаёт только начало и длину,
+        /// какой из концов сейчас двигают — нет; вычисляем по якорю.
+        /// </summary>
+        int Caret
+        {
+            get
+            {
+                int s = Box.SelectionStart, l = Box.SelectionLength;
+                if (l == 0) return s;
+                return s == _anchor ? s + l : s;
+            }
         }
 
         bool HasClear { get { return ShowClear && Box.Text.Length > 0; } }
@@ -1264,59 +1310,165 @@ namespace AbletonManager
             _clearRect = new Rectangle(Width - Sc(26), (Height - cs) / 2, cs, cs);
         }
 
+        /// <summary>Левый слот значка — он же зона клика для IconLeft.</summary>
+        Rectangle IconRect
+        {
+            get { int s = Sc(20); return new Rectangle(Sc(11), (Height - s) / 2, s, s); }
+        }
+
         Rectangle GetTextRect()
         {
-            int left = string.IsNullOrEmpty(Glyph) ? Sc(16) : Sc(34);
+            int left = string.IsNullOrEmpty(Glyph) && !IconLeft.HasValue ? Sc(16) : Sc(34);
             int right = HasClear ? Sc(30) : Sc(14);
             return new Rectangle(left, 0, Math.Max(10, Width - left - right), Height);
         }
 
-        int GetCharIndexAt(Graphics g, int mouseX, Rectangle textRect, TextFormatFlags flags)
+        /// <summary>Ширина первых upto символов, в пикселях от начала строки.</summary>
+        int TextW(Graphics g, int upto)
+        {
+            if (upto <= 0) return 0;
+            string txt = Box.Text;
+            if (upto > txt.Length) upto = txt.Length;
+            return TextRenderer.MeasureText(g, txt.Substring(0, upto), Font,
+                                            new Size(int.MaxValue, Height), TextFlags).Width;
+        }
+
+        int GetCharIndexAt(Graphics g, int mouseX, Rectangle textRect)
         {
             string txt = Box.Text;
-            if (string.IsNullOrEmpty(txt) || mouseX <= textRect.Left) return 0;
-            int bestIdx = txt.Length;
-            int minDiff = int.MaxValue;
+            if (string.IsNullOrEmpty(txt)) return 0;
+            int want = mouseX - textRect.Left + _scroll;
+            if (want <= 0) return 0;
 
+            int bestIdx = 0, minDiff = int.MaxValue;
             for (int i = 0; i <= txt.Length; i++)
             {
-                string sub = txt.Substring(0, i);
-                int cx = (i == 0) ? textRect.Left + Sc(2) : textRect.Left + TextRenderer.MeasureText(g, sub, Font, textRect.Size, flags).Width - Sc(5);
-                int diff = Math.Abs(mouseX - cx);
-                if (diff < minDiff)
-                {
-                    minDiff = diff;
-                    bestIdx = i;
-                }
+                int diff = Math.Abs(want - TextW(g, i));
+                if (diff < minDiff) { minDiff = diff; bestIdx = i; }
             }
             return bestIdx;
+        }
+
+        // ------------------------------------------------------- границы слов
+        // Нативный edit шириной 0 по Ctrl+стрелкам не ходит, поэтому переходы по словам
+        // и выделение слова двойным кликом считаем сами. Правило как в проводнике: буквы,
+        // цифры и подчёркивание — слово; остальные непробельные знаки — своя группа;
+        // пробелы прилипают к слову справа при движении вправо.
+
+        // public, а не private: границы слов проверяет scratch\wordnav_check.cs.
+        public static bool IsWordChar(char c) { return char.IsLetterOrDigit(c) || c == '_'; }
+
+        public static int WordLeft(string s, int i)
+        {
+            while (i > 0 && char.IsWhiteSpace(s[i - 1])) i--;
+            if (i > 0 && IsWordChar(s[i - 1])) { while (i > 0 && IsWordChar(s[i - 1])) i--; }
+            else while (i > 0 && !IsWordChar(s[i - 1]) && !char.IsWhiteSpace(s[i - 1])) i--;
+            return i;
+        }
+
+        public static int WordRight(string s, int i)
+        {
+            int n = s.Length;
+            if (i < n && IsWordChar(s[i])) { while (i < n && IsWordChar(s[i])) i++; }
+            else while (i < n && !IsWordChar(s[i]) && !char.IsWhiteSpace(s[i])) i++;
+            while (i < n && char.IsWhiteSpace(s[i])) i++;
+            return i;
+        }
+
+        void MoveCaret(int to, bool extend)
+        {
+            if (!extend) _anchor = to;
+            Box.Select(Math.Min(_anchor, to), Math.Abs(to - _anchor));
+            _caretVisible = true;
+            Invalidate();
+        }
+
+        void OnBoxKeyDown(object sender, KeyEventArgs e)
+        {
+            if (e.Control && !e.Alt && (e.KeyCode == Keys.Left || e.KeyCode == Keys.Right))
+            {
+                string txt = Box.Text;
+                int to = e.KeyCode == Keys.Left ? WordLeft(txt, Caret) : WordRight(txt, Caret);
+                MoveCaret(to, e.Shift);
+                e.Handled = e.SuppressKeyPress = true;
+                return;
+            }
+            // Тот же баг нулевой ширины, что у Ctrl+стрелок выше: нативное стирание
+            // слова целиком на edit-контроле размером 0×0 тоже не срабатывает. Есть
+            // выделение — Ctrl тут ни при чём, обычное удаление и так уберёт ровно его;
+            // иначе считаем границу слова сами и вырезаем диапазон руками.
+            if (e.Control && !e.Alt && (e.KeyCode == Keys.Back || e.KeyCode == Keys.Delete))
+            {
+                if (Box.SelectionLength > 0)
+                {
+                    Box.SelectedText = "";
+                }
+                else
+                {
+                    string txt = Box.Text;
+                    int caret = Caret;
+                    int from = e.KeyCode == Keys.Back ? WordLeft(txt, caret) : caret;
+                    int to = e.KeyCode == Keys.Back ? caret : WordRight(txt, caret);
+                    if (to > from)
+                    {
+                        Box.Text = txt.Substring(0, from) + txt.Substring(to);
+                        Box.Select(from, 0);
+                    }
+                }
+                e.Handled = e.SuppressKeyPress = true;
+                return;
+            }
+            Invalidate();
+        }
+
+        protected override void OnMouseDoubleClick(MouseEventArgs e)
+        {
+            base.OnMouseDoubleClick(e);
+            if (e.Button != MouseButtons.Left) return;
+
+            string txt = Box.Text;
+            if (txt.Length == 0) return;
+
+            int i;
+            using (Graphics g = CreateGraphics())
+                i = GetCharIndexAt(g, e.X, GetTextRect());
+
+            // Клик у правого края слова даёт индекс за его последним символом — берём
+            // символ слева, иначе двойной клик по концу слова выделял бы пустоту.
+            if (i >= txt.Length || (i > 0 && !IsWordChar(txt[i]) && IsWordChar(txt[i - 1]))) i--;
+            if (i < 0 || !IsWordChar(txt[i])) return;
+
+            int a = i, b = i + 1;
+            while (a > 0 && IsWordChar(txt[a - 1])) a--;
+            while (b < txt.Length && IsWordChar(txt[b])) b++;
+
+            _dragSelecting = false;
+            _anchor = a;
+            Box.Select(a, b - a);
+            Invalidate();
         }
 
         protected override void OnMouseMove(MouseEventArgs e)
         {
             bool hot = HasClear && _clearRect.Contains(e.Location);
-            if (hot != _clearHot) { _clearHot = hot; Cursor = hot ? Cursors.Hand : Cursors.Default; Invalidate(); }
+            bool ihot = IconLeft.HasValue && IconRect.Contains(e.Location);
+            if (hot != _clearHot || ihot != _iconHot)
+            {
+                _clearHot = hot; _iconHot = ihot;
+                Cursor = hot || ihot ? Cursors.Hand : Cursors.Default;
+                Invalidate();
+            }
 
             if (_dragSelecting && e.Button == MouseButtons.Left)
-            {
                 using (Graphics g = CreateGraphics())
-                {
-                    Rectangle tr = GetTextRect();
-                    TextFormatFlags flags = TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix;
-                    int curIdx = GetCharIndexAt(g, e.X, tr, flags);
-                    int start = Math.Min(_dragStartIdx, curIdx);
-                    int len = Math.Abs(curIdx - _dragStartIdx);
-                    Box.Select(start, len);
-                    Invalidate();
-                }
-            }
+                    MoveCaret(GetCharIndexAt(g, e.X, GetTextRect()), true);
 
             base.OnMouseMove(e);
         }
 
         protected override void OnMouseLeave(EventArgs e)
         {
-            if (_clearHot) { _clearHot = false; Cursor = Cursors.Default; Invalidate(); }
+            if (_clearHot || _iconHot) { _clearHot = _iconHot = false; Cursor = Cursors.Default; Invalidate(); }
             base.OnMouseLeave(e);
         }
 
@@ -1329,18 +1481,16 @@ namespace AbletonManager
                 return;
             }
 
+            if (IconLeft.HasValue && IconRect.Contains(e.Location))
+            {
+                if (IconLeftClicked != null) IconLeftClicked();
+                return;
+            }
+
             Box.Focus();
             using (Graphics g = CreateGraphics())
-            {
-                Rectangle tr = GetTextRect();
-                TextFormatFlags flags = TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix;
-                _dragStartIdx = GetCharIndexAt(g, e.X, tr, flags);
-                Box.SelectionStart = _dragStartIdx;
-                Box.SelectionLength = 0;
-                _dragSelecting = true;
-                _caretVisible = true;
-                Invalidate();
-            }
+                MoveCaret(GetCharIndexAt(g, e.X, GetTextRect()), false);
+            _dragSelecting = true;
 
             base.OnMouseDown(e);
         }
@@ -1362,7 +1512,10 @@ namespace AbletonManager
             Theme.FillRound(g, r, r.Height / 2f, Theme.Sunken);
             if (_focused) Theme.DrawRound(g, r, r.Height / 2f, Theme.SurfacePressed, 1f);
 
-            if (!string.IsNullOrEmpty(Glyph))
+            if (IconLeft.HasValue)
+                Icons.Draw(g, IconLeft.Value, RectangleF.Inflate(IconRect, -Sc(2), -Sc(2)),
+                           _iconHot ? Theme.Text : Theme.TextDim, 1.4f);
+            else if (!string.IsNullOrEmpty(Glyph))
                 Chrome.DrawText(g, Glyph, Font, new Rectangle(Sc(12), 0, Sc(20), Height),
                                Theme.TextDim, Chrome.Center);
 
@@ -1372,53 +1525,70 @@ namespace AbletonManager
 
             Rectangle textRect = GetTextRect();
             string txt = Box.Text;
-            TextFormatFlags flags = TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.NoPrefix;
+
+            // Всё, что относится к тексту, живёт строго внутри textRect: выделение
+            // рисуется прямоугольником и раньше уезжало за пилюлю и под крестик,
+            // а длинная строка просто вылезала наружу.
+            GraphicsState clip = g.Save();
+            g.IntersectClip(textRect);
 
             if (string.IsNullOrEmpty(txt))
             {
-                if (!string.IsNullOrEmpty(Cue))
-                    Chrome.DrawText(g, Cue, Font, textRect, Theme.TextDim, flags);
+                _scroll = 0;
+                // В фокусе подсказку не показываем: рядом с кареткой она читается как
+                // уже набранный текст, который почему-то не стирается.
+                if (!_focused && !string.IsNullOrEmpty(Cue))
+                    Chrome.DrawText(g, Cue, Font, textRect, Theme.TextDim, TextFlags);
             }
             else
             {
-                int selStart = Box.SelectionStart;
-                int selLen = Box.SelectionLength;
+                int total = TextW(g, txt.Length);
+                int caretIdx = Math.Min(Caret, txt.Length);
+                int caretX = TextW(g, caretIdx);
 
-                if (_focused && selLen > 0 && selStart < txt.Length)
-                {
-                    int selEnd = Math.Min(selStart + selLen, txt.Length);
-                    string preText = txt.Substring(0, selStart);
-                    string selText = txt.Substring(selStart, selEnd - selStart);
-
-                    int x1 = selStart == 0 ? textRect.Left + Sc(2) : textRect.Left + TextRenderer.MeasureText(g, preText, Font, textRect.Size, flags).Width - Sc(5);
-                    int selWidth = TextRenderer.MeasureText(g, selText, Font, textRect.Size, flags).Width - Sc(4);
-
-                    int cy = (Height - Sc(20)) / 2;
-                    using (SolidBrush selBrush = new SolidBrush(Color.FromArgb(0xFF, 0x3A, 0x3A, 0x5E)))
-                        g.FillRectangle(selBrush, x1, cy, Math.Max(4, selWidth), Sc(20));
-                }
-
-                Chrome.DrawText(g, txt, Font, textRect, Theme.Text, flags);
-            }
-
-            if (_focused && _caretVisible && Box.SelectionLength == 0)
-            {
-                int curPos = Math.Min(Box.SelectionStart, txt.Length);
-                int cx;
-                if (curPos == 0)
-                {
-                    cx = textRect.Left + Sc(2);
-                }
+                // Строка длиннее поля — не режем по краю, а возим под кареткой.
+                if (!_focused) _scroll = 0;
                 else
                 {
-                    string sub = txt.Substring(0, curPos);
-                    Size sz = TextRenderer.MeasureText(g, sub, Font, textRect.Size, flags);
-                    cx = textRect.Left + sz.Width - Sc(5);
+                    if (caretX - _scroll > textRect.Width - Sc(2)) _scroll = caretX - textRect.Width + Sc(2);
+                    if (caretX - _scroll < 0) _scroll = caretX;
+                }
+                if (_scroll > total - textRect.Width) _scroll = total - textRect.Width;
+                if (_scroll < 0) _scroll = 0;
+
+                int x0 = textRect.Left - _scroll;
+
+                int selStart = Box.SelectionStart;
+                int selLen = Math.Min(Box.SelectionLength, txt.Length - selStart);
+                if (_focused && selLen > 0)
+                {
+                    int sx = x0 + TextW(g, selStart);
+                    int sw = TextW(g, selStart + selLen) - TextW(g, selStart);
+                    int cy = (Height - Sc(20)) / 2;
+                    using (SolidBrush selBrush = new SolidBrush(Color.FromArgb(0xFF, 0x3A, 0x3A, 0x5E)))
+                        g.FillRectangle(selBrush, sx, cy, Math.Max(Sc(2), sw), Sc(20));
                 }
 
+                Chrome.DrawText(g, txt, Font, new Rectangle(x0, textRect.Y, total + Sc(8), textRect.Height),
+                                Theme.Text, TextFlags);
+
+                if (_focused && _caretVisible && selLen == 0)
+                {
+                    int cx = x0 + caretX;
+                    int cy = (Height - Sc(18)) / 2;
+                    using (Pen p = new Pen(Theme.Text, 1.5f))
+                        g.DrawLine(p, cx, cy, cx, cy + Sc(18));
+                }
+            }
+
+            g.Restore(clip);
+
+            // Пустое поле в фокусе: каретка у левого края, текста под неё ещё нет.
+            if (_focused && _caretVisible && txt.Length == 0)
+            {
                 int cy = (Height - Sc(18)) / 2;
                 using (Pen p = new Pen(Theme.Text, 1.5f))
-                    g.DrawLine(p, cx, cy, cx, cy + Sc(18));
+                    g.DrawLine(p, textRect.Left, cy, textRect.Left, cy + Sc(18));
             }
         }
     }
@@ -1499,6 +1669,65 @@ namespace AbletonManager
             Rectangle tr = new Rectangle(x, 0, Math.Max(10, Width - x - Sc(32)), Height);
             Chrome.DrawText(g, SelectedItem, Font, tr, Theme.Text, Chrome.Left);
             Chrome.Chevron(g, Width - Sc(17), Height / 2f, Sc(6), Theme.TextDim);
+        }
+    }
+
+    /// <summary>
+    /// Календарь под полем с датой. Внутри — родной MonthCalendar: месяц, год и выбор
+    /// дня уже написаны за нас, писать своё ради тёмной раскраски незачем.
+    ///
+    /// Одна тонкость: при включённых визуальных стилях MonthCalendar рисуется темой
+    /// Windows и свои BackColor/TitleBackColor молча игнорирует — календарь остаётся
+    /// белым. SetWindowTheme с пустым именем снимает с него тему, после чего цвета
+    /// начинают работать. Звать её можно только по готовому окну, поэтому — после Show.
+    /// </summary>
+    public static class CalendarPopup
+    {
+        [DllImport("uxtheme.dll", CharSet = CharSet.Unicode)]
+        static extern int SetWindowTheme(IntPtr hWnd, string appName, string partList);
+
+        public static void Show(Control anchor, DateTime? current, Action<DateTime> picked)
+        {
+            MonthCalendar cal = new MonthCalendar();
+            cal.MaxSelectionCount = 1;
+            cal.ShowTodayCircle = false;
+
+            // Тему снимаем ДО показа: без неё календарь меряет себя иначе, и если
+            // сделать это после Show, выпадашка остаётся прежнего размера и срезает
+            // календарю шапку с месяцем и последнюю неделю. Обращение к Handle само
+            // создаёт окно — SetWindowTheme без него не сработает.
+            try { SetWindowTheme(cal.Handle, "", ""); } catch { }
+            cal.BackColor = Theme.SolidSurface;
+            cal.ForeColor = Theme.Text;
+            cal.TitleBackColor = Theme.Bg;
+            cal.TitleForeColor = Theme.Text;
+            cal.TrailingForeColor = Theme.TextDim;
+            if (current.HasValue) cal.SetDate(current.Value.Date);
+            cal.Size = cal.SingleMonthSize;
+
+            ToolStripControlHost slot = new ToolStripControlHost(cal);
+            slot.Margin = Padding.Empty;
+            slot.Padding = Padding.Empty;
+            slot.AutoSize = false;
+            slot.Size = cal.Size;
+
+            ToolStripDropDown host = new ToolStripDropDown();
+            host.Padding = Padding.Empty;
+            host.AutoSize = true;
+            host.DropShadowEnabled = true;
+            host.BackColor = Theme.SolidSurface;
+            host.Items.Add(slot);
+
+            cal.DateSelected += delegate (object s, DateRangeEventArgs e)
+            {
+                picked(e.Start.Date);
+                host.Close();
+            };
+            // Рвать выпадашку прямо в её собственном Closed нельзя — она в этот момент
+            // ещё дочитывает своё сообщение. Убираем следующим тактом очереди.
+            host.Closed += delegate { anchor.BeginInvoke((Action)delegate { host.Dispose(); }); };
+
+            host.Show(anchor, 0, anchor.Height + 4);
         }
     }
 

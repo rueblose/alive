@@ -237,7 +237,7 @@ namespace AbletonManager
     /// </summary>
     public sealed class ProjectIndex
     {
-        const int CacheVersion = 9;   // 9: добавлена дата создания сета (колонка Created)
+        const int CacheVersion = 10;  // 10: Files/Missing считаются по уникальным файлам
 
         volatile List<SetEntry> _sets = new List<SetEntry>();
 
@@ -258,6 +258,12 @@ namespace AbletonManager
 
         public LiveEnvironment Env = new LiveEnvironment();
 
+        /// <summary>
+        /// Когда работали: история сохранений из папок Backup. Подменяется целиком, как
+        /// и Sets, — читает её интерфейс, пишет фоновое сканирование.
+        /// </summary>
+        public Activity History = Activity.Empty;
+
         /// <summary>Что установлено на машине — по базе самой Live.</summary>
         public PluginInventory Inventory = new PluginInventory();
 
@@ -271,6 +277,7 @@ namespace AbletonManager
             if (cache == null || cache.Count == 0) return false;
             List<SetEntry> list = new List<SetEntry>(cache.Values);
             _sets = list;
+            History = Activity.LoadCache();
             RefreshInstalled();
             return true;
         }
@@ -374,9 +381,14 @@ namespace AbletonManager
             }
             catch (OperationCanceledException) { }
 
-            WeighProjects(fresh, po, cancel);
+            // История копится поверх уже известной, а не собирается заново: Live
+            // держит только десять последних копий на сет — см. Activity.
+            Activity known = History.Total > 0 ? History : Activity.LoadCache();
+            Activity activity = WeighProjects(fresh, po, cancel, known);
 
             _sets = fresh;                 // <- отсюда каталог виден интерфейсу целиком
+            History = activity;
+            activity.SaveCache();
             _knownVendors = null;          // состав вендоров зависит от набора сетов
             SaveCache();
             RefreshInstalled();
@@ -443,7 +455,8 @@ namespace AbletonManager
         /// папке проекта обычно лежит с десяток версий .als, и обходить её ради каждой
         /// значило бы перечитать одно и то же дерево десять раз.
         /// </summary>
-        static void WeighProjects(List<SetEntry> sets, ParallelOptions po, CancellationToken cancel)
+        static Activity WeighProjects(List<SetEntry> sets, ParallelOptions po,
+                                      CancellationToken cancel, Activity known)
         {
             List<string> dirs = new List<string>();
             Dictionary<string, int> slot = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
@@ -472,6 +485,10 @@ namespace AbletonManager
                 e.ProjectSize = weights[i].Bytes;
                 e.ProjectFiles = weights[i].Files;
             }
+
+            // История сохранений приезжает тем же обходом: копии в Backup он и так
+            // перечисляет, считая вес папки.
+            return Activity.Build(dirs, weights, sets, known);
         }
 
         SetEntry Build(string file, FileInfo fi)
@@ -530,6 +547,9 @@ namespace AbletonManager
             }
 
             string dir = Path.GetDirectoryName(file);
+            // Считаем РАЗНЫЕ файлы, а не вхождения: один сэмпл, разрезанный на сотню
+            // клипов, даёт сотню FileRef — и раньше колонка Files показывала именно их.
+            HashSet<string> seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             int missing = 0, real = 0;
             foreach (FileRefInfo fr in info.Files)
             {
@@ -538,6 +558,7 @@ namespace AbletonManager
                 if (!fr.IsSampleDependency) continue;
                 ResolvedRef rr = RefResolver.Resolve(fr, dir, Env);
                 if (rr.Status == RefStatus.Empty) continue;
+                if (!seen.Add(rr.ResolvedPath)) continue;
                 real++;
                 if (rr.Status == RefStatus.Missing || rr.Status == RefStatus.MissingPack) missing++;
             }

@@ -17,8 +17,8 @@ namespace AbletonManager
     {
         public override bool UseGlass { get { return false; } }
 
-        readonly FieldBox _tags = new FieldBox();
-        readonly GlassButton _pick = new GlassButton();
+        readonly TagEditor _tags = new TagEditor();
+        readonly TagSuggest _suggest = new TagSuggest();
         readonly TextBox _note = new TextBox();
         readonly GlassButton _cancel = new GlassButton();
         readonly GlassButton _save = new GlassButton();
@@ -29,16 +29,24 @@ namespace AbletonManager
         {
             _dir = set.ProjectDir;
             Caption = set.Name;
-            ClientSize = new Size(Sc(560), Sc(430));
+            // Выше прежнего: поле тегов и ряд подсказок под ним растут вниз, а заметке
+            // всё равно должно остаться на что смотреть.
+            ClientSize = new Size(Sc(560), Sc(480));
 
-            _tags.Cue = "remix, collab, femboycore";
-            _tags.Box.Text = ProjectMeta.JoinTags(ProjectMeta.TagsOf(_dir));
+            _tags.Cue = "type a tag, then comma";
+            _tags.SetTags(ProjectMeta.TagsOf(_dir));
+            // Список тегов поменялся — поле могло стать выше или ниже, а ряд под ним
+            // потерять или вернуть пилюлю: пересобираем всё окно.
+            _tags.Changed += delegate { RefreshSuggestions(); Relayout(); };
             Controls.Add(_tags);
 
-            _pick.Text = "Existing…";
-            _pick.FitToText(14);
-            _pick.Click += delegate { PickExisting(); };
-            Controls.Add(_pick);
+            _suggest.Picked += delegate (string tag)
+            {
+                _tags.AddTag(tag);
+                _tags.Box.Focus();
+            };
+            Controls.Add(_suggest);
+            RefreshSuggestions();
 
             _note.Multiline = true;
             // Без полосы прокрутки: нативную не покрасить, и светлый жёлоб Windows на
@@ -64,41 +72,33 @@ namespace AbletonManager
             _save.FitToText(20);
             _save.Click += delegate { Commit(); };
             Controls.Add(_save);
+
+            // Открыли окно — можно сразу набирать тег, как было с прежним полем.
+            Shown += delegate { _tags.Box.Focus(); };
         }
 
         void Commit()
         {
-            ProjectMeta.Set(_dir, ProjectMeta.ParseTags(_tags.Box.Text), _note.Text);
+            // Набрал слово и сразу нажал Save — тег должен сохраниться, а не пропасть
+            // вместе с недописанной запятой.
+            _tags.CommitPending();
+            ProjectMeta.Set(_dir, _tags.Tags, _note.Text);
             DialogResult = DialogResult.OK;
             Close();
         }
 
-        /// <summary>Дописать тег, который уже где-то стоит, — чтобы не вспоминать написание.</summary>
-        void PickExisting()
+        /// <summary>Под полем — те теги, что уже где-то стоят и ещё не выбраны здесь.</summary>
+        void RefreshSuggestions()
         {
-            List<string> already = ProjectMeta.ParseTags(_tags.Box.Text);
-            ContextMenuStrip m = DarkMenu.Create();
+            List<string> rest = new List<string>();
             foreach (string tag in ProjectMeta.AllTags())
             {
                 bool used = false;
-                foreach (string t in already)
+                foreach (string t in _tags.Tags)
                     if (string.Equals(t, tag, StringComparison.CurrentCultureIgnoreCase)) { used = true; break; }
-                if (used) continue;
-
-                string captured = tag;
-                ToolStripMenuItem mi = new ToolStripMenuItem(tag);
-                mi.Click += delegate
-                {
-                    List<string> now = ProjectMeta.ParseTags(_tags.Box.Text);
-                    now.Add(captured);
-                    _tags.Box.Text = ProjectMeta.JoinTags(now);
-                    _tags.Invalidate();
-                };
-                m.Items.Add(mi);
+                if (!used) rest.Add(tag);
             }
-            if (m.Items.Count == 0)
-                m.Items.Add(new ToolStripMenuItem("no tags yet") { Enabled = false });
-            m.Show(_pick, new Point(0, _pick.Height + Sc(4)));
+            _suggest.SetItems(rest);
         }
 
         protected override void OnKeyDown(KeyEventArgs e)
@@ -111,6 +111,11 @@ namespace AbletonManager
         protected override void OnResize(EventArgs e)
         {
             base.OnResize(e);
+            Relayout();
+        }
+
+        void Relayout()
+        {
             if (_save == null) return;
 
             int pad = Sc(Theme.Pad);
@@ -119,15 +124,22 @@ namespace AbletonManager
             int y = Card.Top + Sc(66);
 
             _labelTags = new Rectangle(x, y, w, Sc(20));
-            y += Sc(24);
+            y += Sc(30);
 
-            int pickW = _pick.Width;
-            _tags.SetBounds(x, y, w - pickW - Sc(8), Sc(Theme.ControlH));
-            _pick.SetBounds(x + w - pickW, y, pickW, Sc(Theme.ControlH));
-            y += Sc(Theme.ControlH) + Sc(18);
+            // Поле растёт вниз по числу пилюль, ряд подсказок под ним — тоже; заметка
+            // забирает то, что осталось.
+            _tags.SetBounds(x, y, w, Sc(Theme.ControlH));
+            _tags.Height = _tags.Relayout();
+            y += _tags.Height + Sc(10);
+
+            _suggest.SetBounds(x, y, w, Sc(24));
+            int suggestH = _suggest.Relayout();
+            _suggest.Visible = suggestH > 0;
+            _suggest.Height = Math.Max(1, suggestH);
+            y += (suggestH > 0 ? suggestH + Sc(18) : Sc(8));
 
             _labelNote = new Rectangle(x, y, w, Sc(20));
-            y += Sc(24);
+            y += Sc(30);
 
             int bottom = Card.Bottom - pad - _save.Height - Sc(16);
             _noteBox = new Rectangle(x, y, w, Math.Max(Sc(80), bottom - y));

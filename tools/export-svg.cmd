@@ -1,8 +1,12 @@
 @echo off
 setlocal
-rem Снимает окна программы в export\ — по .png и .svg на окно.
-rem Компилируется вместе с исходниками, поэтому окна выходят ровно те, что в коде
-rem сейчас: после правок интерфейса достаточно перезапустить этот файл.
+rem Shoots the program's windows into export\ - one .png, .svg and .emf per window.
+rem Compiled together with the sources (src+proto+nebula, same set as build.cmd), so
+rem the windows come out exactly as they are in the code right now: after UI changes,
+rem just rerun this file.
+rem
+rem Comments in .cmd files stay ASCII on purpose: cmd.exe reads batch files in the OEM
+rem codepage, and UTF-8 text turns into commands it then tries to run.
 
 set CSC=%WINDIR%\Microsoft.NET\Framework64\v4.0.30319\csc.exe
 if not exist "%CSC%" set CSC=%WINDIR%\Microsoft.NET\Framework\v4.0.30319\csc.exe
@@ -14,7 +18,7 @@ if not exist "%CSC%" (
 set ROOT=%~dp0..
 set OUT=%ROOT%\export
 
-"%CSC%" /nologo /target:exe /main:AbletonManager.SvgExport /platform:anycpu /codepage:65001 /out:"%TEMP%\AliveSvgExport.exe" /reference:System.dll /reference:System.Core.dll /reference:System.Drawing.dll /reference:System.Windows.Forms.dll /reference:System.Xml.dll "%ROOT%\src\*.cs" "%~dp0SvgExport.cs"
+"%CSC%" /nologo /target:exe /main:AbletonManager.SvgExport /platform:anycpu /codepage:65001 /out:"%TEMP%\AliveSvgExport.exe" /reference:System.dll /reference:System.Core.dll /reference:System.Drawing.dll /reference:System.Windows.Forms.dll /reference:System.Xml.dll /reference:System.IO.Compression.dll /reference:System.IO.Compression.FileSystem.dll "%ROOT%\src\*.cs" "%ROOT%\proto\*.cs" "%ROOT%\nebula\*.cs" "%~dp0SvgExport.cs"
 
 if errorlevel 1 (
   echo.

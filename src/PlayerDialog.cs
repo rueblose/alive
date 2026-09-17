@@ -139,8 +139,11 @@ namespace AbletonManager
 
             _list.ShowPlayButton = true;
             _list.ShowPinIndicator = true;
+            _list.DragFilePath = delegate (RowData r) { RenderFile f = r.Tag as RenderFile; return f != null ? f.Path : null; };
             _list.ShowHeaderPin = false;
-            _list.FadeBottom = false;
+            // Как в MainForm: без зазора скроллбар садится поверх скруглённого края
+            // пилюли выделения на всю ширину строки.
+            _list.PillRightGap = Sc(20);
             _list.RowPlayClicked += delegate (int i) { PlayIndex(i, true); };
             _list.RowPinClicked += delegate (int i) { if (i >= 0 && i < _files.Count) Pin(_files[i]); };
             _list.ItemActivated += delegate { PlayIndex(_list.Rows.IndexOf(_list.Selected), true); };
@@ -589,9 +592,11 @@ namespace AbletonManager
 
             int listTop = headY + Sc(2);
             int listHeight = Math.Max(Sc(60), footY - Sc(10) - listTop);
-            _list.SetBounds(pad - Sc(Theme.CellPadX), listTop,
-                            w + Sc(Theme.CellPadX) * 2,
-                            listHeight);
+            // Обычно список нарочно шире pad на CellPadX — так текст строки, отступив
+            // от края пилюли на PadX, попадает ровно на pad. Тут же пилюля выделения —
+            // видимая рамка — обязана стоять вровень со скраббером и кнопками, поэтому
+            // список ограничен тем же pad, а не раздвинут наружу.
+            _list.SetBounds(pad, listTop, w, listHeight);
             _list.Visible = true;
         }
 

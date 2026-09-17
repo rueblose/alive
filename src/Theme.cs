@@ -70,7 +70,7 @@ namespace AbletonManager
         // (0x28→0x32→0x3A) — та шкала имеет смысл только для непрозрачного, тут же даже
         // «нажатое» состояние должно оставаться стеклом, а не залипать в сплошной цвет.
         public const int GlassSurfaceAlpha        = 0x14;   // ~8%, состояние покоя
-        public const int GlassSurfaceHotAlpha     = 0x49;   // ~15%, наведение
+        public const int GlassSurfaceHotAlpha     = 0x86;   // наведение: на размытом фоне 0x49 почти не читался
         public const int GlassSurfacePressedAlpha = 0xb0;   // ~23%, нажатие / выбрано
 
         public static readonly Color Sunken  = Color.FromArgb(0xFF, 0x15, 0x15, 0x19);  // поле поиска
@@ -107,8 +107,8 @@ namespace AbletonManager
         public const int IconSize   = 35;   // круглая кнопка-иконка
         public const int IconGap    = 10;
         public const int ContentY   = 98;   // где начинается содержимое под панелью инструментов
-        public const int RowH       = 53;   // шаг строки таблицы
-        public const int RowPillH   = 51;   // сама подсветка строки
+        public const int RowH       = 57;   // шаг строки таблицы
+        public const int RowPillH   = 55;   // сама подсветка строки
         public const int CellPadX   = 24;   // отступ текста от края строки
         public const int PanelW     = 332;  // панель подробностей
         public const int PanelPad   = 16;
@@ -356,14 +356,22 @@ namespace AbletonManager
             g.PixelOffsetMode = PixelOffsetMode.HighQuality;
         }
 
-        /// <summary>Облегчённая настройка Graphics при прокрутке: без HighQuality
-        /// PixelOffsetMode, который замедляет все GDI+ операции.</summary>
+        /// <summary>
+        /// Облегчённая настройка Graphics при прокрутке: без HighQuality
+        /// PixelOffsetMode, который замедляет все GDI+ операции.
+        ///
+        /// Но и не Default: при нём GDI+ кладёт фигуру на полпикселя ниже и правее, чем
+        /// сказано в прямоугольнике (замерено: пилюля 8..31 рисуется сплошной с 9 по 31
+        /// и бледной строкой на 32). На прокрутке всё уезжало на полпикселя и вставало
+        /// обратно, когда список замирал. Half даёт ту же точность, что HighQuality,
+        /// без его цены.
+        /// </summary>
         public static void SmoothFast(Graphics g)
         {
             g.SmoothingMode = SmoothingMode.AntiAlias;
             g.TextRenderingHint = TextRenderingHint.ClearTypeGridFit;
             g.InterpolationMode = InterpolationMode.Bilinear;
-            g.PixelOffsetMode = PixelOffsetMode.Default;
+            g.PixelOffsetMode = PixelOffsetMode.Half;
         }
     }
 
