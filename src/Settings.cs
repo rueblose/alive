@@ -5,102 +5,107 @@ using System.Text;
 
 namespace AbletonManager
 {
-    /// <summary>Корни поиска и мелкие настройки. Формат — построчный, чтобы файл можно было править руками.</summary>
+    /// <summary>Search roots and small settings. The format is line-based so the file can be
+    /// edited by hand.</summary>
     public sealed class Settings
     {
         public readonly List<string> Roots = new List<string>();
-        // Подмножество Roots, временно исключённое из сканирования — папка остаётся в
-        // списке (и в UI), но Scan() её пропускает, пока сюда не вернут.
+        // A subset of Roots temporarily excluded from scanning — the folder stays in the list
+        // (and in the UI), but Scan() skips it until it is put back.
         public readonly List<string> DisabledRoots = new List<string>();
 
         /// <summary>
-        /// Колонки списка сетов: видимость, порядок и ширины одной строкой вида
-        /// «Set,Modified:150,BPM:81,…». Пусто — набор по умолчанию. Хранится как есть,
-        /// разбирает и собирает эту строку сам список — настройкам знать её формат незачем.
+        /// Columns of the sets list: visibility, order and widths in one string of the form
+        /// "Set,Modified:150,BPM:81,…". Empty means the default set. It is stored as is; the
+        /// list itself parses and builds that string — the settings have no business knowing
+        /// its format.
         /// </summary>
         public string SetColumns = "";
 
-        /// <summary>То же самое для таблицы плагинов — она настраивается наравне с сетами.</summary>
+        /// <summary>The same for the plugins table — it is configurable on equal terms with the
+        /// sets.</summary>
         public string PluginColumns = "";
 
         /// <summary>
-        /// Порядок колонок уже приводили к каталожному. Раньше включённая колонка
-        /// вставала в конец, и таблица переставала совпадать с меню. Разовая починка:
-        /// после неё порядок снова чей угодно — заголовки по-прежнему таскаются мышью.
+        /// Column order has already been brought back to the catalog's. A column switched on
+        /// used to go to the end, and the table stopped matching the menu. A one-off repair:
+        /// after it the order is anyone's again — the headers are still dragged with the mouse.
         /// </summary>
         public bool ColumnsSorted;
 
-        /// <summary>Держать ли закреплённые сеты в начале списка — звёздочка в шапке.</summary>
+        /// <summary>Whether to keep pinned sets at the top of the list — the star in the
+        /// header.</summary>
         public bool PinnedFirst;
 
-        /// <summary>Развёрнута ли сводка над списком проектов.</summary>
+        /// <summary>Whether the summary above the project list is expanded.</summary>
         public bool OverviewOpen = true;
 
         /// <summary>
-        /// Выключить прозрачный фон окна насовсем — окна станут плоскими и тёмными.
+        /// Turn the translucent window background off for good — the windows become flat and
+        /// dark.
         ///
-        /// Нужно из-за Windows 10: акрил там реализован через недокументированный
-        /// SetWindowCompositionAttribute, и DWM пересчитывает размытие на каждый сдвиг
-        /// окна. При перетаскивании очередь сообщений копится, окно едет за курсором с
-        /// задержкой и продолжает двигаться ещё пару секунд после того, как мышь
-        /// остановилась. На Windows 11 работает другая ветка (системный backdrop), и
-        /// там этого нет — поэтому не выключаем сами, а отдаём переключателем.
+        /// Needed because of Windows 10: acrylic there goes through the undocumented
+        /// SetWindowCompositionAttribute, and DWM recomputes the blur on every window move.
+        /// While dragging, the message queue builds up, the window trails behind the cursor and
+        /// keeps moving for a couple of seconds after the mouse has stopped. Windows 11 runs a
+        /// different branch (the system backdrop) and does not have this — which is why we do
+        /// not switch it off ourselves but hand over a toggle.
         /// </summary>
         public bool DisableGlass;
 
 
         /// <summary>
-        /// Включена ли плавная вертикальная прокрутка (доводка таймером).
-        /// При false прокрутка во всех списках и панелях происходит мгновенно.
+        /// Whether smooth vertical scrolling is on (settling by timer). With false, scrolling
+        /// in every list and panel is instant.
         /// </summary>
         public bool SmoothScroll = true;
 
         /// <summary>
-        /// Схлопывать ли сеты одной папки в одну строку. По умолчанию да: у проекта
-        /// обычно с десяток .als (v1, v2, final, final2), и без этого каталог — это
-        /// список версий, а не список проектов.
+        /// Whether to collapse the sets of one folder into a single row. On by default: a
+        /// project usually holds a dozen .als files (v1, v2, final, final2), and without this
+        /// the catalog is a list of versions rather than a list of projects.
         /// </summary>
         public bool GroupByFolder = true;
 
-        // ------------------------------------------------------------- плагины
+        // ------------------------------------------------------------------ plugins
 
         /// <summary>
-        /// Откуда брать список установленных плагинов: false — из базы самой Live
-        /// (по умолчанию и почти всегда правильно: Live уже обошла все папки со своими
-        /// настройками и разобрала бинарники, а шеллы вроде Waves развернула в сотни
-        /// отдельных плагинов), true — обойти папки самим по настройкам ниже. Второе
-        /// нужно, когда база Live пуста или врёт.
+        /// Where to take the list of installed plugins from: false — from Live's own database
+        /// (the default, and almost always right: Live has already walked every folder from its
+        /// settings, parsed the binaries, and expanded shells like Waves into hundreds of
+        /// separate plugins); true — walk the folders ourselves by the settings below. The
+        /// second is needed when Live's database is empty or lying.
         /// </summary>
         public bool PluginsFromFolders;
 
         /// <summary>
-        /// Какую установку Live спрашивать: пусто — все сразу, свежая важнее. Иначе имя
-        /// папки («Live 12.4.3»). Ручной выбор нужен из-за бет: у них своя папка
-        /// настроек, и свежий журнал сканера там бывает от одного-единственного
-        /// плагина, который сейчас разрабатывают.
+        /// Which Live installation to ask: empty means all of them at once, newest wins.
+        /// Otherwise a folder name ("Live 12.4.3"). Choosing by hand is needed because of
+        /// betas: they have their own settings folder, and the freshest scanner log there is
+        /// sometimes about the single plugin currently being developed.
         /// </summary>
         public string PluginSource = "";
 
-        /// <summary>Папки для ручного обхода — те же три переключателя, что в Live.</summary>
+        /// <summary>Folders for the manual walk — the same three switches Live has.</summary>
         public bool Vst2CustomOn;
         public string Vst2CustomPath = "";
         public bool Vst3SystemOn = true;
         public bool Vst3CustomOn;
         public string Vst3CustomPath = "";
 
-        // ------------------------------------------------------------- сборка проекта
+        // ------------------------------------------------------- collecting a project
 
         /// <summary>
-        /// Галочки диалога Collect All — те же четыре, что у «Collect All and Save» в Live.
-        /// Паки выключены по умолчанию: они весят на порядок больше всего остального, а
-        /// есть у любого, кто их купил.
+        /// The Collect All dialog's boxes — the same four "Collect All and Save" has in Live.
+        /// Packs are off by default: they weigh an order of magnitude more than everything
+        /// else, and anyone who bought them has them already.
         /// </summary>
         public bool CollectElsewhere = true;
         public bool CollectOtherProjects = true;
         public bool CollectUserLibrary = true;
         public bool CollectFactoryPacks;
 
-        /// <summary>Складывать собранное в .zip вместо папки.</summary>
+        /// <summary>Put the collected material into a .zip instead of a folder.</summary>
         public bool CollectToZip;
 
         public static string Dir
@@ -163,8 +168,8 @@ namespace AbletonManager
             return s;
         }
 
-        // Пути в Windows регистронезависимы, а List<string>.Contains — нет, поэтому
-        // без этого хелпера "C:\Ableton" и "c:\ableton" считались бы разными корнями.
+        // Paths on Windows are case-insensitive while List<string>.Contains is not, so without
+        // this helper "C:\Ableton" and "c:\ableton" would count as different roots.
         static bool Has(List<string> list, string value)
         {
             foreach (string s in list)

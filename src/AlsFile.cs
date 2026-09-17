@@ -13,9 +13,9 @@ namespace AbletonManager
     {
         public PluginKind Kind;
         public string Name = "";
-        public string Uid = "";           // «vst3:ed57bd72-...» или «vst2:2017543218»
-        public string Manufacturer = "";  // из BrowserContentPath, см. AlsFile.ParseBrowserPath
-        public bool VendorConfident;      // true только для формы VST3:Вендор:Имя
+        public string Uid = "";           // "vst3:ed57bd72-..." or "vst2:2017543218"
+        public string Manufacturer = "";  // from BrowserContentPath, see AlsFile.ParseBrowserPath
+        public bool VendorConfident;      // true only for the VST3:Vendor:Name form
 
         internal readonly int[] Vst3Fields = new int[4];
         internal int Vst3FieldCount;
@@ -24,11 +24,11 @@ namespace AbletonManager
         public string Key { get { return Kind + "|" + Name.ToLowerInvariant(); } }
 
         /// <summary>
-        /// Собирает Uid в том же виде, в каком его пишет сама Live в PluginScanDb.txt:
-        /// четыре Fields.* — это те же 16 байт класса VST3, записанные как четыре int
-        /// со старшего байта. Fields «-313016974, 1549813374, -1504849164, 7703407»
-        /// превращаются в «ed57bd72-5c60-467e-a64d-d2f400758b6f» — ровно то, что у Live
-        /// значится для FabFilter Pro-Q 4.
+        /// Assembles the Uid in the same shape Live itself writes into PluginScanDb.txt: the
+        /// four Fields.* are the same 16 bytes of a VST3 class written as four ints, most
+        /// significant byte first. Fields "-313016974, 1549813374, -1504849164, 7703407" turn
+        /// into "ed57bd72-5c60-467e-a64d-d2f400758b6f" — exactly what Live lists for FabFilter
+        /// Pro-Q 4.
         /// </summary>
         internal void FinishUid()
         {
@@ -55,15 +55,16 @@ namespace AbletonManager
         public int RelativePathType;
         public long OriginalFileSize;
 
-        /// <summary>Имя узла-родителя: SampleRef, FilePresetRef, OriginalFileRef и т.п.</summary>
+        /// <summary>The parent node's name: SampleRef, FilePresetRef, OriginalFileRef and so
+        /// on.</summary>
         public string Container = "";
 
         /// <summary>
-        /// Настоящая зависимость сета — только сэмпл клипа (родитель SampleRef). Всё
-        /// прочее (FilePresetRef, AbletonDefaultPresetRef, OriginalFileRef, Max-патчи) —
-        /// это происхождение встроенного содержимого: Ableton хранит его прямо в сете и
-        /// при открытии на отсутствие файла не жалуется, а путь ведёт в лучшем случае на
-        /// чужую машину. Считать такое потерянным — как раз тот баг, что заметен глазом.
+        /// A set's real dependency is only a clip's sample (parent SampleRef). Everything else
+        /// (FilePresetRef, AbletonDefaultPresetRef, OriginalFileRef, Max patches) records where
+        /// embedded content came from: Ableton keeps it inside the set and does not complain
+        /// about a missing file on open, while the path leads to somebody else's machine at
+        /// best. Counting that as lost is exactly the kind of bug you notice by eye.
         /// </summary>
         public bool IsSampleDependency
         {
@@ -87,7 +88,7 @@ namespace AbletonManager
         public string Creator = "";        // "Ableton Live 12.3.5"
         public double Tempo;
 
-        // Общая тональность сета. -1 — версия Live её не сохраняла.
+        // The set's overall key. -1 means the Live version did not save it.
         public int ScaleRoot = -1;
         public int ScaleIndex = -1;
         public bool PreferFlat;
@@ -102,14 +103,15 @@ namespace AbletonManager
     }
 
     /// <summary>
-    /// Читает .als. Формат: gzip поверх XML — не tar, как иногда пишут.
-    /// Разбор потоковый (XmlReader прямо поверх GZipStream): типичный сет — 100 КБ на
-    /// диске и под 3 МБ XML после распаковки, а сетов тут больше тысячи, так что
-    /// поднимать целиком в память каждый файл нельзя.
+    /// Reads an .als. The format is gzip over XML — not tar, as is sometimes claimed. Parsing
+    /// is streaming (XmlReader straight over GZipStream): a typical set is 100 KB on disk and
+    /// close to 3 MB of XML once decompressed, and there are over a thousand sets here, so
+    /// pulling each file whole into memory is out of the question.
     /// </summary>
     public static class AlsFile
     {
-        /// <summary>Общие настройки чтения — те же и для разбора аранжировки.</summary>
+        /// <summary>Shared reader settings — the same ones the arrangement parser
+        /// uses.</summary>
         internal static XmlReaderSettings XmlSettings()
         {
             XmlReaderSettings settings = new XmlReaderSettings();
@@ -143,7 +145,7 @@ namespace AbletonManager
         {
             List<string> stack = new List<string>();
 
-            // Контекст: в каком узле мы сейчас находимся.
+            // Context: which node we are currently inside.
             int mainTrackDepth = -1;
             int pluginDepth = -1;
             PluginRef plugin = null;
@@ -152,13 +154,13 @@ namespace AbletonManager
             bool tempoSeen = false;
             int tempoDepth = -1;
 
-            // BrowserContentPath идёт РАНЬШЕ PluginDesc внутри того же устройства,
-            // поэтому запоминаем последний увиденный и отдаём его ближайшему плагину.
+            // BrowserContentPath comes BEFORE PluginDesc within the same device, so we remember
+            // the last one seen and hand it to the nearest plugin.
             string pendingManufacturer = null;
             bool pendingConfident = false;
 
-            // Узел ScaleInformation есть и у каждого клипа — нас интересует только тот,
-            // что лежит прямо в LiveSet: это общая тональность проекта.
+            // A ScaleInformation node exists on every clip too — the one we want is the one
+            // sitting directly in LiveSet: that is the project's overall key.
             int songScaleDepth = -1;
 
             while (r.Read())
@@ -205,7 +207,7 @@ namespace AbletonManager
                     case "MidiTrack": info.MidiTracks++; break;
                     case "GroupTrack": info.GroupTracks++; break;
                     case "MainTrack":
-                    case "MasterTrack":                 // до Live 12 назывался так
+                    case "MasterTrack":                 // called that before Live 12
                         if (!empty) mainTrackDepth = depth;
                         break;
 
@@ -227,7 +229,7 @@ namespace AbletonManager
                         {
                             plugin.Manufacturer = pendingManufacturer;
                             plugin.VendorConfident = pendingConfident;
-                            pendingManufacturer = null;   // одному плагину — один путь
+                            pendingManufacturer = null;   // one path per plugin
                             pendingConfident = false;
                         }
                         break;
@@ -236,7 +238,7 @@ namespace AbletonManager
                         if (!empty)
                         {
                             fileRef = new FileRefInfo();
-                            fileRef.Container = parent;   // SampleRef = реальный сэмпл, остальное — происхождение
+                            fileRef.Container = parent;   // SampleRef = a real sample, the rest is provenance
                             fileRefDepth = depth;
                         }
                         break;
@@ -256,21 +258,22 @@ namespace AbletonManager
                         break;
                 }
 
-                // --- значения внутри уже открытых узлов
+                // --- values inside nodes that are already open
                 if (plugin != null && depth == pluginDepth + 1)
                 {
                     if (name == "PlugName" || name == "Name") plugin.Name = Attr(r, plugin.Name);
                     else if (name == "UniqueId") plugin.Vst2UniqueId = LongAttr(r);
                     else if (name == "Manufacturer")
                     {
-                        // У Audio Unit вендор записан прямо в узле — источник надёжный.
+                        // On an Audio Unit the vendor is written right in the node — a reliable
+                        // source.
                         string v = Attr(r, "");
                         if (v.Length > 0) { plugin.Manufacturer = v; plugin.VendorConfident = true; }
                     }
                 }
 
-                // <Vst3PluginInfo><Uid><Fields.0../></Uid> — берём только эти четыре,
-                // узлы с таким же именем в блоке пресета сюда попадать не должны.
+                // <Vst3PluginInfo><Uid><Fields.0../></Uid> — we take only these four; nodes of
+                // the same name inside a preset blob must not get in here.
                 if (plugin != null && parent == "Uid" && depth == pluginDepth + 2
                     && name.StartsWith("Fields.") && plugin.Vst3FieldCount < 4)
                 {
@@ -313,13 +316,12 @@ namespace AbletonManager
         }
 
         /// <summary>
-        /// Разработчик плагина прячется в пути браузера, который Live записывает рядом
-        /// с устройством:
-        ///     query:Plugins#VST3:FabFilter:Pro-Q%203   -> формат, разработчик, имя
-        ///     view:X-Plugins#Antares:Auto-Tune%20Pro   -> разработчик, имя
-        ///     view:X-Plugins#Decapitator               -> только имя
-        /// Пути вида query:Everything#Reverb принадлежат встроенным устройствам Live и
-        /// сюда попадать не должны — их отсекаем по отсутствию "Plugins#".
+        /// The plugin's developer hides in the browser path Live records next to the device:
+        ///     query:Plugins#VST3:FabFilter:Pro-Q%203   -> format, developer, name
+        ///     view:X-Plugins#Antares:Auto-Tune%20Pro   -> developer, name
+        ///     view:X-Plugins#Decapitator               -> name only
+        /// Paths shaped like query:Everything#Reverb belong to Live's built-in devices and must
+        /// not get in here — we cut them off by the absence of "Plugins#".
         /// </summary>
         internal static string ParseBrowserPath(string value, out bool confident)
         {
@@ -334,9 +336,9 @@ namespace AbletonManager
             string manufacturer = null;
             if (parts.Length >= 3)
             {
-                // query:Plugins#<ФОРМАТ>:<...>:<имя>. Настоящий вендор тут только у VST3
-                // и AU — Live берёт его из самого плагина. У VST2 (формат "VST") на этом
-                // месте оказывается папка, в которой лежит .dll, то есть «Gen» или «Eff».
+                // query:Plugins#<FORMAT>:<...>:<name>. A genuine vendor sits here only for VST3
+                // and AU — Live takes it from the plugin itself. For VST2 (format "VST") this
+                // slot holds the folder the .dll lies in, that is, "Gen" or "Eff".
                 manufacturer = parts[parts.Length - 2];
                 string format = parts[0];
                 confident = format.Equals("VST3", StringComparison.OrdinalIgnoreCase)
@@ -345,7 +347,7 @@ namespace AbletonManager
             }
             else if (parts.Length == 2)
             {
-                // Форма view:X-Plugins#Antares:Auto-Tune Pro — тоже папка браузера.
+                // The view:X-Plugins#Antares:Auto-Tune Pro form is a browser folder too.
                 manufacturer = parts[0];
             }
             if (string.IsNullOrEmpty(manufacturer)) return null;

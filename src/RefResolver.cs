@@ -6,10 +6,10 @@ namespace AbletonManager
 {
     public enum RefStatus
     {
-        Empty,        // ссылки нет: пустой FileRef-заглушка, таких в сете большинство
-        Found,        // файл на месте
-        Missing,      // не нашли — вот это настоящая потеря
-        MissingPack   // не найден Live Pack, на который ссылается сет
+        Empty,        // no reference: an empty FileRef placeholder, and most of a set is these
+        Found,        // the file is where it should be
+        Missing,      // not found — this one is a real loss
+        MissingPack   // the Live Pack the set refers to was not found
     }
 
     public sealed class ResolvedRef
@@ -21,33 +21,32 @@ namespace AbletonManager
     }
 
     /// <summary>
-    /// RelativePathType в .als задаёт КОРЕНЬ, от которого считается RelativePath.
-    /// Значения выяснены на реальной библиотеке (см. README):
-    ///   0 - ссылки нет
-    ///   1 - от папки проекта, может уходить вверх (../../Samples/...)
-    ///   3 - внутри папки проекта
-    ///   5 - от корня Live Pack, имя пака в LivePackName
-    ///   6 - от User Library
-    ///   7 - от Resources\Builtin установленного Live
-    /// Абсолютный путь используется только как последняя подсказка: в чужих и старых
-    /// проектах он ведёт на другую машину, другой диск или прошлую версию Live.
+    /// RelativePathType in the .als names the ROOT that RelativePath is measured from. The
+    /// values were worked out on a real library (see README):
+    ///   0 - no reference
+    ///   1 - from the project folder, may go upwards (../../Samples/...)
+    ///   3 - inside the project folder
+    ///   5 - from a Live Pack root, the pack name in LivePackName
+    ///   6 - from the User Library
+    ///   7 - from Resources\Builtin of the installed Live
+    /// The absolute path is only used as the last hint: in other people's and older projects it
+    /// leads to another machine, another drive, or a previous Live version.
     /// </summary>
     public static class RefResolver
     {
-        // ------------------------------------------------- кеш файловых проб
+        // ------------------------------------------------- cache of file probes
         //
-        // Замерено на реальной библиотеке: в двадцати сетах 29 643 ссылки на сэмплы, а
-        // разных путей среди них всего 1 112 — то есть 96% проверок «есть ли такой файл»
-        // спрашивают ровно то же самое, что уже спрашивали. Один сет ссылается на свою
-        // папку Samples сотнями клипов, а общие библиотеки и паки повторяются во всех
-        // сетах сразу.
+        // Measured on a real library: twenty sets hold 29,643 sample references, and only 1,112
+        // distinct paths among them — meaning 96% of the "does this file exist" checks ask for
+        // exactly what has already been asked. One set points at its own Samples folder with
+        // hundreds of clips, while shared libraries and packs repeat across every set at once.
         //
-        // Кешируем именно результат ПРОБЫ, а не саму ссылку: разрешённые пути нужны
-        // целиком — по ним счётчики отбрасывают повторы одного и того же файла.
+        // What we cache is the result of the PROBE, not the reference itself: resolved paths
+        // are needed whole — the counters use them to drop repeats of one and the same file.
         //
-        // Живёт только на время одного сканирования: набор файлов на диске меняется без
-        // спроса, и запомненный между сканированиями ответ был бы враньём — «пересканить»
-        // должно означать «проверить заново».
+        // It lives only for the duration of one scan: the set of files on disk changes without
+        // asking, and an answer remembered between scans would be a lie — "rescan" has to mean
+        // "check again".
 
         static volatile Dictionary<string, bool> _probe;
 
@@ -73,7 +72,8 @@ namespace AbletonManager
             return ok;
         }
 
-        /// <summary>Directory.Exists тут не лишний: .adg и .amxd бывают папками.</summary>
+        /// <summary>Directory.Exists is not redundant here: .adg and .amxd are sometimes
+        /// folders.</summary>
         static bool Probe(string full)
         {
             try { return File.Exists(full) || Directory.Exists(full); }
@@ -105,7 +105,8 @@ namespace AbletonManager
                     if (Try(packRoot, rel, res)) return res;
                     if (packRoot == null && !string.IsNullOrEmpty(fr.LivePackName))
                     {
-                        // пак вообще не установлен — это другая беда, чем потерянный сэмпл
+                        // the pack is not installed at all — a different trouble from a lost
+                        // sample
                         if (!Exists(fr.AbsolutePath))
                         {
                             res.Status = RefStatus.MissingPack;
@@ -126,7 +127,7 @@ namespace AbletonManager
                     break;
             }
 
-            // запасные варианты: абсолютный путь, затем прочие корни
+            // fallbacks: the absolute path, then the other roots
             if (Exists(fr.AbsolutePath))
             {
                 res.Status = RefStatus.Found;

@@ -11,9 +11,9 @@ using System.Windows.Forms;
 namespace AbletonManager.Nebula
 {
     /// <summary>
-    /// Окно Nebula. Оформление то же, что у Alive (стекло, пилюли, кегли из Theme), а
-    /// содержимое одно — облако проектов и панель, в которой каждому из шести каналов
-    /// назначается величина сета.
+    /// The Nebula window. The chrome is the same as Alive's (glass, pills, type sizes from
+    /// Theme), and there is only one thing inside — the cloud of projects and a panel assigning
+    /// a value of the set to each of the six channels.
     /// </summary>
     public sealed class NebulaForm : Form
     {
@@ -44,8 +44,8 @@ namespace AbletonManager.Nebula
         readonly SeekSlider _maxSize = new SeekSlider();
         readonly DropField _dgrad = new DropField();
 
-        // Диапазоны, в которые ползунки Size переводят 0..1 — логические px, до Sc().
-        // У Fade диапазон и так 0..1 (альфа), никакого перевода не нужно.
+        // The ranges the Size sliders map 0..1 into — logical px, before Sc(). Fade's range is
+        // already 0..1 (alpha), so no mapping is needed there.
         const float MinSizeLo = 0f, MinSizeHi = 12f;
         const float MaxSizeLo = 4f, MaxSizeHi = 48f;
 
@@ -56,7 +56,8 @@ namespace AbletonManager.Nebula
         readonly DropField _dalpha = new DropField();
         readonly DropField _dcolor = new DropField();
 
-        // Чекбокс рядом с каждым из шести — выключить канал, не теряя выбор в списке.
+        // A checkbox beside each of the six — switch a channel off without losing the choice in
+        // the list.
         readonly ChannelSwitch _ex = new ChannelSwitch();
         readonly ChannelSwitch _ey = new ChannelSwitch();
         readonly ChannelSwitch _ez = new ChannelSwitch();
@@ -101,7 +102,7 @@ namespace AbletonManager.Nebula
 
         int Sc(int v) { return (int)Math.Round(v * (DeviceDpi / 96f)); }
 
-        // -------------------------------------------------------------------- сборка
+        // -------------------------------------------------------------------- building
 
         void Build()
         {
@@ -151,9 +152,9 @@ namespace AbletonManager.Nebula
             _reset.Click += delegate { _cloud.ResetView(); };
             Controls.Add(_reset);
 
-            // Ортографический пресет — это ровно вот такой вид, без вращения поверх;
-            // спин выключаем, иначе кадр, который только что встал по оси, через секунду
-            // снова косит.
+            // An orthographic preset means exactly this view, with no rotation on top; we
+            // switch the spin off, or a frame that has just squared up to an axis goes askew
+            // again a second later.
             _camera.PresetClicked += delegate (CameraPreset p)
             {
                 _spin.Checked = false;
@@ -216,8 +217,9 @@ namespace AbletonManager.Nebula
             base.OnShown(e);
             Glass.Apply(this);
 
-            // Каталог уже собран Alive — читаем его кеш и показываем облако сразу.
-            // Своего сканирования при старте нет: оно тут ни к чему, а секунды стоит.
+            // The catalog has already been built by Alive — we read its cache and show the
+            // cloud at once. There is no scan of our own at startup: it would achieve nothing
+            // here and costs seconds.
             bool loaded = false;
             try { loaded = _index.LoadFromCache(); }
             catch { }
@@ -235,7 +237,7 @@ namespace AbletonManager.Nebula
             if (Visible) Glass.Apply(this);
         }
 
-        // ------------------------------------------------------------------- каналы
+        // -------------------------------------------------------------------- channels
 
         static readonly string[] DefaultChannels =
             { "tracks", "plugins", "bpm", "setsize", "created", "live" };
@@ -358,15 +360,15 @@ namespace AbletonManager.Nebula
                                MetricOf(fields[4]), switches[4].Checked,
                                MetricOf(fields[5]), switches[5].Checked);
 
-            // Палитра красит только непрерывные величины — на Key/Scale/Collection она
-            // ничего не решает (там своя раскраска по классам), и предлагать её выбор
-            // тогда только сбивало бы с толку.
+            // The palette only colours continuous values — on Key/Scale/Collection it decides
+            // nothing (those have their own per-class colouring), and offering the choice then
+            // would only confuse.
             _dgrad.Visible = switches[5].Checked && MetricOf(fields[5]).Color == ColorMode.Ramp;
 
             Invalidate();
         }
 
-        // -------------------------------------------------------------------- данные
+        // ---------------------------------------------------------------------- data
 
         void Apply()
         {
@@ -398,12 +400,12 @@ namespace AbletonManager.Nebula
         }
 
         /// <summary>
-        /// Тот же диалог, что и в Alive — с проводником Windows (IFileOpenDialog) и
-        /// счётчиком сетов по папке. Собственный FolderBrowserDialog здесь себя не
-        /// показывал: он не модальный к слою акрила (SetWindowCompositionAttribute),
-        /// и всплывал за главным окном, а не перед ним — снаружи это выглядело как
-        /// «кнопка не работает». GlassDialog, на котором стоит RootsDialog, с этим
-        /// слоем уже дружит.
+        /// The same dialog as in Alive — with the Windows file browser (IFileOpenDialog) and a
+        /// per-folder set count. Our own FolderBrowserDialog did not do well here: it is not
+        /// modal to the acrylic layer (SetWindowCompositionAttribute) and surfaced behind the
+        /// main window rather than in front of it, which from outside looked like "the button
+        /// does not work". GlassDialog, which RootsDialog is built on, already gets along with
+        /// that layer.
         /// </summary>
         bool EditRoots()
         {
@@ -484,9 +486,10 @@ namespace AbletonManager.Nebula
         }
 
         /// <summary>
-        /// Вес папок проектов. В кеше Alive его нет намеренно (записал сэмпл — папка
-        /// потяжелела, а .als не изменился), поэтому канал размера считаем сами и в
-        /// фоне: облако уже видно, точки просто раздуются, когда числа приедут.
+        /// The size of project folders. It is deliberately absent from Alive's cache (record a
+        /// sample and the folder grows heavier while the .als has not changed), so we count the
+        /// size channel ourselves and in the background: the cloud is already visible, and the
+        /// dots simply swell when the numbers arrive.
         /// </summary>
         void StartWeighing()
         {
@@ -612,7 +615,7 @@ namespace AbletonManager.Nebula
             }
         }
 
-        // ------------------------------------------------------------------ раскладка
+        // ------------------------------------------------------------------- layout
 
         protected override void OnResize(EventArgs e)
         {
@@ -683,15 +686,16 @@ namespace AbletonManager.Nebula
                 fy += h + Sc(8);
             }
 
-            // Палитра — сразу под каналами, рядом с Colour: своя строка, но видна
-            // только когда есть что ею красить (см. ApplyChannels), место под неё
-            // резервируется всегда, чтобы включение/выключение не сдвигало всё, что ниже.
+            // The palette sits directly under the channels, next to Colour: its own row, but
+            // visible only when there is something for it to colour (see ApplyChannels). Room
+            // for it is always reserved so that switching it on and off does not shift
+            // everything below.
             fy += Sc(6);
             _dgrad.SetBounds(panelX, fy, panelW, h);
             fy += h + Sc(18);
 
-            // Четыре ползунка точек — подпись рисуется над каждым в PaintPanel, поэтому
-            // строка выше самого ползунка тоже входит в шаг.
+            // Four point sliders — the caption is drawn above each of them in PaintPanel, so
+            // the line above the slider itself counts towards the step too.
             int sliderH = Sc(18), labelH = Sc(18), sliderStep = labelH + sliderH + Sc(10);
             _minFade.SetBounds(panelX, fy + labelH, panelW, sliderH); fy += sliderStep;
             _maxFade.SetBounds(panelX, fy + labelH, panelW, sliderH); fy += sliderStep;
@@ -699,7 +703,7 @@ namespace AbletonManager.Nebula
             _maxSize.SetBounds(panelX, fy + labelH, panelW, sliderH);
         }
 
-        // ------------------------------------------------------------------ отрисовка
+        // ------------------------------------------------------------------ drawing
 
         protected override void OnPaintBackground(PaintEventArgs e) { }
 
@@ -766,8 +770,8 @@ namespace AbletonManager.Nebula
 
             int y = _maxSize.Bottom + Sc(22);
 
-            // Легенда цвета — единственный канал, который без подписи не читается:
-            // размер и плотность понятны сами по себе, а цвет это код.
+            // The colour legend is the one channel that does not read without a caption: size
+            // and density speak for themselves, while colour is a code.
             bool colorOn = _ecolor.Checked;
             Chrome.DrawText(g, "COLOUR · " + (colorOn ? MetricOf(_dcolor).Title.ToUpperInvariant() : "OFF"),
                             Theme.FBadge, new Rectangle(x + Sc(4), y, w, Sc(18)), Theme.TextDim, Chrome.Left);
@@ -775,8 +779,8 @@ namespace AbletonManager.Nebula
             if (colorOn) y = PaintLegend(g, x, y, w);
         }
 
-        /// <summary>Мелкая подпись строго над контролом — используется поверх ползунков
-        /// и палитры, которым, в отличие от DropField, некуда вписать своё имя самим.</summary>
+        /// <summary>A small caption strictly above a control — used over the sliders and the
+        /// palette, which, unlike DropField, have nowhere to write their own name.</summary>
         void SliderLabel(Graphics g, int x, int w, int aboveY, string text)
         {
             Chrome.DrawText(g, text, Theme.FBadge, new Rectangle(x + Sc(4), aboveY - Sc(20), w, Sc(18)),
@@ -791,10 +795,10 @@ namespace AbletonManager.Nebula
             {
                 Gradient grad = GradientOf(_dgrad);
                 Rectangle bar = new Rectangle(x + Sc(4), y, w - Sc(8), Sc(10));
-                // Полоса — 32 сэмпла того же Palette.Sample, которым красятся сами точки
-                // (тот же путь через LAB), а не отдельный, приблизительно похожий градиент
-                // средствами GDI+: тогда легенда иногда расходилась бы с тем, что на самом
-                // деле видно на облаке.
+                // The strip is 32 samples of the same Palette.Sample the dots themselves are
+                // coloured with (the same path through LAB), rather than a separate,
+                // approximately similar gradient built with GDI+: the legend would then
+                // sometimes disagree with what is actually visible in the cloud.
                 const int steps = 32;
                 using (LinearGradientBrush br = new LinearGradientBrush(
                            new Rectangle(bar.X, bar.Y, bar.Width, bar.Height + 1),
@@ -821,8 +825,8 @@ namespace AbletonManager.Nebula
                 return y + Sc(18);
             }
 
-            // Классы: чипсы в две колонки. Показываем самые населённые — остальные
-            // в легенде только мешают.
+            // Classes: chips in two columns. We show the most populated ones — the rest only
+            // clutter the legend.
             List<string> names = new List<string>();
             List<Color> colors2 = new List<Color>();
             List<int> counts = new List<int>();
@@ -862,7 +866,7 @@ namespace AbletonManager.Nebula
             return y + ((rows + 1) / 2) * Sc(20) + Sc(6);
         }
 
-        // ------------------------------------------------------------ окно и клавиши
+        // ------------------------------------------------------- window and keys
 
         protected override CreateParams CreateParams
         {
@@ -899,8 +903,8 @@ namespace AbletonManager.Nebula
 
         protected override void OnKeyDown(KeyEventArgs e)
         {
-            // Ctrl+Q закрывает программу целиком и отсюда: Nebula — отдельное окно,
-            // клавиши главного до неё не доходят, и выйти из неё было нельзя.
+            // Ctrl+Q closes the whole program from here as well: Nebula is a separate window,
+            // the main one's keys do not reach it, and there was no way to quit from it.
             if (e.Control && e.KeyCode == Keys.Q)
             {
                 e.Handled = e.SuppressKeyPress = true;

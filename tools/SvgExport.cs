@@ -13,17 +13,19 @@ using System.Windows.Forms;
 namespace AbletonManager
 {
     /// <summary>
-    /// Выгрузка окон программы — подложка под разметку подсказок (.png/.svg) и вектор
-    /// для презентаций (.emf).
+    /// Exports the program's windows — a backdrop for annotating the help overlay (.png/.svg)
+    /// and vector output for presentations (.emf).
     ///
-    /// Рисует всё настоящий код приложения: окна создаются как в жизни, показываются и
-    /// снимаются as is. Стекло выключается ДО первого обращения к Theme — иначе сквозь
-    /// акрил в снимок попадут обои рабочего стола, а для подложки нужен ровный фон.
+    /// Everything is drawn by the real application code: the windows are created as they are in
+    /// life, shown, and captured as is. Glass is switched off BEFORE the first touch of Theme —
+    /// otherwise the desktop wallpaper shows through the acrylic into the shot, and a backdrop
+    /// needs an even background.
     ///
-    /// В каждом svg два слоя: картинка окна и векторные рамки контролов с их именами из
-    /// кода — к ним и цеплять выноски. .emf снимается тем же приёмом, что и системная
-    /// печать окна: WM_PRINT прямо в HDC метафайла — рамки, текст и иконки остаются
-    /// настоящими контурами, а превью рендеров и прочие растровые куски входят как есть.
+    /// Each svg holds two layers: the picture of the window, and vector frames around the
+    /// controls carrying their names from the code — those are what the callouts attach to. The
+    /// .emf is captured with the same trick the system uses to print a window: WM_PRINT
+    /// straight into the metafile's HDC — frames, text and icons stay as real outlines, while
+    /// render previews and other raster pieces go in as they are.
     /// </summary>
     static class SvgExport
     {
@@ -35,7 +37,7 @@ namespace AbletonManager
             _out = args.Length > 0 ? args[0] : ".";
             Directory.CreateDirectory(_out);
 
-            Glass.Enabled = false;                 // строго до первого Theme.*
+            Glass.Enabled = false;                 // strictly before the first Theme.*
 
             CultureInfo en = new CultureInfo("en-US");
             CultureInfo.DefaultThreadCurrentUICulture = en;
@@ -45,8 +47,8 @@ namespace AbletonManager
 
             MainForm f = new MainForm();
 
-            // Корень подсовываем в уже загруженные настройки, а не в файл на диске:
-            // трогать настоящий settings.cfg ради экспорта незачем.
+            // The root is slipped into the already-loaded settings rather than into the file on
+            // disk: there is no reason to touch the real settings.cfg for an export.
             Settings s = (Settings)Field(f, "_settings");
             if (s.Roots.Count == 0) s.Roots.Add(@"D:\Music");
 
@@ -60,7 +62,7 @@ namespace AbletonManager
             SetIndex(f, "_mode", 1); Pump(700);
             Shot(f, "02-sets-list", "Sets - list");
 
-            // Выделим первый сет, чтобы панель справа была не пустой.
+            // Select the first set so the panel on the right is not empty.
             SelectFirstRow(f); Pump(700);
             Shot(f, "03-sets-list-selected", "Sets - list with details panel");
 
@@ -98,15 +100,15 @@ namespace AbletonManager
 
             Try("08-folders", "Folders dialog", 2500, delegate
             {
-                // Подольше: число сетов в колонке досчитывается в фоне.
+                // A little longer: the set count in the column finishes in the background.
                 return new RootsDialog(new string[] { @"D:\Music" }, new string[0]);
             });
 
             Try("09-preview", "Arrangement preview", 6000, delegate
             {
-                // Загрузчик берём тот же, что у главного окна: свой, с null вместо
-                // контрола, разобранную аранжировку никому не отдаст — окно так и
-                // останется на «Reading the set…».
+                // We take the same loader the main window uses: one of our own, with null
+                // instead of a control, would hand the parsed arrangement to nobody — and the
+                // window would stay on "Reading the set…".
                 ArrangementLoader loader = Field(f, "_arrangements") as ArrangementLoader;
                 if (loader == null) return null;
 
@@ -146,7 +148,8 @@ namespace AbletonManager
             });
         }
 
-        /// <summary>Первый сет без ошибки чтения — если такого нет, вообще первый.</summary>
+        /// <summary>The first set that reads without an error — failing that, the first one at
+        /// all.</summary>
         static SetEntry FirstOk(IEnumerable<SetEntry> sets)
         {
             SetEntry any = null;
@@ -169,7 +172,7 @@ namespace AbletonManager
                 if (d == null) { Console.WriteLine("skip " + name); return; }
                 d.StartPosition = FormStartPosition.CenterScreen;
                 d.Show();
-                Pump(settle);                   // дать дорисоваться и догрузить содержимое
+                Pump(settle);                   // let it finish drawing and load its content
                 Shot(d, name, title);
             }
             catch (Exception ex) { Console.WriteLine("skip " + name + ": " + ex.Message); }
@@ -177,12 +180,12 @@ namespace AbletonManager
             Pump(200);
         }
 
-        // ------------------------------------------------------------------ снимок
+        // ------------------------------------------------------------------ capture
 
         static void Shot(Form f, string name, string title)
         {
-            // Строки списка появляются с анимацией — снятый слишком рано кадр ловит
-            // нижние полупрозрачными.
+            // List rows appear with an animation — a frame taken too early catches the lower
+            // ones half-transparent.
             f.Activate();
             Pump(900);
 
@@ -195,7 +198,8 @@ namespace AbletonManager
                 g.ReleaseHdc(hdc);
                 if (!ok || Blank(bmp))
                 {
-                    // Запасной путь: снять прямо с экрана. Окно к этому моменту сверху.
+                    // Fallback: capture straight from the screen. The window is on top by this
+                    // point.
                     bool was = f.TopMost;
                     f.TopMost = true; Pump(250);
                     using (Graphics g2 = Graphics.FromImage(bmp))
@@ -215,19 +219,19 @@ namespace AbletonManager
                              + (emfError == null ? "  +emf" : "  emf failed: " + emfError));
         }
 
-        // ------------------------------------------------------------------ вектор (emf)
+        // ------------------------------------------------------------ vector (emf)
 
         /// <summary>
-        /// Тот же трюк, которым Windows печатает произвольное окно: WM_PRINT с HDC
-        /// метафайла вместо экрана. Контролы рисуют себя как обычно (OnPaint зовётся с
-        /// этим HDC через встроенный в Control обработчик WM_PRINTCLIENT), поэтому линии,
-        /// текст и заливки попадают в .emf настоящими векторными записями. Растром войдёт
-        /// только то, что и само по себе растр — превью рендера, миниатюры аранжировки.
+        /// The same trick Windows prints an arbitrary window with: WM_PRINT with a metafile HDC
+        /// instead of the screen. The controls draw themselves as usual (OnPaint is called with
+        /// that HDC through Control's built-in WM_PRINTCLIENT handler), so lines, text and
+        /// fills land in the .emf as real vector records. The only things that go in as raster
+        /// are those that are raster anyway — the render preview, the arrangement thumbnails.
         ///
-        /// Акриловый фон (Glass.cs) сюда не попадёт в принципе: это DWM-композитинг поверх
-        /// готового кадра, а не рисование в HDC окна. Экспорт всегда идёт с Glass.Enabled
-        /// = false (см. Main), так что фон и так ровный — WM_PRINT добросовестно рисует
-        /// именно его.
+        /// The acrylic background (Glass.cs) cannot get in at all: that is DWM compositing over
+        /// a finished frame, not drawing into the window's HDC. The export always runs with
+        /// Glass.Enabled = false (see Main), so the background is even regardless — and
+        /// WM_PRINT faithfully draws exactly that.
         /// </summary>
         static string CaptureEmf(Form f, string name)
         {
@@ -264,7 +268,8 @@ namespace AbletonManager
         [DllImport("user32.dll")]
         static extern IntPtr SendMessage(IntPtr hWnd, int msg, IntPtr wParam, IntPtr lParam);
 
-        /// <summary>Снимок вышел одноцветным — значит окно так и не отрисовалось в него.</summary>
+        /// <summary>The shot came out one flat colour — meaning the window never drew into
+        /// it.</summary>
         static bool Blank(Bitmap b)
         {
             Color first = b.GetPixel(0, 0);
@@ -290,8 +295,8 @@ namespace AbletonManager
             sb.AppendLine("           xlink:href=\"data:image/png;base64," + b64 + "\"/>");
             sb.AppendLine("  </g>");
 
-            // Слой якорей: где что лежит, по настоящим координатам контролов. Выключается
-            // одним кликом по слою в редакторе, если мешает.
+            // The anchor layer: what sits where, by the controls' real coordinates. Switched
+            // off with one click on the layer in an editor if it gets in the way.
             sb.AppendLine("  <g id=\"anchors\" fill=\"none\" stroke=\"#4DA3FF\" stroke-width=\"1\"");
             sb.AppendLine("     stroke-dasharray=\"5 4\" opacity=\"0.85\">");
             Dictionary<Control, string> names = FieldNames(f);
@@ -321,7 +326,8 @@ namespace AbletonManager
             }
         }
 
-        /// <summary>Имена контролов берём из имён полей формы — они говорящие.</summary>
+        /// <summary>Control names come from the form's field names — they are
+        /// descriptive.</summary>
         static Dictionary<Control, string> FieldNames(Form f)
         {
             Dictionary<Control, string> map = new Dictionary<Control, string>();
@@ -342,7 +348,7 @@ namespace AbletonManager
             return s.Replace("&", "&amp;").Replace("<", "&lt;").Replace(">", "&gt;").Replace("\"", "&quot;");
         }
 
-        // ----------------------------------------------------------------- утилиты
+        // ---------------------------------------------------------------- utilities
 
         static object Field(object o, string name)
         {

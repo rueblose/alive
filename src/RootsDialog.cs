@@ -9,7 +9,8 @@ using System.Windows.Forms;
 
 namespace AbletonManager
 {
-    /// <summary>Выбор папок, в которых искать проекты. Показывается при первом запуске и по кнопке.</summary>
+    /// <summary>Choosing the folders to look for projects in. Shown on first run and from the
+    /// button.</summary>
     public sealed class RootsDialog : GlassDialog
     {
         readonly RowListView _list = new RowListView();
@@ -17,8 +18,8 @@ namespace AbletonManager
         readonly GlassButton _ok = new GlassButton();
         readonly GlassButton _cancel = new GlassButton();
         readonly List<string> _roots = new List<string>();
-        // Папка остаётся в списке, но временно не участвует в сканировании — не то же
-        // самое, что «убрать»: настройки (фильтры и т.п.) под неё можно не собирать заново.
+        // The folder stays in the list but is temporarily left out of scanning — not the same
+        // as "remove": its settings (filters and so on) need not be rebuilt from scratch.
         readonly HashSet<string> _disabled = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
         public List<string> Result { get { return _roots; } }
@@ -63,22 +64,23 @@ namespace AbletonManager
             Refill();
         }
 
-        // Сколько сетов в папке — это рекурсивный обход всего её дерева. На настоящей
-        // библиотеке он стоит сотни миллисекунд на корень (замерено: 469 мс на три
-        // папки при прогретом кеше файловой системы и SSD; на холодном кеше, на HDD
-        // или на сетевом диске — секунды), а раньше шёл прямо в конструкторе диалога,
-        // синхронно, и повторялся целиком на каждое нажатие галочки. Отсюда и были
-        // «задумывается на несколько секунд при открытии списка папок».
+        // Counting the sets in a folder means walking its whole tree. On a real library that
+        // costs hundreds of milliseconds per root (measured: 469 ms for three folders with a
+        // warm filesystem cache and an SSD; on a cold cache, an HDD or a network drive —
+        // seconds), and it used to run right in the dialog's constructor, synchronously, and
+        // repeated in full on every checkbox click. That is where "it thinks for several
+        // seconds when the folder list opens" came from.
         //
-        // Теперь считаем в фоне и запоминаем ответ: диалог открывается мгновенно,
-        // числа доезжают следом. Ключ включает признак Backup — с ним ответ другой.
+        // Now we count in the background and remember the answer: the dialog opens instantly
+        // and the numbers arrive after it. The key includes the Backup flag — the answer
+        // differs with it.
         readonly Dictionary<string, int> _counts =
             new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
         readonly HashSet<string> _counting =
             new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         volatile bool _closed;
 
-        // признака Backup больше нет — переключатель убрали, сеты в Backup всегда исключаются
+        // the Backup flag is gone — the switch was removed, sets in Backup are always excluded
         string CountKey(string root) { return (false ? "1|" : "0|") + root; }
 
         void Refill()
@@ -101,8 +103,9 @@ namespace AbletonManager
                     else { cell = "…"; pending.Add(r); }
                 }
 
-                // Когда папки вообще нет, красная отметка "not found" уже несёт весь смысл —
-                // не дублируем его текстом в той же самой колонке поверх неё.
+                // When the folder is missing entirely, the red "not found" mark already carries
+                // the whole meaning — we do not repeat it as text in the very same column on
+                // top of it.
                 row.Cells = new string[] { r, cell };
                 row.Tag = r;
                 row.Checked = !_disabled.Contains(r);
@@ -120,7 +123,7 @@ namespace AbletonManager
         void StartCount(string root)
         {
             string key = CountKey(root);
-            if (!_counting.Add(key)) return;          // этот счёт уже идёт
+            if (!_counting.Add(key)) return;          // this count is already running
 
             Thread t = new Thread(delegate ()
             {
@@ -136,7 +139,7 @@ namespace AbletonManager
                         ShowCount(root, key);
                     });
                 }
-                catch { /* окно закрылось, пока считали — ответ уже никому не нужен */ }
+                catch { /* the window closed while we counted - nobody needs the answer now */ }
             });
             t.IsBackground = true;
             t.Priority = ThreadPriority.BelowNormal;
@@ -144,15 +147,15 @@ namespace AbletonManager
         }
 
         /// <summary>
-        /// Досчитанное число вписываем прямо в свою строку, а не пересобираем список
-        /// целиком: SetRows сбрасывает выделение и прокрутку, и они прыгали бы под рукой
-        /// каждый раз, как доедет очередной ответ.
+        /// The finished number is written straight into its own row rather than rebuilding the
+        /// whole list: SetRows resets the selection and the scroll position, and they would
+        /// jump under the hand every time another answer arrived.
         /// </summary>
         void ShowCount(string root, string key)
         {
-            // Пока считали, могли переключить «Учитывать Backup» — тогда это ответ на
-            // уже неактуальный вопрос, и показывать его нельзя (он останется в _counts
-            // и пригодится, если галочку вернут обратно).
+            // While we were counting, "Include Backup" may have been toggled — then this is an
+            // answer to a question that no longer applies and must not be shown (it stays in
+            // _counts and comes in handy if the box is switched back).
             if (key != CountKey(root)) return;
 
             int n = _counts[key];
@@ -173,19 +176,20 @@ namespace AbletonManager
             if (row == null) return;
             string path = (string)row.Tag;
             if (row.Checked) _disabled.Remove(path); else _disabled.Add(path);
-            // Refill() тут раньше стоял ради «пересчитать число сетов уже без выключенной
-            // папки», но пересчитывать нечего: число показывается для каждой папки своё и
-            // от галочек соседей не зависит — Refill просто обходил все деревья заново.
+            // Refill() used to sit here for "recount the sets without the folder that was
+            // switched off", but there is nothing to recount: the number shown is each folder's
+            // own and does not depend on the neighbours' checkboxes — Refill simply walked
+            // every tree again.
         }
 
         /// <summary>
-        /// Сколько сетов в папке. Считает ровно тем же обходом, которым потом идёт само
-        /// сканирование, — иначе число в колонке расходится с тем, что окажется в
-        /// каталоге. Раньше здесь стоял свой обход с потолком глубины в 8 папок: у
-        /// корня вроде D:\ проекты лежат глубже, и колонка показывала ноль на папке,
-        /// которую сканирование потом честно разбирало.
+        /// How many sets are in a folder. It counts with exactly the same walk the scan itself
+        /// later uses — otherwise the number in the column disagrees with what ends up in the
+        /// catalog. There used to be a separate walk here with a depth cap of 8 folders: under
+        /// a root like D:\ the projects lie deeper, and the column showed zero for a folder the
+        /// scan then honestly parsed.
         ///
-        /// _closed — чтобы закрытый диалог не продолжал молотить диск в фоне.
+        /// _closed — so a closed dialog stops hammering the disk in the background.
         /// </summary>
         int CountSets(string dir)
         {

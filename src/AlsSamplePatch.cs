@@ -7,45 +7,49 @@ using System.Text;
 
 namespace AbletonManager
 {
-    /// <summary>Куда должна начать указывать одна ссылка на файл.</summary>
+    /// <summary>Where one file reference should start pointing.</summary>
     public sealed class NewRef
     {
-        /// <summary>«Samples/Imported/kick.wav» — прямыми слэшами, как пишет сама Live.</summary>
+        /// <summary>"Samples/Imported/kick.wav" — forward slashes, the way Live writes
+        /// them.</summary>
         public string RelativePath = "";
 
-        /// <summary>Полный путь в новом месте, тоже прямыми слэшами.</summary>
+        /// <summary>The full path in the new place, forward slashes too.</summary>
         public string AbsolutePath = "";
 
-        /// <summary>3 — «внутри папки проекта», см. RefResolver.</summary>
+        /// <summary>3 — "inside the project folder", see RefResolver.</summary>
         public int RelativePathType = 3;
 
-        /// <summary>Обнулить LivePackName и LivePackId: файл больше не из пака.</summary>
+        /// <summary>Clear LivePackName and LivePackId: the file no longer comes from a
+        /// pack.</summary>
         public bool ClearPack = true;
     }
 
     /// <summary>
-    /// Копия сета, в которой у выбранных ссылок заменены пути.
+    /// A copy of a set with the paths of selected references replaced.
     ///
-    /// Узлы адресуются НОМЕРОМ в порядке документа, а не содержимым. В тексте
-    /// &lt;FileRef&gt; не отличить от соседнего: путь у сэмпла клипа и у «памяти о
-    /// происхождении» бывает буквально один и тот же, а переписать надо только первый.
-    /// AlsFile уже обходит файл и складывает info.Files по порядку, значит i-я запись
-    /// в списке — это i-й &lt;FileRef&gt; в тексте. Так логика «какой это контейнер»
-    /// живёт в одном месте: разъехавшись, два разбора переписали бы не ту ссылку,
-    /// которую показали.
+    /// Nodes are addressed by their NUMBER in document order, not by their content. In the text
+    /// one &lt;FileRef&gt; is indistinguishable from its neighbour: the path of a clip's sample
+    /// and of its "memory of origin" can be literally the same, and only the first must be
+    /// rewritten. AlsFile already walks the file and fills info.Files in order, so the i-th
+    /// entry in that list is the i-th &lt;FileRef&gt; in the text. That keeps the "which
+    /// container is this" logic in one place: were the two parsers to drift apart, the
+    /// reference rewritten would not be the one that was shown.
     ///
-    /// Механика — та же, что у AlsPatch: потоком, строка за строкой, в памяти только
-    /// текущий узел. Оригинал не открывается на запись.
+    /// The mechanics are the same as AlsPatch: streaming, line by line, with only the current
+    /// node in memory. The original is never opened for writing.
     /// </summary>
     public static class AlsSamplePatch
     {
         /// <summary>
-        /// Пишет в dst копию src с заменёнными путями. Возвращает число тронутых узлов.
+        /// Writes a copy of src into dst with the paths replaced. Returns the number of nodes
+        /// touched.
         ///
-        /// expectedRefCount — сколько FileRef насчитал AlsFile в этом же файле. Не сошлось
-        /// значит нумерация разъехалась и правка попала бы не в ту ссылку: dst удаляется,
-        /// бросается InvalidDataException. Записать неверный путь в ссылку на сэмпл хуже,
-        /// чем не записать ничего — сет откроется, но зазвучит не тем.
+        /// expectedRefCount is how many FileRefs AlsFile counted in this same file. A mismatch
+        /// means the numbering has drifted and the edit would land on the wrong reference: dst
+        /// is deleted and InvalidDataException is thrown. Writing a wrong path into a sample
+        /// reference is worse than writing nothing — the set will open, but it will sound like
+        /// something else.
         /// </summary>
         public static int Rewrite(string src, string dst, Dictionary<int, NewRef> byIndex,
                                   int expectedRefCount)
@@ -59,9 +63,9 @@ namespace AbletonManager
                 using (FileStream fin = new FileStream(src, FileMode.Open, FileAccess.Read,
                                                        FileShare.ReadWrite, 64 * 1024))
                 using (GZipStream gin = new GZipStream(fin, CompressionMode.Decompress))
-                // detectEncodingFromByteOrderMarks: false — иначе BOM был бы съеден на
-                // чтении и не записан обратно, а копия обязана отличаться от оригинала
-                // ровно теми значениями, которые мы меняем, и ничем больше.
+                // detectEncodingFromByteOrderMarks: false — otherwise the BOM would be eaten on
+                // reading and not written back, and the copy must differ from the original by
+                // exactly the values we change and by nothing else.
                 using (StreamReader rin = new StreamReader(gin, new UTF8Encoding(false), false, 64 * 1024))
 
                 using (FileStream fout = new FileStream(dst, FileMode.Create, FileAccess.Write,
@@ -78,16 +82,17 @@ namespace AbletonManager
                         if (node == null)
                         {
                             int at = line.IndexOf("<FileRef", StringComparison.Ordinal);
-                            // Самозакрывающийся <FileRef /> пропускают оба разбора: AlsFile
-                            // заводит запись только при !IsEmptyElement.
+                            // A self-closing <FileRef /> is skipped by both parsers: AlsFile
+                            // only makes an entry when !IsEmptyElement.
                             if (at < 0 || SelfClosing(line, at)) { wout.Write(line); continue; }
                             index++;
                             node = new StringBuilder(line);
                         }
                         else node.Append(line);
 
-                        // Закрывающий тег ищем в текущей строке, а не во всём накопленном:
-                        // иначе на каждую строку узла пересобиралась бы вся его строка целиком.
+                        // The closing tag is looked for in the current line rather than in
+                        // everything accumulated: otherwise the whole node string would be
+                        // rebuilt for every one of its lines.
                         if (line.IndexOf("</FileRef>", StringComparison.Ordinal) < 0) continue;
 
                         string text = node.ToString();
@@ -98,7 +103,7 @@ namespace AbletonManager
                         else wout.Write(text);
                     }
 
-                    // Файл оборвался посреди узла — пишем как есть, чтобы не потерять хвост.
+                    // The file ended mid-node — write it as is so the tail is not lost.
                     if (node != null) wout.Write(node.ToString());
                 }
 
@@ -118,7 +123,8 @@ namespace AbletonManager
             return patched;
         }
 
-        /// <summary>Стоит ли «/» перед закрывающей скобкой тега — то есть узел пустой.</summary>
+        /// <summary>Whether a "/" stands before the tag's closing bracket — that is, the node
+        /// is empty.</summary>
         static bool SelfClosing(string line, int at)
         {
             int close = line.IndexOf('>', at);
@@ -128,8 +134,8 @@ namespace AbletonManager
         static string Apply(string node, NewRef nr)
         {
             string s = node;
-            // Ведущий «<» тут не украшение: без него «<RelativePath Value="» нашлось бы
-            // по запросу «Path Value="» и путь уехал бы не в тот тег.
+            // The leading "<" is not decoration: without it "<RelativePath Value=" would be
+            // found by a search for "Path Value=" and the path would go into the wrong tag.
             s = SetValue(s, "<RelativePathType Value=\"",
                          nr.RelativePathType.ToString(CultureInfo.InvariantCulture));
             s = SetValue(s, "<RelativePath Value=\"", Escape(nr.RelativePath));
@@ -139,12 +145,13 @@ namespace AbletonManager
                 s = SetValue(s, "<LivePackName Value=\"", "");
                 s = SetValue(s, "<LivePackId Value=\"", "");
             }
-            // Type, OriginalFileSize и OriginalCrc не трогаем: они про тот же самый файл,
-            // он просто переехал.
+            // Type, OriginalFileSize and OriginalCrc are left alone: they are about the same
+            // file, which has merely moved.
             return s;
         }
 
-        /// <summary>Заменить значение первого такого тега в узле. Нет тега — узел как был.</summary>
+        /// <summary>Replace the value of the first such tag in the node. No tag — the node
+        /// stays as it was.</summary>
         static string SetValue(string node, string tag, string value)
         {
             int at = node.IndexOf(tag, StringComparison.Ordinal);
@@ -159,14 +166,15 @@ namespace AbletonManager
         }
 
         /// <summary>
-        /// XML-экранирование значения атрибута. Не формальность: папка «Drum &amp; Bass»
-        /// встречается сплошь и рядом, и записанная как есть она рвёт документ.
+        /// XML-escaping of an attribute value. Not a formality: a folder called "Drum &amp;
+        /// Bass" turns up all the time, and written as is it tears the document apart.
         ///
-        /// Заодно нормализует «\» в «/»: пути в .als всегда прямыми слэшами (см. NewRef),
-        /// а сегодняшние вызывающие этого не гарантируют формально — только тем, что сами
-        /// строят RelativePath через "/". NewRef публичный, и следующий его потребитель
-        /// (замена потерянных сэмплов) возьмёт путь из другого источника, где слэш не факт
-        /// прямой. Дешевле закрыть ловушку здесь одним Replace, чем у каждого вызывающего.
+        /// It also normalises "\" into "/": paths in an .als are always forward-slashed (see
+        /// NewRef), and today's callers do not guarantee that formally — only by building
+        /// RelativePath through "/" themselves. NewRef is public, and its next consumer
+        /// (replacing lost samples) will take a path from another source where the slash
+        /// direction is not a given. Closing the trap here with one Replace is cheaper than
+        /// doing it at every caller.
         /// </summary>
         static string Escape(string s)
         {

@@ -10,17 +10,16 @@ using AbletonManager;
 namespace AliveTools
 {
     /// <summary>
-    /// Консольная проверка помощника по восстановлению: разбор журнала Live и правка
-    /// копии сета. Оба куска работают с чужими файлами, которые нельзя подделать
-    /// правдоподобно, поэтому проверяются на настоящих — на журнале этой машины и на
-    /// настоящем .als.
+    /// A console check of the rescue helper: parsing Live's log and patching a copy of a set.
+    /// Both pieces work with other people's files that cannot be faked convincingly, so they
+    /// are checked against real ones — against this machine's log and a real .als.
     ///
-    /// Сборка: tools\build-rescue-test.cmd. В bin не попадает — это инструмент проверки,
-    /// а не часть программы.
+    /// Build: tools\build-rescue-test.cmd. Does not go into bin — this is a checking tool, not
+    /// part of the program.
     ///
-    ///     RescueTest.exe logs                 все оборванные загрузки во всех журналах Live
-    ///     RescueTest.exe log   &lt;сет.als&gt;      что журнал помнит про этот сет
-    ///     RescueTest.exe patch &lt;сет.als&gt;      отключить все плагины копии и сверить XML
+    ///     RescueTest.exe logs                 every aborted load in every Live log
+    ///     RescueTest.exe log   &lt;set.als&gt;      what the log remembers about this set
+    ///     RescueTest.exe patch &lt;set.als&gt;      disable every plugin in a copy and diff the XML
     /// </summary>
     internal static class RescueTest
     {
@@ -53,7 +52,7 @@ namespace AliveTools
             }
         }
 
-        // ------------------------------------------------------------------ журналы
+        // ------------------------------------------------------------------ logs
 
         static int Logs()
         {
@@ -121,7 +120,7 @@ namespace AliveTools
             return 0;
         }
 
-        // ------------------------------------------------------------------ правка
+        // ------------------------------------------------------------------ patching
 
         static int Patch(string als)
         {
@@ -145,8 +144,8 @@ namespace AliveTools
             Console.WriteLine();
             Console.WriteLine("patched " + patched + " device node(s) -> " + dst);
 
-            // Главная проверка: в файле не должно поменяться НИЧЕГО, кроме тех самых
-            // Value. Сравниваем построчно распакованный XML до и после.
+            // The main check: NOTHING in the file may change except those very Values. We
+            // compare the decompressed XML line by line, before and after.
             string[] before = Lines(als), after = Lines(dst);
             if (before.Length != after.Length)
             {
@@ -169,8 +168,8 @@ namespace AliveTools
             }
             Console.WriteLine("changed lines: " + changed + ", unexpected: " + unexpected);
 
-            // И обратная проверка: разбор копии должен видеть ДРУГИЕ идентификаторы у
-            // тех же самых плагинов — то есть Live их уже не узнает.
+            // And the reverse check: parsing the copy must see DIFFERENT identifiers on those
+            // same plugins — that is, Live will no longer recognise them.
             AlsInfo patchedInfo = AlsFile.Read(dst);
             if (!string.IsNullOrEmpty(patchedInfo.Error))
             {
@@ -202,15 +201,15 @@ namespace AliveTools
             return pass ? 0 : 1;
         }
 
-        // ------------------------------------------------------------------ сходимость
+        // ------------------------------------------------------------------ convergence
 
         /// <summary>
-        /// Прогоняет расследование по кругу, назначая виновным по очереди каждый плагин
-        /// сета. Ни одного файла и ни одного запуска Live: исход пробы известен заранее —
-        /// сет откроется тогда и только тогда, когда виновник в отключённых.
+        /// Runs the investigation in a loop, naming each plugin of the set guilty in turn. Not
+        /// a single file and not a single launch of Live: the outcome of a probe is known in
+        /// advance — the set opens if and only if the culprit is among the disabled.
         ///
-        /// Проверяется ровно то, что нельзя проверить глазами: что поиск всегда сходится,
-        /// называет того самого и не уходит в бесконечный круг проб.
+        /// What gets checked is exactly what cannot be checked by eye: that the search always
+        /// converges, names the right one, and never spins forever.
         /// </summary>
         static int Simulate(string als)
         {
@@ -231,8 +230,8 @@ namespace AliveTools
             {
                 RescueSession s = new RescueSession(set, null);
 
-                // Подсказку из журнала Live гасим: она относится к настоящей истории
-                // этого сета, а виновного тут назначаем мы.
+                // We mute the hint from Live's log: it belongs to this set's real history,
+                // while the culprit here is one we appoint.
                 s.History = null;
                 s.HistorySuspect = null;
 
@@ -254,8 +253,9 @@ namespace AliveTools
                                   + guilty.Name.PadRight(22) + " -> " + s.VerdictText());
             }
 
-            // И отдельный случай: виноват вообще не плагин. Первая же проба отключает всё
-            // и всё равно не открывается — расследование обязано это признать, а не искать.
+            // And a separate case: the culprit is not a plugin at all. The very first probe
+            // disables everything and it still will not open — the investigation has to admit
+            // that rather than keep searching.
             RescueSession n = new RescueSession(set, null);
             n.History = null; n.HistorySuspect = null;
             int rounds = 0;
@@ -277,14 +277,14 @@ namespace AliveTools
             return failures == 0 && notPlugins ? 0 : 1;
         }
 
-        // ------------------------------------------------------------ жизнь пробного файла
+        // ------------------------------------------------------- life of the probe file
 
         /// <summary>
-        /// Проба появляется рядом с сетом, попадает в журнал уборки и исчезает. Проверять
-        /// это стоит отдельно: пробный .als лежит в чужой папке проекта, и всё, что тут
-        /// может пойти не так, кончается мусором у человека в проектах.
+        /// A probe appears next to the set, lands in the cleanup journal and disappears. This
+        /// is worth checking separately: the probe .als sits in someone else's project folder,
+        /// and everything that can go wrong here ends as litter among a person's projects.
         ///
-        /// Запускать на КОПИИ сета — файл кладётся рядом с тем, что дали.
+        /// Run it on a COPY of a set — the file is placed next to whatever it is given.
         /// </summary>
         static int Probe(string als)
         {
@@ -304,7 +304,8 @@ namespace AliveTools
             bool named = RescueProbe.IsProbe(made) && made == expected;
             Console.WriteLine("  written:  " + onDisk + "   journalled: " + listed + "   named: " + named);
 
-            // Каталог не должен её видеть — иначе проба приедет в список сетов рядом с настоящим.
+            // The catalog must not see it — or the probe would turn up in the sets list beside
+            // the real one.
             bool hidden = true;
             FolderScan.Find(Path.GetDirectoryName(als), ".als", true,
                             delegate (string f) { if (f == made) hidden = false; }, null);
@@ -315,14 +316,16 @@ namespace AliveTools
             bool cleared = !Journal().Contains(made);
             Console.WriteLine("  removed:  " + gone + "   journal cleared: " + cleared);
 
-            // И уборка после падения: запись без файла журнал обязан вычистить молча.
+            // And cleanup after a crash: an entry with no file must be dropped from the journal
+            // silently.
             RescueProbe.Remember(expected);
             RescueProbe.CleanupStale();
             bool swept = Journal().Count == 0;
             Console.WriteLine("  stale entry swept: " + swept);
 
-            // Ради этого числа правка и переписана на поток: раньше распакованный XML
-            // поднимался целиком, и на тяжёлом сете это под гигабайт.
+            // This number is the reason the patching was rewritten as a stream: the
+            // decompressed XML used to be held whole, and on a heavy set that is close to a
+            // gigabyte.
             Console.WriteLine("  peak working set: "
                               + (Process.GetCurrentProcess().PeakWorkingSet64 / 1048576) + " MB");
 

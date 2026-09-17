@@ -7,7 +7,8 @@ using System.Xml;
 
 namespace AbletonManager
 {
-    /// <summary>Одна нота. Время — в долях от начала содержимого клипа, не от начала сета.</summary>
+    /// <summary>One note. Time is in beats from the start of the clip's content, not of the
+    /// set.</summary>
     public struct NoteEvent
     {
         public float Time;
@@ -16,20 +17,20 @@ namespace AbletonManager
         public byte Velocity;
     }
 
-    /// <summary>Клип на линейке аранжировки.</summary>
+    /// <summary>A clip on the arrangement ruler.</summary>
     public sealed class ClipBlock
     {
-        public double Start, End;          // доли от начала сета
+        public double Start, End;          // beats from the start of the set
         public string Name = "";
         public int Color = -1;
         public bool IsMidi, Disabled;
 
-        // Видимые маркеры клипа. Когда петля выключена, Live держит в LoopStart/LoopEnd
-        // границы старт/энд-маркеров, а скрытую петлю уносит в HiddenLoop*.
+        // The clip's visible markers. With the loop off, Live keeps the start/end marker bounds
+        // in LoopStart/LoopEnd and moves the hidden loop into HiddenLoop*.
         public double LoopStart, LoopEnd, StartRelative;
         public bool LoopOn;
 
-        public List<NoteEvent> Notes;      // только у midi-клипов
+        public List<NoteEvent> Notes;      // midi clips only
         public int MinPitch = 127, MaxPitch = 0;
 
         public double Length { get { return End - Start; } }
@@ -42,27 +43,28 @@ namespace AbletonManager
         public int Color = -1;
         public bool IsMidi, IsGroup, Frozen;
         public int Id = -1, GroupId = -1;
-        public int Indent;                 // вложенность в группы
+        public int Indent;                 // nesting depth in groups
         public readonly List<ClipBlock> Clips = new List<ClipBlock>();
     }
 
-    /// <summary>Аранжировка сета: дорожки, их цвета и клипы на линейке времени.</summary>
+    /// <summary>A set's arrangement: tracks, their colours and clips on a time ruler.</summary>
     public sealed class Arrangement
     {
         public string Path = "", Creator = "";
         public double Tempo;
-        public double End;                 // последняя доля, на которой что-то есть
+        public double End;                 // the last beat with anything on it
         public readonly List<TrackLane> Tracks = new List<TrackLane>();
         public int ClipCount, NoteCount;
         public string Error;
 
         public bool HasContent { get { return ClipCount > 0; } }
 
-        /// <summary>Длина в тактах при 4/4 — для подписи, сетка считается так же.</summary>
+        /// <summary>Length in bars at 4/4 — for the caption; the grid is counted the same
+        /// way.</summary>
         public int Bars { get { return (int)Math.Ceiling(End / 4.0); } }
 
-        // Потолок на весь сет: у больших проектов нот сотни тысяч, а на превью
-        // всё равно ложится в пару пикселей.
+        // A cap for the whole set: large projects have hundreds of thousands of notes, and the
+        // preview reduces them to a couple of pixels anyway.
         public const int MaxNotes = 200000;
 
         public static Arrangement Read(string path)
@@ -85,7 +87,7 @@ namespace AbletonManager
             return a;
         }
 
-        // ------------------------------------------------------------------ разбор
+        // ------------------------------------------------------------------ parsing
 
         static void Parse(XmlReader r, Arrangement a)
         {
@@ -93,7 +95,7 @@ namespace AbletonManager
 
             int trackDepth = -1; TrackLane track = null;
             int trackNameDepth = -1;
-            int arrangerDepth = -1;                 // клипы аранжировки живут только здесь
+            int arrangerDepth = -1;                 // arrangement clips live only here
             int clipDepth = -1; ClipBlock clip = null;
             int loopDepth = -1;
             int keyTrackDepth = -1, keyNoteStart = 0;
@@ -152,8 +154,8 @@ namespace AbletonManager
                         if (!empty) mainTrackDepth = depth;
                         break;
 
-                    // Клипы сессии лежат в ClipSlotList — на линейку они не попадают,
-                    // поэтому берём только то, что внутри ArrangerAutomation.
+                    // Session clips sit in ClipSlotList — they never reach the ruler, so we
+                    // take only what is inside ArrangerAutomation.
                     case "ArrangerAutomation":
                         if (!empty && track != null) arrangerDepth = depth;
                         break;
@@ -183,7 +185,7 @@ namespace AbletonManager
                     case "MidiNoteEvent":
                         if (clip != null && keyTrackDepth >= 0)
                         {
-                            if (a.NoteCount >= MaxNotes) break;   // потолок на весь сет, см. MaxNotes
+                            if (a.NoteCount >= MaxNotes) break;   // the cap for the whole set, see MaxNotes
                             NoteEvent n = new NoteEvent();
                             n.Time = (float)Dbl(r.GetAttribute("Time"), 0);
                             n.Duration = (float)Dbl(r.GetAttribute("Duration"), 0);
@@ -194,7 +196,8 @@ namespace AbletonManager
                         }
                         break;
 
-                    // Высота ноты приезжает уже после самих нот: <KeyTrack><Notes/><MidiKey/></KeyTrack>
+                    // The note pitch arrives after the notes themselves:
+                    // <KeyTrack><Notes/><MidiKey/></KeyTrack>
                     case "MidiKey":
                         if (clip != null && keyTrackDepth >= 0 && clip.Notes != null)
                         {
@@ -222,7 +225,7 @@ namespace AbletonManager
                         break;
                 }
 
-                // --- значения внутри уже открытых узлов
+                // --- values inside nodes that are already open
                 if (track != null && depth == trackDepth + 1)
                 {
                     if (name == "Color" || name == "ColorIndex")
@@ -275,7 +278,7 @@ namespace AbletonManager
         static void CloseClip(Arrangement a, TrackLane track, ClipBlock clip)
         {
             if (clip == null || track == null) return;
-            if (clip.End <= clip.Start) return;                  // мусорный клип
+            if (clip.End <= clip.Start) return;                  // a junk clip
             if (clip.MaxPitch < clip.MinPitch) { clip.MinPitch = 60; clip.MaxPitch = 60; }
             track.Clips.Add(clip);
             a.ClipCount++;
@@ -283,15 +286,16 @@ namespace AbletonManager
         }
 
         /// <summary>
-        /// Номер цвета к виду «индекс в палитре 0..69».
+        /// A colour number turned into "index in the 0..69 palette".
         ///
-        /// Live 11 и 12 пишут &lt;Color Value="23"/&gt; — это прямо индекс палитры.
-        /// Сеты до Live 11 пишут &lt;ColorIndex&gt;, и там нумерация другая: у клипов она
-        /// совпадает с палитрой, а у треков сдвинута. По 4300 парам «трек и его клипы»
-        /// из старых сетов сдвиг оказался ровно 140 (85% пар; остальные — клипы, которым
-        /// цвет меняли руками), и отдельным блоком встречается сдвиг 218: трек 282 при
-        /// клипах 64. Всё, что не попадает ни в один блок, считаем неизвестным — цвет
-        /// тогда берётся у клипов трека.
+        /// Live 11 and 12 write &lt;Color Value="23"/&gt; — that is the palette index directly.
+        /// Sets older than Live 11 write &lt;ColorIndex&gt;, and the numbering there is
+        /// different: for clips it matches the palette, for tracks it is shifted. Across 4,300
+        /// "a track and its clips" pairs from old sets the shift turned out to be exactly 140
+        /// (85% of the pairs; the rest are clips whose colour was changed by hand), and a
+        /// separate block shows a shift of 218: track 282 against clips at 64. Anything falling
+        /// into no block at all we treat as unknown — the colour is then taken from the track's
+        /// clips.
         /// </summary>
         static int Palette(int raw)
         {
@@ -304,7 +308,8 @@ namespace AbletonManager
 
         static void Finish(Arrangement a)
         {
-            // Отступ дорожки = сколько групп над ней. GroupId ссылается на Id группы.
+            // A track's indent = how many groups sit above it. GroupId refers to the group's
+            // Id.
             Dictionary<int, TrackLane> byId = new Dictionary<int, TrackLane>();
             foreach (TrackLane t in a.Tracks)
                 if (t.Id >= 0 && !byId.ContainsKey(t.Id)) byId[t.Id] = t;
@@ -323,8 +328,8 @@ namespace AbletonManager
                 t.Indent = depth;
             }
 
-            // Цвет трека не разобрался — берём самый частый цвет его клипов: клип по
-            // умолчанию наследует цвет дорожки, так что это тот же самый цвет.
+            // The track colour did not parse — we take the most common colour of its clips: a
+            // clip inherits the track colour by default, so it is the same colour.
             foreach (TrackLane t in a.Tracks)
             {
                 if (t.Color >= 0 || t.Clips.Count == 0) continue;

@@ -6,8 +6,9 @@ using System.Windows.Forms;
 namespace AbletonManager
 {
     /// <summary>
-    /// Все условия отбора в одном окне. Внизу всё время видно, сколько сетов проходит —
-    /// иначе набирать фильтры вслепую и каждый раз закрывать окно, чтобы узнать результат.
+    /// Every filter condition in one window. How many sets pass is visible at the bottom at all
+    /// times — otherwise filters get set blind, with the window closed each time to see the
+    /// result.
     /// </summary>
     public sealed class FiltersDialog : GlassDialog
     {
@@ -27,9 +28,9 @@ namespace AbletonManager
         readonly PillToggle _pluginsMissing = new PillToggle();
         readonly PillToggle _pluginsAll = new PillToggle();
 
-        // Тег-поля показывают только то, что реально встречается в сетах, поэтому
-        // индекс пункта уже не равен значению — держим отдельную карту.
-        readonly List<int> _rootValues = new List<int>();    // -1 = «без тональности»
+        // Tag fields only show what actually occurs in the sets, so an item's index no longer
+        // equals its value — we keep a separate map.
+        readonly List<int> _rootValues = new List<int>();    // -1 = "no key"
         readonly List<int> _scaleValues = new List<int>();
         readonly PillToggle _complete = new PillToggle();
         readonly PillToggle _missing = new PillToggle();
@@ -40,9 +41,9 @@ namespace AbletonManager
         readonly GlassButton _apply = new GlassButton();
 
         /// <summary>
-        /// Условия применяются на лету: окно закрывает список, который фильтрует, и без
-        /// живого отклика набирать фильтры приходилось вслепую. Кнопка снизу теперь
-        /// просто «Ok» — закрыть, а не «применить».
+        /// Conditions apply live: the window covers the list it filters, and without a live
+        /// response filters had to be set blind. The button at the bottom is now simply "Ok" —
+        /// close, not "apply".
         /// </summary>
         public event Action Changed;
 
@@ -51,7 +52,8 @@ namespace AbletonManager
         bool _laying;
         int _matches;
 
-        /// <summary>Готовый набор условий — забирать после DialogResult.OK.</summary>
+        /// <summary>The finished set of conditions — collect it after
+        /// DialogResult.OK.</summary>
         public SetFilter Result { get { return _filter; } }
 
         public FiltersDialog(SetFilter current, List<SetEntry> sets, List<string> versions)
@@ -76,8 +78,8 @@ namespace AbletonManager
             Cue(_from, "from  2026-01");
             Cue(_to, "to  2026-08-07");
 
-            // Дату можно по-прежнему набрать руками — ParseDate понимает и «2026»,
-            // и «2026-08». Календарь слева для тех случаев, когда проще ткнуть.
+            // A date can still be typed by hand — ParseDate understands both "2026" and
+            // "2026-08". The calendar on the left is for the cases where pointing is easier.
             DatePicker(_from, false);
             DatePicker(_to, true);
             Cue(_tracksMin, "min");
@@ -106,7 +108,7 @@ namespace AbletonManager
                 Controls.Add(t);
             }
 
-            // Две взаимоисключающие галки: «есть дыры» и «всё на месте».
+            // Two mutually exclusive boxes: "has holes" and "all present".
             _pluginsMissing.Text = "some not installed";
             _pluginsMissing.Checked = _filter.PluginsMissingOnly;
             _pluginsMissing.FitToText();
@@ -162,19 +164,21 @@ namespace AbletonManager
             _apply.FitToText(18);
             Controls.Add(_apply);
 
-            // Ровно одна ширина на обе кнопки: «Ok» короче «Reset», и по своему тексту
-            // выходил заметно уже — пара читалась как случайная, а не как пара.
+            // Exactly one width for both buttons: "Ok" is shorter than "Reset" and came out
+            // noticeably narrower on its own text — the pair read as accidental rather than as
+            // a pair.
             int pairW = Math.Max(_reset.Width, _apply.Width);
             _reset.Width = _apply.Width = pairW;
 
             Collect();
         }
 
-        // Своя подсказка, а не системная EM_SETCUEBANNER — см. комментарий у FieldBox.Cue.
+        // Our own placeholder rather than the system EM_SETCUEBANNER — see the comment on
+        // FieldBox.Cue.
         static void Cue(FieldBox f, string text) { f.Cue = text; f.Invalidate(); }
 
-        /// <summary>Значок календаря слева в поле; выбранный день ложится в текст —
-        /// дальше его разбирает тот же ParseDate, что и набранный вручную.</summary>
+        /// <summary>A calendar glyph on the left of the field; the chosen day goes into the
+        /// text — from there the same ParseDate handles it as it does a typed one.</summary>
         static void DatePicker(FieldBox f, bool upperBound)
         {
             f.IconLeft = Glyph.Calendar;
@@ -202,9 +206,9 @@ namespace AbletonManager
         }
 
         /// <summary>
-        /// В списки нот и ладов кладём только то, что реально встречается в сетах — иначе
-        /// приходится листать 35 ладов, из которых используются пять. Плюс отдельный
-        /// пункт «без тональности» для старых сетов, где её вообще нет.
+        /// The note and scale lists hold only what actually occurs in the sets — otherwise one
+        /// has to page through 35 scales of which five are used. Plus a separate "no key" item
+        /// for older sets that have none at all.
         /// </summary>
         void BuildKeyOptions()
         {
@@ -239,9 +243,9 @@ namespace AbletonManager
         }
 
         /// <summary>
-        /// Теги, которые реально стоят на этих сетах, по алфавиту. Не ProjectMeta.AllTags():
-        /// там лежат метки и тех проектов, которых в списке уже нет, — отбирать по ним
-        /// нечего.
+        /// The tags actually present on these sets, alphabetically. Not ProjectMeta.AllTags():
+        /// that also holds labels of projects no longer in the list, and there is nothing to
+        /// filter by them.
         /// </summary>
         List<string> TagsInSets()
         {
@@ -254,7 +258,7 @@ namespace AbletonManager
             return all;
         }
 
-        // ------------------------------------------------------------------ данные
+        // ------------------------------------------------------------------- data
 
         void Collect()
         {
@@ -321,7 +325,7 @@ namespace AbletonManager
                 if (_filter.Matches(s, ignoreKeyRoots: true))
                 {
                     validRoots.Add(s.ScaleRoot);
-                    if (s.ScaleRoot >= 0) validRoots.Add(-2); // любая тональность
+                    if (s.ScaleRoot >= 0) validRoots.Add(-2); // any key
                 }
             }
             for (int i = 0; i < _rootValues.Count; i++)
@@ -422,7 +426,7 @@ namespace AbletonManager
             LayoutRows();
         }
 
-        // --------------------------------------------------------------- раскладка
+        // ---------------------------------------------------------------- layout
 
         protected override void OnResize(EventArgs e)
         {
@@ -439,26 +443,26 @@ namespace AbletonManager
                 _labels.Clear(); _labelTexts.Clear();
 
                 int pad = Sc(Theme.Pad);
-                int labelW = Sc(170);   // «Plugin count» в 140 не помещался и обрезался
+                int labelW = Sc(170);   // "Plugin count" did not fit in 140 and was clipped
                 int left = pad + labelW;
                 int right = ClientSize.Width - pad;
                 int fieldW = right - left;
                 int ch = Sc(Theme.ControlH);
-                int y = Sc(72);   // без пояснительной строки первому ряду хватает отступа от заголовка
+                int y = Sc(72);   // with no explanatory line the first row has enough of a gap from the heading
                 int rowGap = Sc(14);
 
-                // дата
+                // date
                 int half = (fieldW - Sc(10)) / 2;
                 Label("Modified", pad, y, labelW);
                 _from.SetBounds(left, y, half, ch);
                 _to.SetBounds(left + half + Sc(10), y, half, ch);
                 y += ch + rowGap;
 
-                // версии
+                // versions
                 Label("Live version", pad, y, labelW);
                 y = TagRow(_versions, left, y, fieldW) + rowGap;
 
-                // тональность
+                // key
                 Label("Key root", pad, y, labelW);
                 y = TagRow(_roots, left, y, fieldW) + rowGap;
 
@@ -468,9 +472,9 @@ namespace AbletonManager
                 Label("Tags", pad, y, labelW);
                 y = TagRow(_tags, left, y, fieldW) + rowGap;
 
-                // Счётчики — половинками во всю ширину, как «from/to» выше: раньше пара
-                // коротких полей кончалась на своей вертикали, и в одном столбце было
-                // четыре разных правых края.
+                // Counters as halves across the full width, like the "from/to" above: a pair of
+                // short fields used to end on its own vertical, leaving four different right
+                // edges in one column.
                 Label("Tracks", pad, y, labelW);
                 _tracksMin.SetBounds(left, y, half, ch);
                 _tracksMax.SetBounds(left + half + Sc(10), y, half, ch);
@@ -486,7 +490,7 @@ namespace AbletonManager
                 _pluginsMissing.Location = new Point(_pluginsAll.Right + Sc(8), y);
                 y += ch + rowGap;
 
-                // состояние файлов
+                // file state
                 Label("Files", pad, y, labelW);
                 int x = left;
                 foreach (PillToggle p in new PillToggle[] { _complete, _missing, _unreadable })
@@ -496,7 +500,7 @@ namespace AbletonManager
                 }
                 y += ch + rowGap;
 
-                // превью
+                // preview
                 Label("Preview", pad, y, labelW);
                 int px = left;
                 foreach (PillToggle p in new PillToggle[] { _previewHasRenders, _previewNoRenders })
@@ -531,7 +535,7 @@ namespace AbletonManager
             return y + h;
         }
 
-        // -------------------------------------------------------------- отрисовка
+        // --------------------------------------------------------------- drawing
 
         protected override void OnPaint(PaintEventArgs e)
         {

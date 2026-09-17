@@ -8,34 +8,36 @@ using System.Threading;
 namespace AbletonManager
 {
     /// <summary>
-    /// Готовые картинки превью аранжировки на диске.
+    /// Finished arrangement preview pictures on disk.
     ///
-    /// Зачем: превью — это полный разбор .als, а сеты тут по 20 МБ XML после распаковки,
-    /// и одна плитка стоит около 120 мс. Главная показывает их два десятка разом, то есть
-    /// больше трёх секунд на КАЖДОМ запуске — и всё ради картинки, которая не меняется,
-    /// пока не изменится сам сет. Держим её рядом с index.cache и перечитываем за пару
-    /// миллисекунд.
+    /// Why: a preview means fully parsing the .als, and the sets here run to 20 MB of XML once
+    /// decompressed, so one tile costs around 120 ms. The home page shows two dozen at once,
+    /// which is over three seconds on EVERY start — all for a picture that does not change
+    /// until the set itself does. We keep it next to index.cache and read it back in a couple
+    /// of milliseconds.
     ///
-    /// Ключ — путь, время правки и размер сета: сет пересохранили — ключ другой, старая
-    /// запись просто перестаёт находиться и уходит при ближайшей чистке. Отдельной
-    /// проверки «не протухло ли» поэтому не нужно.
+    /// The key is the path, the modification time and the size of the set: re-save the set and
+    /// the key differs, the old entry simply stops being found and goes at the next sweep. No
+    /// separate "has it gone stale" check is needed.
     ///
-    /// Пустой файл — это «на линейке аранжировки пусто»: такой ответ тоже стоит полного
-    /// разбора, и запоминать его так же полезно, как и саму картинку. А вот ошибки чтения
-    /// на диск не пишем — они бывают временными (файл лежит на отключённом диске), и
-    /// запомнить их значило бы объявить сет пустым до следующей его правки.
+    /// An empty file means "the arrangement ruler is empty": that answer also costs a full
+    /// parse, and remembering it is just as useful as the picture itself. Read errors, on the
+    /// other hand, are not written to disk — they can be temporary (the file sits on a drive
+    /// that is switched off), and remembering one would declare the set empty until its next
+    /// edit.
     /// </summary>
     public static class ThumbCache
     {
-        /// <summary>Сколько картинок держим. Больше — просто занятое место: столько плиток
-        /// разом всё равно не смотрят, а перечитать выпавшую стоит миллисекунды.</summary>
+        /// <summary>How many pictures we keep. More is simply occupied space: nobody looks at
+        /// that many tiles at once, and re-reading one that fell out costs
+        /// milliseconds.</summary>
         const int MaxFiles = 400;
 
-        static int _swept;   // чистку делаем один раз за запуск, не на каждое сохранение
+        static int _swept;   // the sweep runs once per start, not on every save
 
         static string Dir { get { return Path.Combine(Settings.Dir, "thumbs"); } }
 
-        // ------------------------------------------------------------------- ключ
+        // -------------------------------------------------------------------- key
 
         const ulong FnvOffset = 14695981039346656037;
         const ulong FnvPrime = 1099511628211;
@@ -51,7 +53,8 @@ namespace AbletonManager
             return h;
         }
 
-        /// <summary>Имя файла кеша для сета или null, если сета сейчас нет на месте.</summary>
+        /// <summary>The cache file name for a set, or null if the set is not there right
+        /// now.</summary>
         static string KeyFile(string setPath)
         {
             if (string.IsNullOrEmpty(setPath)) return null;
@@ -67,9 +70,10 @@ namespace AbletonManager
             catch { return null; }
         }
 
-        // ---------------------------------------------------------------- чтение
+        // ------------------------------------------------------------------ reading
 
-        /// <summary>Есть ли готовый ответ. Дёшево — один File.Exists, зовётся из отрисовки.</summary>
+        /// <summary>Is there a ready answer. Cheap — one File.Exists, called from
+        /// drawing.</summary>
         public static bool Has(string setPath)
         {
             string f = KeyFile(setPath);
@@ -79,8 +83,9 @@ namespace AbletonManager
         }
 
         /// <summary>
-        /// Готовая картинка. known=false — записи нет (или она испортилась), надо разбирать
-        /// сет как обычно; known=true и null — «аранжировка пуста», разбирать незачем.
+        /// The finished picture. known=false — there is no entry (or it is corrupt) and the set
+        /// has to be parsed as usual; known=true with null means "the arrangement is empty",
+        /// nothing to parse.
         /// </summary>
         public static Bitmap Load(string setPath, out bool known)
         {
@@ -91,17 +96,17 @@ namespace AbletonManager
             {
                 if (!File.Exists(f)) return null;
 
-                // Читаем в память целиком: Image.FromFile держит файл открытым, пока жива
-                // картинка, и чистка кеша потом не смогла бы его удалить.
+                // We read it fully into memory: Image.FromFile keeps the file open for as long
+                // as the picture lives, and the cache sweep would then be unable to delete it.
                 byte[] bytes = File.ReadAllBytes(f);
                 known = true;
-                if (bytes.Length == 0) return null;          // отметка «аранжировка пуста»
+                if (bytes.Length == 0) return null;          // the "arrangement is empty" mark
 
                 using (MemoryStream ms = new MemoryStream(bytes, false))
                 using (Image img = Image.FromStream(ms, false, false))
                 {
-                    // PArgb — тот же формат, в котором лежат масштабированные копии:
-                    // DrawImage такой картинки не пересчитывает альфу на каждый кадр.
+                    // PArgb is the same format the scaled copies are kept in: DrawImage of such
+                    // a picture does not recompute alpha on every frame.
                     Bitmap copy = new Bitmap(img.Width, img.Height, PixelFormat.Format32bppPArgb);
                     using (Graphics g = Graphics.FromImage(copy))
                         g.DrawImageUnscaled(img, 0, 0);
@@ -111,14 +116,15 @@ namespace AbletonManager
             catch
             {
                 known = false;
-                try { File.Delete(f); } catch { }            // битая запись — пусть перерисуют
+                try { File.Delete(f); } catch { }            // a corrupt entry — let it be redrawn
                 return null;
             }
         }
 
-        // ---------------------------------------------------------------- запись
+        // ------------------------------------------------------------------ writing
 
-        /// <summary>Сохранить картинку (null — отметку «аранжировка пуста»). Звать из фона.</summary>
+        /// <summary>Save a picture (null saves the "arrangement is empty" mark). Call from the
+        /// background.</summary>
         public static void Save(string setPath, Bitmap bmp)
         {
             string f = KeyFile(setPath);
@@ -127,8 +133,8 @@ namespace AbletonManager
             {
                 if (!Directory.Exists(Dir)) Directory.CreateDirectory(Dir);
 
-                // Пишем через временный файл со своим именем: сохранять могут сразу
-                // несколько потоков, и общий «.tmp» они бы отбирали друг у друга.
+                // We write through a temporary file with a name of its own: several threads may
+                // be saving at once, and they would fight over a shared ".tmp".
                 string tmp = f + "." + Guid.NewGuid().ToString("N") + ".tmp";
                 if (bmp == null) File.WriteAllBytes(tmp, new byte[0]);
                 else bmp.Save(tmp, ImageFormat.Png);
@@ -138,25 +144,26 @@ namespace AbletonManager
                     if (File.Exists(f)) File.Delete(f);
                     File.Move(tmp, f);
                 }
-                catch { try { File.Delete(tmp); } catch { } }   // кто-то успел раньше — и хорошо
+                catch { try { File.Delete(tmp); } catch { } }   // somebody got there first — all the better
             }
-            catch { /* кеш — не критично, в худшем случае перерисуем */ }
+            catch { /* the cache is not critical - worst case we redraw */ }
 
             Sweep();
         }
 
-        /// <summary>Сохранить отметку «аранжировка пуста», не занимая поток интерфейса.</summary>
+        /// <summary>Save the "arrangement is empty" mark without occupying the UI
+        /// thread.</summary>
         public static void SaveEmptyAsync(string setPath)
         {
             string p = setPath;
             ThreadPool.QueueUserWorkItem(delegate { Save(p, null); });
         }
 
-        // ---------------------------------------------------------------- чистка
+        // ------------------------------------------------------------------ sweeping
 
         /// <summary>
-        /// Держим папку в разумных пределах: лишнее сносим, начиная с самого давнего.
-        /// Один раз за запуск и в фоне — это чистая уборка, торопиться с ней некуда.
+        /// Keep the folder within reason: the excess goes, oldest first. Once per start and in
+        /// the background — this is plain tidying, there is nowhere to hurry.
         /// </summary>
         static void Sweep()
         {
