@@ -7,84 +7,89 @@ using System.Windows.Forms;
 namespace AbletonManager
 {
     /// <summary>
-    /// Единая система оформления: цвета, кегли, скругления и отступы. Значения сняты
-    /// с макета (1475×898 при 96 dpi) — там же, где макет задаёт число, оно здесь и стоит,
-    /// а не подобрано на глаз. Всё остальное окно строится из этих же величин, чтобы
-    /// элементы были одного роста и не разъезжались.
+    /// A single design system: colours, type sizes, corner radii and insets. The values are
+    /// taken from the mockup (1475×898 at 96 dpi) — wherever the mockup sets a number, that
+    /// number stands here rather than something picked by eye. The rest of the window is built
+    /// from these same quantities so that elements are of one height and do not drift apart.
     /// </summary>
     public static class Theme
     {
         /// <summary>
-        /// Включена ли плавная вертикальная прокрутка (доводка таймером).
-        /// При false прокрутка во всех списках и панелях происходит мгновенно.
+        /// Whether smooth vertical scrolling is on (settling by timer). With false, scrolling
+        /// in every list and panel is instant.
         /// </summary>
         public static bool SmoothScroll;
 
-        // ------------------------------------------------------------------- цвета
+        // ------------------------------------------------------------------ colours
         public static readonly Color Bg      = Color.FromArgb(0xFF, 0x1B, 0x1B, 0x1D);
 
         /// <summary>
-        /// Насколько плотен фон окна поверх размытия. Гасить обои этим значением —
-        /// плохая идея: размытие пропадает раньше, чем текст перестаёт розоветь (края
-        /// букв у GDI наследуют альфу фона и мешаются с тем, что за окном). Темнота
-        /// живёт в <see cref="Glass.AccentTint"/> — слое ПОД содержимым окна, а здесь
-        /// остаётся ровно столько плотности, чтобы фон не выглядел дырявым.
+        /// How dense the window background is over the blur. Dimming the wallpaper with this
+        /// value is a bad idea: the blur disappears before the text stops going pink (the edges
+        /// of GDI letters inherit the background's alpha and mix with what is behind the
+        /// window). The darkness lives in <see cref="Glass.AccentTint"/> — the layer UNDER the
+        /// window's content — while exactly enough density is left here for the background not
+        /// to look full of holes.
         /// </summary>
         public static int GlassAlpha = 0x0f;
 
         /// <summary>
-        /// Фон окна: тот же цвет, но со стеклом — полупрозрачный. Всё, что лежит прямо
-        /// на окне (а не внутри карточки), должно заливаться именно им, иначе окно
-        /// окажется дырявым в одних местах и глухим в других.
+        /// The window background: the same colour but, with glass, translucent. Everything
+        /// lying directly on the window (rather than inside a card) has to be filled with
+        /// precisely this, or the window ends up full of holes in some places and solid in
+        /// others.
         /// </summary>
         public static Color Backdrop
         {
             get { return Glass.Enabled ? Color.FromArgb(GlassAlpha, Bg) : Bg; }
         }
 
-        // Карточки, пилюли — опорные непрозрачные цвета. Используются как есть там, где
-        // стекло невозможно (всплывающее меню — отдельное окно без своей альфы), и как
-        // запасной вариант, если Glass.Enabled вдруг окажется false.
+        // Cards and pills — the opaque reference colours. Used as they are where glass is
+        // impossible (a popup menu is a separate window with no alpha of its own), and as a
+        // fallback should Glass.Enabled turn out to be false.
         public static readonly Color Surface        = Color.FromArgb(0xFF, 0x28, 0x28, 0x2A);
         public static readonly Color SurfacePressed = Color.FromArgb(0xFF, 0x3A, 0x3A, 0x3E);
 
-        /// <summary>Прежние имена — теперь просто синонимы: непрозрачно вообще всё.</summary>
+        /// <summary>The former names are now merely synonyms: absolutely everything is
+        /// opaque.</summary>
         public static readonly Color SolidSurface = Surface;
         public static readonly Color SolidPressed = SurfacePressed;
 
         /// <summary>
-        /// Чем залита карточка панели подробностей — та же формула, что в
-        /// DetailPanel.PaintCard (PaintGlassSurface с GlassAlpha): на стекле почти
-        /// прозрачный тёмный тон, без стекла — сплошной Surface. Контрол, лежащий на
-        /// карточке, должен красить фон под своими скруглениями этим, а не Backdrop:
-        /// иначе в непрозрачном режиме углы уходят в фон окна и пилюлю обводит прямоугольник.
+        /// What the detail panel's card is filled with — the same formula as in
+        /// DetailPanel.PaintCard (PaintGlassSurface with GlassAlpha): on glass an almost
+        /// transparent dark tone, without glass a solid Surface. A control lying on the card
+        /// has to paint the background under its own rounding with this rather than with
+        /// Backdrop: otherwise in opaque mode the corners fall through to the window background
+        /// and a rectangle outlines the pill.
         /// </summary>
         public static Color CardFill
         {
             get { return Glass.Enabled ? Color.FromArgb(GlassAlpha, Bg) : Surface; }
         }
 
-        // Степень «начинки» у стеклянных карточек/кнопок (см. PaintGlassSurface) —
-        // по нарастающей для покоя/наведения/нажатия-выбора, тем же тёмным тоном, что
-        // и сам фон окна, просто плотнее. Числа не пропорция альфы к состоянию флэт-версии
-        // (0x28→0x32→0x3A) — та шкала имеет смысл только для непрозрачного, тут же даже
-        // «нажатое» состояние должно оставаться стеклом, а не залипать в сплошной цвет.
-        public const int GlassSurfaceAlpha        = 0x14;   // ~8%, состояние покоя
-        public const int GlassSurfaceHotAlpha     = 0x86;   // наведение: на размытом фоне 0x49 почти не читался
-        public const int GlassSurfacePressedAlpha = 0xb0;   // ~23%, нажатие / выбрано
+        // The degree of "filling" in glass cards and buttons (see PaintGlassSurface) —
+        // increasing for rest / hover / press-or-selected, in the same dark tone as the window
+        // background itself, only denser. The numbers are not the alpha proportions of the flat
+        // version's states (0x28→0x32→0x3A) — that scale only makes sense for the opaque one,
+        // whereas here even the "pressed" state has to stay glass rather than sticking to a
+        // solid colour.
+        public const int GlassSurfaceAlpha        = 0x14;   // ~8%, the resting state
+        public const int GlassSurfaceHotAlpha     = 0x86;   // hover: on a blurred background 0x49 was barely legible
+        public const int GlassSurfacePressedAlpha = 0xb0;   // ~23%, press / selected
 
-        public static readonly Color Sunken  = Color.FromArgb(0xFF, 0x15, 0x15, 0x19);  // поле поиска
-        // Главная кнопка. Плоский 0xCACACB рядом с обводочными кнопками выглядел
-        // выключенным, поэтому теперь это вертикальный градиент: LightTop сверху,
-        // Light снизу, LightPressed — при нажатии.
+        public static readonly Color Sunken  = Color.FromArgb(0xFF, 0x15, 0x15, 0x19);  // the search field
+        // The primary button. A flat 0xCACACB next to the outlined buttons looked disabled, so
+        // it is now a vertical gradient: LightTop on top, Light below, LightPressed while
+        // pressed.
         public static readonly Color Light        = Color.FromArgb(0xFF, 0xCA, 0xCA, 0xCB);
         public static readonly Color LightTop     = Color.FromArgb(0xFF, 0xF2, 0xF2, 0xF4);
         public static readonly Color LightPressed = Color.FromArgb(0xFF, 0x9E, 0x9E, 0xA2);
 
         public static readonly Color Text     = Color.FromArgb(0xFF, 0xE9, 0xE9, 0xEB);
 
-        // Вторичный текст поднят с 0x6B: на стекле он лежит на фоне, в который уже
-        // подмешано размытие, и тёмно-серый читался на нём грязным пятном.
+        // Secondary text was raised from 0x6B: on glass it sits on a background that already
+        // has blur mixed into it, and dark grey read as a dirty smudge on it.
         public static readonly Color TextDim = Glass.Enabled
             ? Color.FromArgb(0xFF, 0x91, 0x91, 0x96)
             : Color.FromArgb(0xFF, 0x6B, 0x6B, 0x6D);
@@ -95,33 +100,33 @@ namespace AbletonManager
 
         public static readonly Color RowHover = Color.FromArgb(0x14, 0xFF, 0xFF, 0xFF);
 
-        // Линейки непрозрачные. Полупрозрачная линия на пересечении с другой такой же
-        // складывается сама с собой и даёт заметно более светлый пиксель на стыке —
-        // ровно это и было видно там, где вертикальный разделитель встречал шапку.
-        // Цвет подобран так, чтобы совпадать с прежним 15%-белым поверх Bg.
+        // The rules are opaque. A translucent line crossing another one just like it adds to
+        // itself and gives a noticeably lighter pixel at the junction — which is exactly what
+        // could be seen where the vertical divider met the header. The colour is picked to
+        // match the former 15% white over Bg.
         public static readonly Color Hairline = Color.FromArgb(0xFF, 0x3A, 0x3A, 0x3D);
 
-        // ---------------------------------------------------------------- размеры
-        public const int Pad        = 30;   // поле окна слева/справа/сверху
-        public const int ControlH   = 35;   // высота всех пилюль и полей в панели инструментов
-        public const int IconSize   = 35;   // круглая кнопка-иконка
+        // ------------------------------------------------------------------ sizes
+        public const int Pad        = 30;   // the window margin left/right/top
+        public const int ControlH   = 35;   // the height of every pill and field in the toolbar
+        public const int IconSize   = 35;   // a round icon button
         public const int IconGap    = 10;
-        public const int ContentY   = 98;   // где начинается содержимое под панелью инструментов
-        public const int RowH       = 57;   // шаг строки таблицы
-        public const int RowPillH   = 55;   // сама подсветка строки
-        public const int CellPadX   = 24;   // отступ текста от края строки
-        public const int PanelW     = 332;  // панель подробностей
+        public const int ContentY   = 98;   // where the content under the toolbar begins
+        public const int RowH       = 57;   // the table row pitch
+        public const int RowPillH   = 55;   // the row highlight itself
+        public const int CellPadX   = 24;   // the text inset from the edge of a row
+        public const int PanelW     = 332;  // the detail panel
         public const int PanelPad   = 16;
-        // Радиусы вложены концентрически: внутренний = внешний − отступ, иначе угол
-        // читается как две разные дуги рядом. 30 на окне 1475×950 выглядело как
-        // телефон, а не как приложение.
+        // The radii are nested concentrically: inner = outer − inset, or the corner reads as
+        // two different arcs side by side. 30 on a 1475×950 window looked like a phone rather
+        // than an application.
         public const int WindowR    = 18;
         public const int CardR      = 14;
         public const int ThumbR     = 6;
 
-        // ---------------------------------------------------------------- шрифты
-        // Кегли подобраны замером: высота знаков и ширина строк совпадают с макетом
-        // (строка таблицы — 13 pt, «F Phrygian» 93 px против 95 px в макете).
+        // ------------------------------------------------------------------ fonts The type
+        // sizes were picked by measurement: glyph heights and line widths match the mockup (a
+        // table row is 13 pt, "F Phrygian" 93 px against 95 px in the mockup).
         static string _uiFamily;
 
         static string UiFamily
@@ -144,7 +149,8 @@ namespace AbletonManager
             return new Font(UiFamily, size, style, GraphicsUnit.Point);
         }
 
-        /// <summary>Полужирный отдельным семейством: у GDI+ только два веса, и Bold слишком тяжёл.</summary>
+        /// <summary>Semibold as a separate family: GDI+ has only two weights, and Bold is too
+        /// heavy.</summary>
         public static Font UISemibold(float size)
         {
             foreach (string name in new string[] { "Segoe UI Variable Text Semibold", "Segoe UI Semibold" })
@@ -160,10 +166,10 @@ namespace AbletonManager
             return false;
         }
 
-        public static readonly Font FTitle       = UISemibold(13f);    // имя сета, заголовок панели
+        public static readonly Font FTitle       = UISemibold(13f);    // a set name, a panel heading
         public static readonly Font FBody        = UI(13f, FontStyle.Regular);
-        public static readonly Font FButton      = UI(13f, FontStyle.Regular);     // кнопка — не подпись
-        public static readonly Font FLabel       = UI(12f, FontStyle.Regular);     // шапка таблицы, подписи
+        public static readonly Font FButton      = UI(13f, FontStyle.Regular);     // a button, not a caption
+        public static readonly Font FLabel       = UI(12f, FontStyle.Regular);     // the table header, captions
         public static readonly Font FSmall       = UI(12f, FontStyle.Regular);
         public static readonly Font FBadge       = UI(11f, FontStyle.Regular);
         public static readonly Font FMini        = UI(9.5f, FontStyle.Regular);
@@ -171,9 +177,9 @@ namespace AbletonManager
         public static readonly Font FDialogTitle = UISemibold(22f);
 
         /// <summary>
-        /// Отступ от верха строки до базовой линии, в пикселях. TextRenderer сажает
-        /// строку по верху коробки, а коробка у 13 и 9.5 пунктов разной высоты —
-        /// без этой поправки подписи разного кегля стоят на разных линиях.
+        /// The offset from the top of a line to its baseline, in pixels. TextRenderer seats a
+        /// line by the top of its box, and the box for 13 and for 9.5 points differs in height
+        /// — without this correction captions of different sizes stand on different lines.
         /// </summary>
         public static int Baseline(Font f)
         {
@@ -182,9 +188,9 @@ namespace AbletonManager
                                    * fam.GetCellAscent(f.Style) / (float)fam.GetLineSpacing(f.Style));
         }
 
-        // ------------------------------------------------------------- рисование
+        // ------------------------------------------------------------------ drawing
 
-        // Кэш перьев для PaintGlassSurface: цвета фиксированные, создаём один раз.
+        // A pen cache for PaintGlassSurface: the colours are fixed, so we create them once.
         static readonly Pen _borderPen    = new Pen(Color.FromArgb(10, 255, 255, 255), 1.5f);
         static readonly Pen _highlightPen = new Pen(Color.FromArgb(20, 255, 255, 255), 1.5f);
 
@@ -204,10 +210,10 @@ namespace AbletonManager
         }
 
         /// <summary>
-        /// Только верхняя дуга скруглённого прямоугольника — без боков и низа. Нужна
-        /// для блика по верхнему краю карточки (в Figma это inner shadow со сдвигом
-        /// по Y на 1px и нулевым блюром: свет ложится только там, где край смотрит
-        /// вверх, а по бокам и снизу его не видно).
+        /// Only the top arc of a rounded rectangle — no sides and no bottom. Needed for the
+        /// highlight along a card's top edge (in Figma it is an inner shadow offset by 1px in Y
+        /// with zero blur: the light falls only where the edge faces upward, and is invisible
+        /// at the sides and the bottom).
         /// </summary>
         public static GraphicsPath RoundTop(RectangleF r, float radius)
         {
@@ -268,7 +274,8 @@ namespace AbletonManager
                 g.DrawPath(pen, p);
         }
 
-        /// <summary>Вариант DrawRound с уже готовым Pen — без аллокации на каждый кадр.</summary>
+        /// <summary>A variant of DrawRound with a ready Pen — no allocation per
+        /// frame.</summary>
         static void DrawRoundCached(Graphics g, RectangleF r, float radius, Pen pen)
         {
             float w = pen.Width;
@@ -279,26 +286,26 @@ namespace AbletonManager
         }
 
         /// <summary>
-        /// Стеклянная карточка/кнопка/пилюля — тот же приём, что и у панели подробностей:
-        /// почти прозрачная заливка тёмным тоном окна, тонкая обводка 1px белым 4% и
-        /// блик по верхнему краю 1px белым 8% (в Figma — inner shadow, offset Y=1, blur 0).
-        /// fillAlpha — степень «начинки», см. GlassSurfaceAlpha/Hot/Pressed.
+        /// A glass card, button or pill — the same trick as the detail panel: an almost
+        /// transparent fill in the window's dark tone, a thin 1px outline in 4% white and a
+        /// highlight along the top edge in 1px 8% white (in Figma an inner shadow, offset Y=1,
+        /// blur 0). fillAlpha is the degree of "filling", see GlassSurfaceAlpha/Hot/Pressed.
         ///
-        /// SourceCopy на заливке не косметика: без него альфа складывается поверх уже
-        /// написанного фона control'а (Chrome.PaintBase рисуется раньше), и середина
-        /// выходит заметно плотнее собственных краёв — тот же шов, что ловили на пилюлях
-        /// полей ввода. Без стекла (Glass.Enabled=false) заливка сплошная — так же, как
-        /// и раньше, до всего этого эксперимента.
+        /// SourceCopy on the fill is not cosmetic: without it the alpha adds over the control's
+        /// already written background (Chrome.PaintBase draws earlier), and the middle comes
+        /// out noticeably denser than its own edges — the same seam that was caught on the
+        /// pills of the input fields. Without glass (Glass.Enabled=false) the fill is solid —
+        /// just as it was before this whole experiment.
         /// </summary>
         /// <summary>
-        /// Реально ли ЭТО окно сейчас акриловое — не то же самое, что Glass.Enabled
-        /// (поддержка самой ОС). У диалогов вроде NotesDialog стекло выключено осознанно
-        /// (см. GlassDialog.UseGlass — там живёт настоящий многострочный TextBox, а
-        /// акрил ломает нативные дочерние окна), и DWM ничего не размывает позади них.
-        /// PaintGlassSurface должен об этом знать: SourceCopy ниже придуман для окна,
-        /// чей итоговый альфа-канал реально читает DWM, а на обычном непрозрачном окне
-        /// он просто стирает подсветку, оставляя после себя цвет фона — пилюли выходят
-        /// невидимыми (см. репорт с NotesDialog).
+        /// Whether THIS window is really acrylic right now — which is not the same as
+        /// Glass.Enabled (support in the OS itself). On dialogs like NotesDialog the glass is
+        /// off deliberately (see GlassDialog.UseGlass — a real multi-line TextBox lives there,
+        /// and acrylic breaks native child windows), and DWM blurs nothing behind them.
+        /// PaintGlassSurface has to know that: the SourceCopy below was devised for a window
+        /// whose final alpha channel DWM really reads, while on an ordinary opaque window it
+        /// simply erases the highlight, leaving the background colour behind it — and the pills
+        /// come out invisible (see the report from NotesDialog).
         /// </summary>
         public static bool IsBlurred(Control owner)
         {
@@ -308,8 +315,9 @@ namespace AbletonManager
         }
 
         /// <summary>
-        /// Стеклянная обводка — тонкий контур 1px белым 4% и блик по верхнему краю 1px белым 8%.
-        /// Точно такая же обводка, как у карточек, диалогов и окна свойств (DetailPanel).
+        /// A glass outline — a thin 1px contour in 4% white and a highlight along the top edge
+        /// in 1px 8% white. Exactly the same outline as on the cards, the dialogs and the
+        /// properties window (DetailPanel).
         /// </summary>
         public static void PaintGlassBorder(Graphics g, RectangleF r, float radius, float k = 1.0f)
         {
@@ -341,9 +349,10 @@ namespace AbletonManager
             FillRound(g, r, radius, fill);
             g.CompositingMode = old;
 
-            // Обводка и блик держат постоянную альфу, пока заливка не упадёт ниже
-            // состояния покоя. У Quiet-кнопок покоя нет: без этого затухания контур
-            // висел на полной силе весь хвост анимации и «отлипал» рывком в конце.
+            // The outline and the highlight hold a constant alpha until the fill drops below
+            // the resting state. Quiet buttons have no resting state: without this fade the
+            // contour hung at full strength through the whole tail of the animation and
+            // "unstuck" itself with a jerk at the end.
             float k = Math.Min(1f, fillAlpha / (float)GlassSurfaceAlpha);
             PaintGlassBorder(g, r, radius, k);
         }
@@ -357,14 +366,14 @@ namespace AbletonManager
         }
 
         /// <summary>
-        /// Облегчённая настройка Graphics при прокрутке: без HighQuality
-        /// PixelOffsetMode, который замедляет все GDI+ операции.
+        /// A lighter Graphics setup for scrolling: without the HighQuality PixelOffsetMode,
+        /// which slows every GDI+ operation down.
         ///
-        /// Но и не Default: при нём GDI+ кладёт фигуру на полпикселя ниже и правее, чем
-        /// сказано в прямоугольнике (замерено: пилюля 8..31 рисуется сплошной с 9 по 31
-        /// и бледной строкой на 32). На прокрутке всё уезжало на полпикселя и вставало
-        /// обратно, когда список замирал. Half даёт ту же точность, что HighQuality,
-        /// без его цены.
+        /// But not Default either: with it GDI+ puts a shape half a pixel lower and further
+        /// right than the rectangle says (measured: a pill at 8..31 draws solid from 9 to 31
+        /// and as a pale line at 32). While scrolling everything slid half a pixel and stood
+        /// back when the list came to rest. Half gives the same accuracy as HighQuality without
+        /// its price.
         /// </summary>
         public static void SmoothFast(Graphics g)
         {

@@ -7,17 +7,17 @@ using System.Windows.Forms;
 namespace AbletonManager
 {
     /// <summary>
-    /// Панель справа: подробности выбранного сета или плагина. Карточка одного цвета,
-    /// главное действие прибито к низу, всё остальное — колонка блоков с одинаковыми
-    /// отступами.
+    /// The panel on the right: the details of the selected set or plugin. A card of one colour,
+    /// the primary action pinned to the bottom, and everything else a column of blocks with
+    /// identical insets.
     /// </summary>
     public sealed class DetailPanel : GlassControl
     {
         readonly GlassButton _action = new GlassButton();
         readonly IconButton _toggle = new IconButton();
 
-        ContextMenuStrip _openMenu;   // попап второстепенных действий, пока он открыт
-        int _menuClosedTick;          // когда он закрылся — см. ShowActionMenu
+        ContextMenuStrip _openMenu;   // the popup of secondary actions, while it is open
+        int _menuClosedTick;          // when it closed — see ShowActionMenu
 
         SetEntry _set;
         PluginStat _plugin;
@@ -34,13 +34,13 @@ namespace AbletonManager
         bool _thumbHot, _linkHot, _notesHot, _topHot;
         bool _thumbRendering;
 
-        // Список «Sets» у плагина: строки кликабельны — переход к сету, но подчёркиваем
-        // только ту, что сейчас под курсором, а не все разом.
+        // The "Sets" list on a plugin: the rows are clickable and jump to a set, but we
+        // underline only the one currently under the cursor rather than all of them at once.
         readonly List<Rectangle> _setRowRects = new List<Rectangle>();
         readonly List<SetEntry> _setRowSets = new List<SetEntry>();
         int _setRowHot = -1;
 
-        // Список «Plugins» у сета: та же логика в обратную сторону — переход к плагину.
+        // The "Plugins" list on a set: the same logic in reverse — a jump to a plugin.
         readonly List<Rectangle> _pluginRowRects = new List<Rectangle>();
         readonly List<string> _pluginRowNames = new List<string>();
         int _pluginRowHot = -1;
@@ -53,7 +53,7 @@ namespace AbletonManager
         public event Action OpenRequested;
         public event Action RescueRequested;
 
-        /// <summary>Собрать проект в переносимую папку — см. CollectDialog.</summary>
+        /// <summary>Collect the project into a portable folder — see CollectDialog.</summary>
         public event Action CollectRequested;
 
         Action _showInListRequested;
@@ -71,7 +71,7 @@ namespace AbletonManager
             }
         }
 
-        /// <summary>Клик по блоку тегов и заметки — открыть редактор.</summary>
+        /// <summary>A click on the tags-and-note block opens the editor.</summary>
         public event Action<SetEntry> NotesRequested;
         public event Action<SetEntry> SetRequested;
         public event Action<string> PluginRequested;
@@ -82,7 +82,8 @@ namespace AbletonManager
             Surface = Theme.Backdrop;
 
             _action.Primary = true;
-            // Кнопка лежит на карточке панели, а не на голом окне — повторяем оба слоя.
+            // The button lies on the panel's card rather than on the bare window — we repeat
+            // both layers.
             _action.Surface = Theme.Backdrop;
             _action.SurfaceOverlay = Theme.Surface;
             _action.Click += delegate
@@ -92,9 +93,9 @@ namespace AbletonManager
             };
             Controls.Add(_action);
 
-            // Второстепенные действия для сета — только для сета: у плагина своего .als
-            // нет, ни чинить, ни версионировать нечего. Лежат в попапе, который встаёт
-            // вверх от этой кнопки — там же, где раньше стояли отдельными пилюлями.
+            // Secondary actions for a set are for a set only: a plugin has no .als of its own,
+            // so there is nothing to mend. They live in a popup that rises from this button —
+            // where they used to stand as separate pills.
             _toggle.Icon = Glyph.HiddenBtnsOpen;
             _toggle.Surface = Theme.CardFill;
             _toggle.Click += delegate { ShowActionMenu(); };
@@ -117,11 +118,12 @@ namespace AbletonManager
             TextFormatFlags.NoPrefix | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPadding;
 
         /// <summary>
-        /// С PanelLeft (TextFormatFlags.NoPadding) первый пиксель текста рисуется ровно от края rr.X.
+        /// With PanelLeft (TextFormatFlags.NoPadding) the first pixel of text is drawn exactly
+        /// from the edge of rr.X.
         /// </summary>
         int UnderlinePad { get { return 0; } }
 
-        // ------------------------------------------------------------- содержимое
+        // ------------------------------------------------------------------ content
 
         public void Show(SetEntry s)
         {
@@ -150,11 +152,11 @@ namespace AbletonManager
         }
 
         /// <summary>
-        /// Сеты, где стоит показанный плагин. Считаем один раз при выборе плагина, а не
-        /// в OnPaint: обход тут — все сеты на все их плагины, а перерисовок у панели
-        /// много (наведение, прокрутка). Ограничения на длину нет намеренно — раньше
-        /// список обрывался на шестидесятом сете молча, и «не все проекты появляются»
-        /// было именно этим.
+        /// The sets the displayed plugin is in. We count once when a plugin is selected rather
+        /// than in OnPaint: the walk here is every set against every one of its plugins, and
+        /// the panel is repainted often (hover, scrolling). There is deliberately no length
+        /// limit — the list used to break off at the sixtieth set silently, and "not all the
+        /// projects show up" was exactly that.
         /// </summary>
         readonly List<SetEntry> _users = new List<SetEntry>();
 
@@ -196,8 +198,8 @@ namespace AbletonManager
         {
             if (_pluginMode)
             {
-                // Кнопка «Show in Explorer» убрана: путь к плагину сам стал ссылкой,
-                // и кнопка внизу повторяла то, на что и так хочется нажать.
+                // The "Show in Explorer" button was removed: the plugin path became a link
+                // itself, and the button at the bottom repeated what one wants to click anyway.
                 _action.Visible = false;
                 _toggle.Visible = false;
             }
@@ -210,18 +212,18 @@ namespace AbletonManager
         }
 
         /// <summary>
-        /// Второстепенные действия — попапом вверх от кнопки, ровно там, где раньше
-        /// стояли отдельные пилюли. Набор зависит от того, показан ли сет уже в списке
-        /// слева: там «Show in List», иначе починка, сборка и версии.
+        /// Secondary actions as a popup rising from the button, exactly where the separate
+        /// pills used to stand. The set of them depends on whether the set is already shown in
+        /// the list on the left: there "Show in List", otherwise mending and collecting.
         /// </summary>
         void ShowActionMenu()
         {
             if (_set == null || _pluginMode) return;
 
-            // Клик по кнопке при открытом попапе сначала закрывает его — попап сам
-            // уходит от любого клика мимо себя, и только потом клик доходит до кнопки.
-            // Без этой проверки кнопка тут же открывала бы его заново, и попап выглядел
-            // бы незакрываемым.
+            // A click on the button while the popup is open closes it first — the popup leaves
+            // on any click outside itself, and only then does the click reach the button.
+            // Without this check the button would reopen it at once, and the popup would look
+            // impossible to close.
             if (Environment.TickCount - _menuClosedTick < 250) return;
 
             ContextMenuStrip m = DarkMenu.Create();
@@ -233,7 +235,7 @@ namespace AbletonManager
             }
             else
             {
-                // Порядок как у прежнего столбика пилюль: Collect All сверху.
+                // The order is that of the former column of pills: Collect All on top.
                 ToolStripMenuItem collect = new ToolStripMenuItem("Export");
                 collect.Click += delegate { if (CollectRequested != null) CollectRequested(); };
                 m.Items.Add(collect);
@@ -244,7 +246,7 @@ namespace AbletonManager
                 m.Items.Add(rescue);
             }
 
-            // Пока попап открыт, значок кнопки перевёрнут — как у раскрытого списка.
+            // While the popup is open the button glyph is flipped — as on an expanded list.
             _openMenu = m;
             _toggle.Icon = Glyph.HiddenBtnsClose;
             _toggle.Invalidate();
@@ -265,7 +267,7 @@ namespace AbletonManager
             _thumbSize = Size.Empty;
         }
 
-        // --------------------------------------------------------------- раскладка
+        // ------------------------------------------------------------------ layout
 
         protected override void OnResize(EventArgs e)
         {
@@ -278,11 +280,11 @@ namespace AbletonManager
         }
 
         /// <summary>
-        /// Докуда можно рисовать содержимое (и где стоит кнопка «наверх», см.
-        /// PaintScrollTop). Место под кнопки резервируем всегда, чтобы список не прыгал,
-        /// когда кнопка то есть, то нет: у плагина ряда нет вовсе, у сета — один ряд
-        /// (Open in Live и кнопка второстепенных действий). Второстепенные действия
-        /// живут в попапе и места в панели не занимают.
+        /// How far down content may be drawn (and where the "to the top" button stands, see
+        /// PaintScrollTop). Room for the buttons is always reserved so the list does not jump
+        /// when the button is there and then is not: a plugin has no row at all, a set has one
+        /// (Open in Live and the secondary actions button). Secondary actions live in a popup
+        /// and take up no room in the panel.
         /// </summary>
         int BodyBottom
         {
@@ -294,8 +296,8 @@ namespace AbletonManager
         }
 
         /// <summary>
-        /// Строки списка просто перестаём рисовать за нижней границей: обрезка через
-        /// Graphics.Clip не годится — TextRenderer рисует мимо GDI+ и клип игнорирует.
+        /// We simply stop drawing list rows past the bottom boundary: clipping through
+        /// Graphics.Clip will not do — TextRenderer draws past GDI+ and ignores the clip.
         /// </summary>
         bool Below(int y) { return y > BodyBottom; }
 
@@ -312,7 +314,7 @@ namespace AbletonManager
             base.OnMouseWheel(e);
         }
 
-        // ------------------------------------------------------------------- мышь
+        // ------------------------------------------------------------------- mouse
 
         protected override void OnMouseMove(MouseEventArgs e)
         {
@@ -389,7 +391,7 @@ namespace AbletonManager
             base.OnMouseDown(e);
         }
 
-        // -------------------------------------------------------------- отрисовка
+        // ---------------------------------------------------------------- drawing
 
         void PaintCard(Graphics g)
         {
@@ -400,9 +402,9 @@ namespace AbletonManager
         protected override void OnPaint(PaintEventArgs e)
         {
             Graphics g = e.Graphics;
-            // Уголки control'а снаружи скруглённой карточки красим фоном окна — на
-            // стекле это Backdrop, так и уголки бесшовно сливаются с тем же стеклом
-            // вокруг панели, как у обычных пилюль.
+            // The control's corners outside the rounded card are painted with the window
+            // background — on glass that is Backdrop, and the corners then merge seamlessly
+            // with the same glass around the panel, as on ordinary pills.
             Chrome.PaintBase(this, g, e.ClipRectangle, Surface);
             Theme.Smooth(g);
 
@@ -410,7 +412,8 @@ namespace AbletonManager
 
             int w = Width - Pad * 2;
 
-            // Резиновый перелёт за край — тот же, что в списке и на плитках.
+            // The rubber-band overshoot past the edge — the same as in the list and on the
+            // tiles.
             int over = _scroller != null ? (int)Math.Round(_scroller.Overscroll) : 0;
             int y = Pad - _scroll - over;
 
@@ -427,8 +430,8 @@ namespace AbletonManager
                 return;
             }
 
-            // Заголовок и вес всей папки проекта в одной строке — то же число, что и в
-            // колонке списка.
+            // The heading and the weight of the whole project folder on one line — the same
+            // number as in the list column.
             int titleH = Sc(26);
             string size = MainForm.SizeMB(_set.ProjectSize);
             Size sw = TextRenderer.MeasureText(g, size, Theme.FLabel, new Size(w, titleH), PanelRight);
@@ -440,8 +443,8 @@ namespace AbletonManager
 
             y = Thumb(g, Pad, y, w) + Sc(16);
 
-            // Сам путь и есть ссылка: отдельная строка «Show in Explorer…» повторяла
-            // то, на что и так хочется нажать. Не подчёркиваем — просто светлеет.
+            // The path is itself the link: a separate "Show in Explorer…" line repeated what
+            // one wants to click anyway. We do not underline it — it merely lightens.
             int pathTop = y;
             int pathBottom = Wrapped(g, _set.Path, Theme.FLabel,
                                      _linkHot ? Theme.Text : Theme.TextDim, Pad, y, w);
@@ -451,12 +454,12 @@ namespace AbletonManager
             y = TagsAndNote(g, y, w);
             y = Versions(g, y, w);
 
-            // Файлы
+            // Files
             y = Line(g, "Files:", Theme.FLabel, Theme.TextDim, Pad, y, w) + Sc(8);
             Chrome.DrawText(g, Chrome.Plural(_set.TotalRefs, "file"), Theme.FLabel,
                 new Rectangle(Pad, y, w, Sc(28)), Theme.Text, PanelLeft);
-            // Цвет — только когда плохо. Зелёный ноль обещал событие, которого нет,
-            // и красное среди него переставало бросаться в глаза.
+            // Colour only when things are bad. A green zero promised an event that is not
+            // there, and red among it stopped catching the eye.
             if (_set.MissingFiles > 0)
                 Chrome.DrawText(g, _set.MissingFiles + " missing", Theme.FLabel,
                     new Rectangle(Pad, y, w, Sc(28)), Theme.Red, PanelRight);
@@ -465,7 +468,8 @@ namespace AbletonManager
             if (_set.Error.Length > 0)
                 y = Wrapped(g, _set.Error, Theme.FLabel, Theme.Red, Pad, y, w) + Sc(24);
 
-            // Плагины — счётчик пропавших напротив заголовка, тем же приёмом, что у Files.
+            // Plugins — the count of missing ones opposite the heading, by the same device as
+            // Files.
             Rectangle plugHead = new Rectangle(Pad, y, w, Sc(28));
             Chrome.DrawText(g, "Plugins" + " (" + _set.Plugins.Length + "):",
                             Theme.FLabel, plugHead, Theme.TextDim, PanelLeft);
@@ -488,13 +492,13 @@ namespace AbletonManager
                         m = Index.Inventory.Match(
                                 i < _set.PluginUids.Length ? _set.PluginUids[i] : "", _set.Plugins[i]).Kind;
 
-                    // Пропавший плагин и так виден по красному тексту — подпись рядом
-                    // с каждым из них только дублирует то, что уже сказано числом
-                    // напротив заголовка «Plugins».
-                    // Цвет под курсором не меняем: красный у неустановленного — это
-                    // сообщение, а не оформление, и подсветка «белым при наведении»
-                    // стирала его ровно в тот момент, когда на строку смотрят. Что
-                    // строка кликабельна, говорит подчёркивание ниже.
+                    // A missing plugin is visible from the red text as it is — a caption next
+                    // to each of them only duplicates what the number opposite the "Plugins"
+                    // heading has already said. We do not change the colour under the cursor:
+                    // red on a plugin that is not installed is a message rather than
+                    // decoration, and a "white on hover" highlight erased it at exactly the
+                    // moment the row is being looked at. That the row is clickable is said by
+                    // the underline below.
                     bool hot = _pluginRowHot == shown;
                     Color c = m == MatchKind.Missing ? Theme.Red : Theme.Text;
                     Rectangle rr = new Rectangle(Pad, y, w, Sc(28));
@@ -504,8 +508,8 @@ namespace AbletonManager
                                         rr, Theme.TextDim, PanelRight);
                     if (hot)
                     {
-                        // Подчёркиваем только эту строку и только по ширине текста — та же
-                        // подача, что у кликабельных сетов в панели плагина.
+                        // We underline only this row and only to the width of the text — the
+                        // same presentation as the clickable sets in a plugin's panel.
                         Size ts = TextRenderer.MeasureText(g, _set.Plugins[i], Theme.FLabel, new Size(rr.Width, rr.Height), PanelLeft);
                         int ly = rr.Y + (rr.Height + ts.Height) / 2;
                         int lx = rr.X + UnderlinePad;
@@ -517,8 +521,9 @@ namespace AbletonManager
                     y += Sc(28);
                     shown++;
                 }
-                // Список бывает длиннее, чем помещается до кнопки снизу - как и в списке
-                // сетов у плагина, явно говорим, сколько ещё скрыто, а не обрываем молча.
+                // The list can be longer than fits above the button at the bottom - as in the
+                // list of sets on a plugin, we say outright how many more are hidden rather
+                // than breaking off silently.
                 if (_set.Plugins.Length > shown)
                 {
                     if (!Below(y + Sc(28)))
@@ -536,8 +541,9 @@ namespace AbletonManager
         }
 
         /// <summary>
-        /// Кнопка «наверх» в правом нижнем углу тела панели. Список сетов у плагина
-        /// бывает на сотню строк, и возвращаться к шапке колесом — долго.
+        /// The "to the top" button in the bottom-right corner of the panel body. A plugin's
+        /// list of sets can run to a hundred rows, and going back to the header with the wheel
+        /// takes a while.
         /// </summary>
         void PaintScrollTop(Graphics g)
         {
@@ -561,10 +567,10 @@ namespace AbletonManager
         }
 
         /// <summary>
-        /// Теги и заметка проекта. Пока их нет — одна тусклая строка с иконкой, чтобы
-        /// про эту возможность вообще можно было узнать; как только что-то написали,
-        /// строка превращается в чипы тегов и текст заметки. Клик по всему блоку
-        /// открывает редактор.
+        /// A project's tags and note. While there are none, one dim line with a glyph, so the
+        /// feature can be discovered at all; as soon as something has been written, the line
+        /// turns into tag chips and the text of the note. A click anywhere on the block opens
+        /// the editor.
         /// </summary>
         int TagsAndNote(Graphics g, int y, int w)
         {
@@ -583,9 +589,9 @@ namespace AbletonManager
             {
                 Rectangle line = new Rectangle(iconLeft, y, w + iconOffset, Sc(24));
                 Icons.Draw(g, Glyph.Tag,
-                           // Ровно по центру строки: подъём на 2 px тут подгонялся под
-                           // текст, который на столько же поднимала прежняя поправка
-                           // в Chrome.DrawText. Поправки больше нет — и подгонки тоже.
+                           // Exactly on the centre of the line: the 2 px lift here was fitted
+                           // to text that the former correction in Chrome.DrawText raised by
+                           // the same amount. The correction is gone — and so is the fitting.
                            new RectangleF(iconLeft, y + (Sc(24) - icon) / 2f, icon, icon),
                            _notesHot ? Theme.Text : Theme.TextDim, 1.3f);
                 Chrome.DrawText(g, "Add tags or a note…",
@@ -597,10 +603,11 @@ namespace AbletonManager
 
             if (tags.Count > 0)
             {
-                // Высота — от шрифта, одним расчётом со всеми остальными пилюлями.
+                // The height comes from the font, by one calculation shared with every other
+                // pill.
                 int chipH = Chrome.PillHeight(Theme.FBadge);
-                // Без иконки: пилюли сами по себе читаются как теги, значок только
-                // отъедал место у первой строки.
+                // No glyph: the pills read as tags by themselves, and the icon only ate into
+                // the room for the first line.
                 int cx = Pad, cy = y;
                 foreach (string tag in tags)
                 {
@@ -618,9 +625,10 @@ namespace AbletonManager
                 y = cy + chipH + Sc(8);
             }
 
-            // Заметка — такая же секция панели, как «Files:» и «Plugins (8):»: тусклый
-            // заголовок и текст под ним, тем же кеглем и по той же левой границе.
-            // Значка нет: у соседних секций его тоже нет, и он один торчал из ряда.
+            // The note is a section of the panel just like "Files:" and "Plugins (8):": a dim
+            // heading and text under it, in the same type size and on the same left boundary.
+            // There is no glyph: the neighbouring sections have none either, and it alone stuck
+            // out of the row.
             if (note.Length > 0)
             {
                 y = Line(g, "Note:", Theme.FLabel, _notesHot ? Theme.Text : Theme.TextDim,
@@ -633,10 +641,10 @@ namespace AbletonManager
         }
 
         /// <summary>
-        /// Другие .als той же папки. Список сетов схлопывает их в одну строку, и без
-        /// этого блока увидеть, что именно спрятано под «+3», было бы негде. Строки
-        /// кликабельны: показывают выбранную версию, даже если своей строки в списке
-        /// у неё нет.
+        /// The other .als files of the same folder. The sets list collapses them into one row,
+        /// and without this block there would be nowhere to see what exactly is hidden under
+        /// "+3". The rows are clickable: they show the chosen version even when it has no row
+        /// of its own in the list.
         /// </summary>
         int Versions(Graphics g, int y, int w)
         {
@@ -662,7 +670,8 @@ namespace AbletonManager
                 Chrome.DrawText(g, v.Modified.ToLocalTime().ToString("yyyy-MM-dd"), Theme.FBadge,
                                 rr, Theme.TextDim, PanelRight);
 
-                // Текущую не подчёркиваем даже под курсором: щёлкать по ней незачем.
+                // We do not underline the current one even under the cursor: there is no point
+                // clicking it.
                 if (hot && !current)
                 {
                     Size ts = TextRenderer.MeasureText(g, v.Name, Theme.FBadge, new Size(rr.Width, rr.Height), PanelLeft);
@@ -680,11 +689,11 @@ namespace AbletonManager
         }
 
         /// <summary>
-        /// Пустая панель: заголовок и что делать дальше. Значка тут больше нет — три
-        /// серых полоски над словами «ничего не выбрано» читались как элемент списка,
-        /// который почему-то не кликается. Высоты строк меряем шрифтом, а не константами:
-        /// на фиксированных 24 и 22 пикселях у «g» и «p» срезало хвосты, а сами строки
-        /// слипались в одну.
+        /// An empty panel: a heading and what to do next. The glyph is gone from here — three
+        /// grey bars above the words "nothing selected" read as a list item that for some
+        /// reason does not click. We measure line heights with the font rather than with
+        /// constants: at a fixed 24 and 22 pixels the tails of "g" and "p" were shaved off and
+        /// the lines themselves merged into one.
         /// </summary>
         void PaintEmpty(Graphics g, int pad, int w, string title, string hint)
         {
@@ -743,13 +752,13 @@ namespace AbletonManager
                 y = Row(g, "Version:", inst.Version, Theme.Text, pad, y, w);
                 y = Row(g, "Category:", inst.Category.Replace("|", " · "), Theme.Text, pad, y, w);
             }
-            // Скобки обязательны: «+» связывает раньше «?:», и без них выражение
-            // сворачивалось в одно слово « sets», а число пропадало.
+            // The brackets are mandatory: "+" binds tighter than "?:", and without them the
+            // expression collapsed into the single word " sets" and the number vanished.
             y = Row(g, "Used in:", Chrome.Plural(p.Sets, "set"),
                     p.Sets == 0 ? Theme.TextDim : Theme.Text, pad, y, w);
             y += Sc(16);
 
-            // Путь к плагину — сам себе ссылка, как путь к сету у сетов.
+            // A plugin path is a link in itself, like a set path on a set.
             if (inst != null && inst.Path.Length > 0)
             {
                 int pathTop = y;
@@ -777,8 +786,8 @@ namespace AbletonManager
                 Chrome.DrawText(g, s.Name, Theme.FLabel, rr, hot ? Color.White : Theme.Text, PanelLeft);
                 if (hot)
                 {
-                    // Подчёркиваем только эту строку и только по ширине текста — не всю
-                    // строку целиком, иначе выглядит как кнопка, а не как ссылка.
+                    // We underline only this row and only to the width of the text — not the
+                    // whole row, or it looks like a button rather than a link.
                     Size ts = TextRenderer.MeasureText(g, s.Name, Theme.FLabel, new Size(rr.Width, rr.Height), PanelLeft);
                     int ly = rr.Y + (rr.Height + ts.Height) / 2;
                     int lx = rr.X + UnderlinePad;
@@ -790,16 +799,17 @@ namespace AbletonManager
                 y += Sc(28);
                 shown++;
             }
-            // Считаем по фактической длине списка, а не по p.Sets: они обязаны совпадать,
-            // но если разойдутся — врать про «ещё N» хуже, чем не показать ничего.
+            // We count by the actual length of the list rather than by p.Sets: they ought to
+            // match, but should they diverge, lying about "N more" is worse than showing
+            // nothing.
             if (users.Count > shown)
             {
                 if (!Below(y + Sc(28)))
                     y = Line(g, "… " + (users.Count - shown) + " more",
                              Theme.FLabel, Theme.TextDim, pad, y, w);
                 else
-                    // Высоту недорисованных строк всё равно закладываем, иначе панель
-                    // считает себя короче, чем есть, и до хвоста не долистать.
+                    // We allow for the height of the rows not drawn all the same, or the panel
+                    // thinks itself shorter than it is and the tail cannot be scrolled to.
                     y += Sc(28) * (users.Count - shown);
             }
 
@@ -809,11 +819,11 @@ namespace AbletonManager
             PaintScrollTop(g);
         }
 
-        // ------------------------------------------------------------------ куски
+        // ------------------------------------------------------------------ pieces
 
         int Thumb(Graphics g, int x, int y, int w)
         {
-            int h = (int)Math.Round(w * 180f / 302f);      // пропорции из макета
+            int h = (int)Math.Round(w * 180f / 302f);      // proportions from the mockup
             _thumbRect = new Rectangle(x, y, w, h);
             Theme.FillRound(g, _thumbRect, Sc(Theme.ThumbR), Theme.Bg);
 
@@ -865,7 +875,7 @@ namespace AbletonManager
                 if (_thumb != null) g.DrawImageUnscaled(_thumb, inner.Location);
             }
 
-            // Лупа в углу — намёк, что превью открывается во весь экран.
+            // The magnifier in the corner hints that the preview opens full screen.
             int mg = Sc(18);
             RectangleF mr = new RectangleF(_thumbRect.Right - mg - Sc(8), _thumbRect.Bottom - mg - Sc(8), mg, mg);
             Icons.Draw(g, Glyph.Magnifier, mr, _thumbHot ? Color.White : Theme.TextDim, 1.6f);
@@ -889,10 +899,10 @@ namespace AbletonManager
         }
 
         /// <summary>
-        /// Строка «метка — значение». Значение прижато вправо, но не во всю ширину:
-        /// длинное значение накрывало метку собой (на «Category: Fx · Dynamics ·
-        /// Mastering» двоеточие исчезало под первым словом значения). Ширину под
-        /// значение считаем как остаток после метки, и если не влезло — многоточие.
+        /// A "label — value" line. The value is pushed right but not across the full width: a
+        /// long value covered the label with itself (on "Category: Fx · Dynamics · Mastering"
+        /// the colon disappeared under the first word of the value). The width for the value is
+        /// counted as what remains after the label, and if it does not fit — an ellipsis.
         /// </summary>
         int Row(Graphics g, string label, string value, Color valueColor, int x, int y, int w)
         {

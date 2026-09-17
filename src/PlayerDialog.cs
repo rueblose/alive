@@ -11,9 +11,9 @@ using System.Windows.Forms;
 namespace AbletonManager
 {
     /// <summary>
-    /// Плеер рендеров. Отдельное немодальное окно: слушать материал и продолжать
-    /// разбирать библиотеку — обычно одно и то же занятие, и блокировать главное окно
-    /// на время прослушивания незачем.
+    /// The render player. A separate modeless window: listening to material and carrying on
+    /// sorting the library are usually one and the same occupation, and there is no reason to
+    /// block the main window for the duration.
     /// </summary>
     public sealed class PlayerDialog : GlassDialog
     {
@@ -58,31 +58,33 @@ namespace AbletonManager
         int _peakSeq;
         string _note = "";
 
-        // Пиксель головки воспроизведения на прошлом тике: волну перерисовываем,
-        // только когда головка реально перешла в другой пиксель, — иначе 25 раз в
-        // секунду гоняем недешёвый OnPaint (по DrawLine на каждый пиксель ширины)
-        // ради картинки, которая не изменилась.
+        // The playhead's pixel on the previous tick: we redraw the waveform only when the
+        // playhead has really moved into a different pixel — otherwise we drive a far from
+        // cheap OnPaint (a DrawLine per pixel of width) 25 times a second for a picture that
+        // has not changed.
         int _lastHeadPx = -1;
 
         Rectangle _rSub, _rTimeLeft, _rTimeRight, _rListHead, _rNote;
 
-        // Место окна и громкость помним, пока работает программа, — статика, а не
-        // Settings: если просто закрыть и снова открыть плеер, он должен встать туда же
-        // и звучать так же, но при перезапуске всего приложения это состояние
-        // обнуляется само собой.
+        // The window's place and the volume are remembered for as long as the program runs — as
+        // statics rather than Settings: simply closing and reopening the player should put it
+        // back in the same place sounding the same, while a restart of the whole application
+        // zeroes that state by itself.
         static Point? _lastLocation;
         static float _lastVolume = 0.5f;
 
-        /// <summary>Сет, который сейчас открыт в плеере, — главному окну для подсветки строки.</summary>
+        /// <summary>The set currently open in the player — for the main window to highlight its
+        /// row.</summary>
         public SetEntry CurrentSet { get { return _set; } }
 
-        /// <summary>Играет ли сейчас — главному окну для значка play/pause в своём футере.</summary>
+        /// <summary>Whether it is playing right now — for the main window's play/pause glyph in
+        /// its footer.</summary>
         public bool IsPlaying { get { return _audio.IsPlaying; } }
 
         public event Action<SetEntry> SetChanged;
 
-        /// <summary>Play↔pause, следующий/предыдущий трек — главному окну для мини-
-        /// транспорта в футере, чтобы не поднимать окно плеера ради одной кнопки.</summary>
+        /// <summary>Play↔pause, next/previous track — for the main window's mini transport in
+        /// the footer, so the player window need not be raised for a single button.</summary>
         public event Action PlayStateChanged;
 
         public AudioPlayer Audio { get { return _audio; } }
@@ -141,8 +143,8 @@ namespace AbletonManager
             _list.ShowPinIndicator = true;
             _list.DragFilePath = delegate (RowData r) { RenderFile f = r.Tag as RenderFile; return f != null ? f.Path : null; };
             _list.ShowHeaderPin = false;
-            // Как в MainForm: без зазора скроллбар садится поверх скруглённого края
-            // пилюли выделения на всю ширину строки.
+            // As in MainForm: without a gap the scrollbar sits over the rounded edge of the
+            // selection pill across the full width of the row.
             _list.PillRightGap = Sc(20);
             _list.RowPlayClicked += delegate (int i) { PlayIndex(i, true); };
             _list.RowPinClicked += delegate (int i) { if (i >= 0 && i < _files.Count) Pin(_files[i]); };
@@ -180,7 +182,7 @@ namespace AbletonManager
             };
         }
 
-        // ------------------------------------------------------------- содержимое
+        // ------------------------------------------------------------------ content
 
         public void LoadSet(SetEntry s, List<SetEntry> playlist = null, int playlistIndex = -1)
         {
@@ -236,9 +238,9 @@ namespace AbletonManager
 
         void FillList()
         {
-            // Колонку папки показываем, только если она хоть у кого-то заполнена: у
-            // рендеров рядом с сетом папки нет, и пустой столбец с живым заголовком
-            // занимал место и ничего не сообщал.
+            // We show the folder column only if it is filled in for at least somebody: renders
+            // next to a set have no folder, and an empty column with a live heading took up
+            // room and said nothing.
             bool anyFolder = false;
             foreach (RenderFile f in _files)
                 if (!string.IsNullOrEmpty(f.Folder)) { anyFolder = true; break; }
@@ -254,8 +256,8 @@ namespace AbletonManager
             {
                 RowData r = new RowData();
                 List<string> cells = new List<string>();
-                // С расширением: рядом обычно лежат «имя.wav» и «имя.mp3» одного
-                // рендера, и без него две строки в списке неотличимы.
+                // With the extension: "name.wav" and "name.mp3" of one render usually lie side
+                // by side, and without it two rows in the list are indistinguishable.
                 cells.Add(f.Name + "." + f.Ext.ToLowerInvariant());
                 if (anyFolder) cells.Add(f.Folder);
                 cells.Add(f.Modified == default(DateTime) ? "" : f.Modified.ToLocalTime().ToString("yyyy-MM-dd"));
@@ -273,7 +275,7 @@ namespace AbletonManager
             return r != null ? r.Tag as RenderFile : null;
         }
 
-        // -------------------------------------------------------------- транспорт
+        // ------------------------------------------------------------------ transport
 
         void PlayIndex(int i, bool autoStart)
         {
@@ -289,13 +291,13 @@ namespace AbletonManager
             _wave.Hint = "reading…";
             _note = "";
 
-            // Огибающую считаем в любом случае: даже если файл не заиграл, увидеть,
-            // что в нём вообще есть, полезнее пустого прямоугольника.
+            // We compute the envelope in any case: even if the file did not play, seeing what
+            // is in it at all is more use than an empty rectangle.
             RequestPeaks(f.Path);
 
-            // Громкость задаём ДО открытия: Open теперь не ждёт готовности, и после
-            // возврата устройства ещё может не быть — тогда присваивание просто
-            // пропало бы. Заданную заранее, её применит сам поток вывода.
+            // The volume is set BEFORE opening: Open no longer waits for readiness, and the
+            // device may still be absent when it returns — the assignment would then simply
+            // vanish. Set in advance, it is applied by the output thread itself.
             _audio.Volume = _vol.Value;
             _audio.Open(f.Path, autoStart);
             _openReported = false;
@@ -306,18 +308,19 @@ namespace AbletonManager
             Invalidate(true);
         }
 
-        // Открытие файла идёт в своём потоке и может не удаться. Про неудачу узнаём
-        // из таймера, но сообщить о ней надо один раз, а не 25 раз в секунду.
+        // Opening a file runs on its own thread and can fail. We learn of a failure from the
+        // timer, but it has to be reported once rather than 25 times a second.
         bool _openReported;
 
-        // Трек доиграл, и переходить оказалось некуда. Тоже нужен признак «уже
-        // отработали»: AudioPlayer.Finished остаётся true до следующего открытия.
+        // The track finished and there turned out to be nowhere to go. This needs a "already
+        // handled" flag too: AudioPlayer.Finished stays true until the next open.
         bool _atEnd;
 
         /// <summary>
-        /// Огибающая читается в фоне: гигабайтный мастер разбирается заметно дольше
-        /// кадра, а звук должен пойти сразу. Устаревшие ответы отбрасываем по номеру
-        /// запроса — переключать треки можно быстрее, чем считается волна.
+        /// The envelope is read in the background: a gigabyte master takes noticeably longer
+        /// than a frame to parse, while the sound has to start at once. Stale answers are
+        /// discarded by request number — tracks can be switched faster than a waveform is
+        /// computed.
         /// </summary>
         void RequestPeaks(string path)
         {
@@ -342,15 +345,15 @@ namespace AbletonManager
 
         void TogglePlay()
         {
-            // Файл ещё открывается — второй Open просто перезапустил бы то же самое
-            // с начала, поэтому просто отмечаем «играть, как будешь готов».
+            // The file is still opening — a second Open would simply restart the same thing
+            // from the beginning, so we merely note "play when you are ready".
             if (_audio.IsOpening) { _audio.Play(); UpdatePlayIcon(); return; }
             if (!_audio.IsOpen) { PlayIndex(_current >= 0 ? _current : 0, true); return; }
             if (_audio.IsPlaying) _audio.Pause(); else _audio.Play();
             UpdatePlayIcon();
         }
 
-        /// <summary>Возвращает false, если идти оказалось некуда.</summary>
+        /// <summary>Returns false if there turned out to be nowhere to go.</summary>
         bool Step(int delta)
         {
             if (_files.Count == 0) return ChangeSet(delta, true);
@@ -363,12 +366,12 @@ namespace AbletonManager
         }
 
         /// <summary>
-        /// Переход на соседний сет плейлиста. Возвращает false, если переходить не на
-        /// что. Сет, на котором стоим, кандидатом не считается: с главной плеер
-        /// открывается плейлистом из одного сета, и раньше круг заворачивался на него
-        /// же — трек играл заново без конца, каждый раз перечитывая рендеры с диска.
-        /// Библиотека из списка сетов при этом по-прежнему обходится по кругу целиком:
-        /// там соседи есть, и на себя круг замыкается только в самом конце.
+        /// Moving to a neighbouring set of the playlist. Returns false if there is nothing to
+        /// move to. The set we are standing on does not count as a candidate: from the home
+        /// page the player opens with a playlist of one set, and the circle used to wrap round
+        /// onto it — the track played again endlessly, re-reading the renders from disk each
+        /// time. The library from the sets list is still walked in a full circle: there the
+        /// neighbours exist, and the circle closes onto itself only at the very end.
         /// </summary>
         bool ChangeSet(int delta, bool autoStart)
         {
@@ -416,8 +419,8 @@ namespace AbletonManager
 
         void OnTick()
         {
-            // Открытие файла идёт в своём потоке, и про неудачу мы узнаём отсюда —
-            // раньше ради этого ответа Open() держал поток интерфейса до восьми секунд.
+            // Opening a file runs on its own thread, and this is where we learn of a failure —
+            // Open() used to hold the UI thread for up to eight seconds for that answer.
             if (!_openReported && _audio.OpenFailed)
             {
                 _openReported = true;
@@ -443,27 +446,28 @@ namespace AbletonManager
             Invalidate(_rTimeRight);
             UpdatePlayIcon();
 
-            // Конец файла плеер сообщает сам — когда декодер дошёл до конца и очередь
-            // устройства опустела. Гадать по позиции не нужно.
+            // The player reports the end of a file itself — when the decoder has reached the
+            // end and the device's queue has run dry. There is no need to guess from the
+            // position.
             //
-            // Признак _atEnd обязателен: Finished остаётся true до следующего открытия,
-            // и без него сюда заходили бы 25 раз в секунду. А если идти некуда — просто
-            // останавливаемся: на главной плейлист состоит из одного сета, и раньше
-            // предпрослушка заводилась по кругу сама собой.
+            // The _atEnd flag is mandatory: Finished stays true until the next open, and
+            // without it we would come in here 25 times a second. And if there is nowhere to go
+            // we simply stop: on the home page the playlist consists of one set, and the
+            // preview used to loop round by itself.
             if (_audio.Finished && !_atEnd)
             {
                 _atEnd = true;
 
-                // Куда идти дальше — зависит от того, открыто ли окно плеера.
+                // Where to go next depends on whether the player window is open.
                 //
-                // Окно закрыто: играет предпрослушка из каталога. Слышно «демку» —
-                // рендер, помеченный главным (RenderScan.Find ставит его первым), — и
-                // логичное продолжение это демка СЛЕДУЮЩЕГО сета, а не второй рендер
-                // того же проекта. Ради этого главный рендер и помечают: один проект —
-                // один трек в очереди.
+                // The window is closed: the catalog's preview is playing. What is heard is the
+                // "demo" — the render marked as the main one (RenderScan.Find puts it first) —
+                // and the logical continuation is the demo of the NEXT set, not a second render
+                // of the same project. That is what the main render is marked for: one project,
+                // one track in the queue.
                 //
-                // Окно открыто: перед глазами список рендеров проекта, и обход по нему
-                // до конца — ровно то, чего от плеера ждут.
+                // The window is open: the list of the project's renders is in front of you, and
+                // walking through it to the end is exactly what is expected of a player.
                 bool advanced = Visible ? Step(+1) : ChangeSet(+1, true);
                 if (!advanced) { _audio.Pause(); UpdatePlayIcon(); }
             }
@@ -476,7 +480,7 @@ namespace AbletonManager
             return (total / 60) + ":" + (total % 60).ToString("00");
         }
 
-        // ------------------------------------------------------------ превью и меню
+        // ------------------------------------------------------- preview and menu
 
         void PinSelected() { Pin(SelectedFile()); }
 
@@ -489,8 +493,8 @@ namespace AbletonManager
             if (was) PreviewPins.Clear(_projectDir);
             else { f.Pinned = true; PreviewPins.Set(_projectDir, f.Path); }
 
-            // Порядок зависит от закрепления, поэтому пересобираем список целиком и
-            // возвращаем на место указатель на текущий трек.
+            // The order depends on pinning, so we rebuild the list whole and put the pointer to
+            // the current track back in place.
             RenderFile playing = _current >= 0 && _current < _files.Count ? _files[_current] : null;
             _files = RenderScan.Find(_set);
             FillList();
@@ -544,7 +548,7 @@ namespace AbletonManager
             catch { }
         }
 
-        // -------------------------------------------------------------- раскладка
+        // ------------------------------------------------------------------ layout
 
         protected override void OnResize(EventArgs e)
         {
@@ -563,8 +567,8 @@ namespace AbletonManager
             _rTimeLeft = new Rectangle(pad, timeY, Sc(120), Sc(22));
             _rTimeRight = new Rectangle(pad + w - Sc(120), timeY, Sc(120), Sc(22));
 
-            // Транспорт по центру окна, громкость — прижата вправо: так кнопки остаются
-            // на месте при любой ширине, а регулятор не лезет в середину.
+            // The transport is centred in the window and the volume pushed right: the buttons
+            // then stay in place at any width, and the slider does not climb into the middle.
             int trY = timeY + Sc(18);
             int big = Sc(58), gap = Sc(10);
             int cx = ClientSize.Width / 2;
@@ -578,7 +582,7 @@ namespace AbletonManager
             int volW = Sc(140);
             _vol.SetBounds(pad + w - volW, trY + (big - Sc(Theme.ControlH)) / 2, volW, Sc(Theme.ControlH));
 
-            // Сообщение об ошибке живёт слева от транспорта.
+            // The error message lives to the left of the transport.
             _rNote = new Rectangle(pad, trY + (big - Sc(22)) / 2,
                                    Math.Max(Sc(60), _setPrev.Left - Sc(10) - pad), Sc(22));
 
@@ -592,10 +596,11 @@ namespace AbletonManager
 
             int listTop = headY + Sc(2);
             int listHeight = Math.Max(Sc(60), footY - Sc(10) - listTop);
-            // Обычно список нарочно шире pad на CellPadX — так текст строки, отступив
-            // от края пилюли на PadX, попадает ровно на pad. Тут же пилюля выделения —
-            // видимая рамка — обязана стоять вровень со скраббером и кнопками, поэтому
-            // список ограничен тем же pad, а не раздвинут наружу.
+            // Ordinarily the list is deliberately wider than pad by CellPadX — so that a row's
+            // text, inset from the edge of the pill by PadX, lands exactly on pad. Here,
+            // though, the selection pill — a visible frame — has to stand level with the
+            // scrubber and the buttons, so the list is bounded by that same pad rather than
+            // pushed outwards.
             _list.SetBounds(pad, listTop, w, listHeight);
             _list.Visible = true;
         }
@@ -616,11 +621,11 @@ namespace AbletonManager
         }
 
         /// <summary>
-        /// Окно немодальное, поэтому CenterParent не работает — ставим сами: там же, где
-        /// плеер закрыли в прошлый раз, либо по центру экрана владельца при первом
-        /// открытии. Считаем это на Load, а не на Shown: Shown уже после того, как окно
-        /// показалось на экране, — координаты применились бы после короткой вспышки не
-        /// в том углу, а не сразу на месте.
+        /// The window is modeless, so CenterParent does not work — we place it ourselves: where
+        /// the player was closed last time, or in the centre of the owner's screen on first
+        /// opening. We compute that on Load rather than on Shown: Shown comes after the window
+        /// has appeared on screen, and the coordinates would be applied after a brief flash in
+        /// the wrong corner rather than straight into place.
         /// </summary>
         protected override void OnLoad(EventArgs e)
         {
@@ -631,8 +636,8 @@ namespace AbletonManager
             if (_lastLocation.HasValue)
             {
                 Point p = _lastLocation.Value;
-                // Экран мог измениться (монитор отключили) — не даём окну уехать за
-                // пределы видимой области.
+                // The screen may have changed (a monitor was unplugged) — we do not let the
+                // window drive off past the visible area.
                 p.X = Math.Max(wa.X, Math.Min(p.X, wa.Right - Width));
                 p.Y = Math.Max(wa.Y, Math.Min(p.Y, wa.Bottom - Height));
                 Location = p;
@@ -649,10 +654,10 @@ namespace AbletonManager
         static extern bool SetForegroundWindow(IntPtr hWnd);
 
         /// <summary>
-        /// Закрытие окна плеера — это Hide, а не уничтожение формы.
-        /// Если просто скрыть активное окно с ShowInTaskbar, Windows перенесёт фокус на
-        /// предыдущее активное приложение (браузер, проводник и т.д.), а не на главное
-        /// окно менеджера. Явно активируем владельца перед скрытием и подтверждаем после.
+        /// Closing the player window is a Hide rather than destroying the form. Simply hiding
+        /// an active window with ShowInTaskbar makes Windows move the focus to the previously
+        /// active application (a browser, Explorer and so on) rather than to the manager's main
+        /// window. We explicitly activate the owner before hiding and confirm it afterwards.
         /// </summary>
         void Dismiss()
         {
@@ -668,8 +673,8 @@ namespace AbletonManager
         {
             Form target = null;
 
-            // 1. Если поверх открыт модальный диалог (например, фильтры или настройки) —
-            // фокус должен вернуться в него, а не в отключенное главное окно.
+            // 1. If a modal dialog is open on top (the filters or the settings, say) — the
+            // focus has to return to it rather than to a disabled main window.
             for (int i = Application.OpenForms.Count - 1; i >= 0; i--)
             {
                 Form f = Application.OpenForms[i];
@@ -679,14 +684,14 @@ namespace AbletonManager
                 }
             }
 
-            // 2. Иначе — владелец окна (главное окно менеджера).
+            // 2. Otherwise — the window owner (the manager's main window).
             if (target == null && Owner != null && !Owner.IsDisposed && Owner.Visible && Owner.Enabled &&
                 Owner.WindowState != FormWindowState.Minimized)
             {
                 target = Owner;
             }
 
-            // 3. Любая другая активная и видимая форма приложения.
+            // 3. Any other active and visible form of the application.
             if (target == null)
             {
                 for (int i = Application.OpenForms.Count - 1; i >= 0; i--)
@@ -714,9 +719,9 @@ namespace AbletonManager
         bool _shuttingDown;
 
         /// <summary>
-        /// Закрыть насовсем — вместе со звуком и мини-транспортом. Крестик самого окна
-        /// плеера только прячет его (слушать и дальше разбирать библиотеку — одно и то
-        /// же занятие), а крестик в мини-полосе должен означать «хватит».
+        /// Close for good — together with the sound and the mini transport. The player window's
+        /// own cross only hides it (listening and carrying on sorting the library are one and
+        /// the same occupation), while the cross in the mini strip has to mean "enough".
         /// </summary>
         public void ShutDown()
         {
@@ -736,9 +741,9 @@ namespace AbletonManager
         }
 
         /// <summary>
-        /// Медиаклавиши работают и когда фокус в окне плеера, а не в главном: WM_APPCOMMAND
-        /// приходит тому окну, которое сейчас активно. Правило то же — «следующий трек»
-        /// это следующий сет, между рендерами одного сета ходят Ctrl+←/→.
+        /// The media keys work when focus is in the player window rather than the main one too:
+        /// WM_APPCOMMAND goes to whichever window is active right now. The rule is the same —
+        /// "next track" means the next set, while Ctrl+←/→ walk between the renders of one set.
         /// </summary>
         protected override void WndProc(ref Message m)
         {
@@ -785,9 +790,10 @@ namespace AbletonManager
     }
 
     /// <summary>
-    /// Огибающая с навигацией. Столбики рисуются из посчитанных пиков; сыгранная часть
-    /// светлая, остаток приглушён — положение видно и без бегунка. Если пиков нет
-    /// (не WAV), остаётся честная полоса прогресса, а не выдуманная волна.
+    /// The envelope with navigation. The bars are drawn from the computed peaks; the part
+    /// already played is light and the remainder muted — the position is visible without a
+    /// slider. If there are no peaks (not a WAV), an honest progress bar remains rather than an
+    /// invented waveform.
     /// </summary>
     public sealed class WaveView : GlassControl
     {
@@ -844,8 +850,9 @@ namespace AbletonManager
                 float cy = inner.Y + inner.Height / 2f;
                 float half = inner.Height / 2f - 1f;
 
-                // Несыгранная часть светлее TextDim: на утопленном фоне подписи-серый
-                // сливается в грязное пятно, а волна должна читаться целиком.
+                // The unplayed part is lighter than TextDim: on a recessed background the
+                // caption grey merges into a dirty smudge, while the waveform has to read in
+                // full.
                 using (Pen dim = new Pen(Color.FromArgb(0xFF, 0x8E, 0x8E, 0x93)))
                 using (Pen lit = new Pen(Theme.Light))
                 {
@@ -876,8 +883,8 @@ namespace AbletonManager
                         Theme.TextDim, Chrome.Center);
             }
 
-            // Плейхед со скруглёнными концами — иначе линия в 1.5px обрывается квадратом
-            // и на волне читается как случайный столбик.
+            // The playhead has rounded ends — otherwise a 1.5px line breaks off square and
+            // reads on the waveform as a stray bar.
             using (Pen head = new Pen(Color.White, 1.5f))
             {
                 head.StartCap = LineCap.Round;
@@ -887,7 +894,8 @@ namespace AbletonManager
         }
     }
 
-    /// <summary>Громкость: значок и дорожка с ручкой — тем же языком, что и остальные пилюли.</summary>
+    /// <summary>Volume: a glyph and a track with a knob — in the same language as the other
+    /// pills.</summary>
     public sealed class VolumeSlider : GlassControl
     {
         float _value = 0.5f;
