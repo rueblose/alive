@@ -18,14 +18,15 @@ namespace AbletonManager
         readonly FiltersButton _filtersBtn = new FiltersButton();
         readonly IconButton _resetBtn = new IconButton();
 
-        // Действия — круглые значки: папка, настройки, новый проект.
+        // Actions as round glyphs: folder, settings, new project.
         readonly IconButton _folders = new IconButton();
         readonly IconButton _settingsBtn = new IconButton();
         readonly IconButton _helpBtn = new IconButton();
         readonly GlassButton _newProject = new GlassButton();
 
-        // Мини-транспорт плеера в футере — переключить сет и play/pause, не поднимая
-        // окно плеера. Раскладка слева направо: закрыть, prev, play, next, seek+время+трек, громкость, развернуть, имя сета.
+        // The player's mini transport in the footer — switch set and play/pause without raising
+        // the player window. The layout from left to right: close, prev, play, next, seek +
+        // time + track, volume, expand, set name.
         readonly IconButton _playerClose = new IconButton();
         readonly IconButton _playerPrev = new IconButton();
         readonly IconButton _playerPlayPause = new IconButton();
@@ -41,7 +42,7 @@ namespace AbletonManager
         string _playerTimeLeftStr = "", _playerTimeRightStr = "";
         Rectangle _rPlayerTimeLeft, _rPlayerTimeRight, _rPlayerTrack;
 
-        // Кнопки самого окна.
+        // The window's own buttons.
         readonly IconButton _min = new IconButton();
         readonly IconButton _max = new IconButton();
         readonly IconButton _close = new IconButton();
@@ -54,21 +55,21 @@ namespace AbletonManager
         readonly IconButton _dice = new IconButton();
         readonly Random _rng = new Random();
 
-        // Всплывающее сообщение в левом нижнем углу содержимого — «идёт запуск Live» и
-        // прочее, о чём стоит сказать, но не стоит спрашивать.
+        // A popup message in the bottom-left corner of the content — "Live is starting" and
+        // other things worth saying but not worth asking about.
         readonly Toast _toast = new Toast();
 
         const int ModeHome = 0, ModeSets = 1, ModePlugins = 2;
 
         /// <summary>
-        /// Три вкладки — это два вопроса, а не один: про что смотрим (сеты или плагины)
-        /// и в каком виде (плитки или таблица). Home и Sets — один и тот же каталог, у
-        /// них общие фильтры, поиск и горячие клавиши; свои у них только раскладка и
-        /// выделение. Поэтому в коде спрашивают не номер вкладки, а один из трёх
-        /// признаков — так место, где нужен именно вид, видно от места, где нужен
-        /// именно каталог.
+        /// Three tabs are two questions rather than one: what we are looking at (sets or
+        /// plugins) and in what form (tiles or a table). Home and Sets are one and the same
+        /// catalog; they share the filters, the search and the hotkeys, and only the layout and
+        /// the selection are their own. So the code asks not for the tab number but for one of
+        /// three flags — that way the place that needs the view specifically is visible from
+        /// the place that needs the catalog specifically.
         /// </summary>
-        bool _wasPlugins;    // с какой стороны пришли — см. _mode.SelectedChanged
+        bool _wasPlugins;    // which side we came from — see _mode.SelectedChanged
 
         bool SetsDomain { get { return _mode.SelectedIndex != ModePlugins; } }
         bool Tiles      { get { return _mode.SelectedIndex == ModeHome; } }
@@ -87,31 +88,32 @@ namespace AbletonManager
 
         string _status = "";
 
-        // Путь последнего выбранного сета — уход на вкладку Plugins (например, клик по
-        // плагину в панели сведений) пересобирает список сетов и снимает выделение;
-        // при возврате на Sets по этому пути находим тот же сет и выделяем заново.
+        // The path of the last selected set — going to the Plugins tab (a click on a plugin in
+        // the details panel, for instance) rebuilds the sets list and clears the selection; on
+        // returning to Sets we find the same set by this path and select it again.
         string _lastSetPath;
 
         readonly SetFilter _filter = new SetFilter();
         readonly PluginFilter _pluginFilterObj = new PluginFilter();
-        readonly List<string> _versions = new List<string>();   // какие версии Live вообще есть
+        readonly List<string> _versions = new List<string>();   // which Live versions there are at all
 
-        // Быстрый отбор во вкладке плагинов: -1 — все, дальше индексы карточек сводки.
+        // A quick filter on the plugins tab: -1 — everything, then the indices of the summary
+        // cards.
         int _pluginView = -1;
 
-        // Сортировка списка: индекс колонки (-1 — сортировка по умолчанию) и направление.
-        // Своя для каждого режима, поэтому сбрасывается при переключении Сеты/Плагины —
-        // индексы колонок там не совпадают по смыслу.
+        // The list sort: the column index (-1 — the default sort) and the direction. Its own
+        // for each mode, so it is reset when switching Sets/Plugins — the column indices there
+        // do not correspond in meaning.
         bool _sortDesc;
 
-        // Настраиваемые колонки списка сетов: какие видны, в каком порядке и какой
-        // ширины. Именно СПИСОК, а не множество: порядок задаёт сам пользователь,
-        // перетаскивая заголовки, и восстановить его из канонического Catalog уже нельзя.
+        // The configurable columns of the sets list: which are visible, in what order and at
+        // what width. A LIST specifically, not a set: the order is chosen by the user by
+        // dragging the headings, and it can no longer be recovered from the canonical Catalog.
         readonly List<string> _setOrder = new List<string>();
         readonly Dictionary<string, int> _setColW =
-            new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);   // id -> логическая ширина
+            new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);   // id -> logical width
 
-        // То же самое для таблицы плагинов — она настраивается наравне с сетами.
+        // The same for the plugins table — it is configurable on equal terms with the sets.
         readonly List<string> _pluginOrder = new List<string>();
         readonly Dictionary<string, int> _pluginColW =
             new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
@@ -123,7 +125,8 @@ namespace AbletonManager
             return false;
         }
 
-        /// <summary>Место колонки в каноническом каталоге — он же порядок пунктов меню.</summary>
+        /// <summary>A column's place in the canonical catalog — which is also the order of the
+        /// menu items.</summary>
         static int CatalogPos(bool sets, string id)
         {
             if (sets)
@@ -151,14 +154,15 @@ namespace AbletonManager
         List<PluginColDef> _pluginVisible = new List<PluginColDef>();
 
         Rectangle _rCount, _rStatus;
-        int _total;                  // сколько всего в каталоге — знаменатель «N / M shown»
+        int _total;                  // how many there are in the catalog in total — the denominator of "N / M shown"
 
         readonly HelpOverlay _help = new HelpOverlay();
 
-        // Откуда взяты данные о плагинах — показываем в статус-баре справа, только на
-        // вкладке Плагинов, чтобы числам в карточках можно было верить.
+        // Where the plugin data came from — shown in the status bar on the right, on the
+        // plugins tab only, so that the numbers on the cards can be trusted.
 
-        // Окно прослушивания рендеров — одно на всё приложение, живёт рядом с главным.
+        // The render listening window — one for the whole application, living beside the main
+        // one.
         PlayerDialog _player;
 
         public MainForm()
@@ -166,11 +170,12 @@ namespace AbletonManager
             Text = "Alive " + Application.ProductVersion + " — Ableton Live Manager";
             FormBorderStyle = FormBorderStyle.None;
             StartPosition = FormStartPosition.CenterScreen;
-            // Размеры окна — тоже по макету, значит тоже через масштаб экрана. Раньше
-            // 1475 и 1320 стояли в физических пикселях: на экране со 125% окно выходило
-            // в 1180 макетных точек вместо 1475, и панель инструментов в него уже не
-            // помещалась — счётчик наезжал на кнопки справа. DeviceDpi тут спрашивать
-            // рано (окна ещё нет), поэтому берём масштаб у экранного DC.
+            // The window sizes come from the mockup too, and therefore also through the screen
+            // scale. 1475 and 1320 used to stand here in physical pixels: on a screen at 125%
+            // the window came out 1180 mockup points instead of 1475, and the toolbar no longer
+            // fitted into it — the counter ran into the buttons on the right. It is too early
+            // to ask DeviceDpi here (there is no window yet), so we take the scale from the
+            // screen DC.
             float k;
             using (Graphics g = Graphics.FromHwnd(IntPtr.Zero)) k = g.DpiX / 96f;
             Rectangle work = Screen.PrimaryScreen.WorkingArea;
@@ -178,15 +183,16 @@ namespace AbletonManager
             ClientSize = new Size(Math.Min((int)(1475 * k), work.Width),
                                   Math.Min((int)(950 * k), work.Height));
 
-            // Ширина не с потолка: при ней панель инструментов ещё помещается целиком —
-            // вкладки, кубик, фильтры со счётчиком, поиск, «N / N» со сбросом и кнопки
-            // панели справа. Экран уже этого — окно во всю его ширину, но не шире.
+            // The width is not plucked from the air: at it the toolbar still fits whole — the
+            // tabs, the die, the filters with their counter, the search, the "N / N" with its
+            // reset and the panel buttons on the right. On a screen narrower than that the
+            // window takes its full width, but no wider.
             MinimumSize = new Size(Math.Min((int)(1340 * k), work.Width),
                                    Math.Min((int)(740 * k), work.Height));
             BackColor = Theme.Bg;
             if (Glass.AppIcon != null) Icon = Glass.AppIcon;
             KeyPreview = true;
-            AllowDrop = true;          // папку можно бросить прямо на окно — см. OnDragDrop
+            AllowDrop = true;          // a folder can be dropped straight onto the window — see OnDragDrop
             DoubleBuffered = true;
             SetStyle(ControlStyles.OptimizedDoubleBuffer | ControlStyles.AllPaintingInWmPaint |
                      ControlStyles.UserPaint | ControlStyles.ResizeRedraw, true);
@@ -199,30 +205,32 @@ namespace AbletonManager
             ApplyTexts();
         }
 
-        // ------------------------------------------------------- каталог колонок
+        // ------------------------------------------------------- the column catalog
 
         delegate string CellText(SetEntry s);
 
-        /// <summary>Описание одной возможной колонки списка сетов.</summary>
+        /// <summary>The description of one possible column of the sets list.</summary>
         sealed class ColDef
         {
             public string Id;
             public string En;
-            public int Width;          // логический дефолт; 0 — колонка тянется
+            public int Width;          // the logical default; 0 — the column stretches
             public bool Right;
-            public bool Chips;          // рисовать ячейку тегами-пилюлями, а не текстом
+            public bool Chips;          // draw the cell as tag pills rather than as text
             public Font Font;
             public Color? Color;
             public CellText Text;
             public Comparison<SetEntry> Sort;
         }
 
-        // Порядок здесь — это и порядок колонок на экране, и порядок пунктов в меню.
+        // The order here is both the order of the columns on screen and the order of the items
+        // in the menu.
         static readonly List<ColDef> Catalog = BuildCatalog();
 
-        // Что показываем при первом запуске и по «сбросить». Порядок — как в Catalog, иначе
-        // включённая потом колонка встанет не туда: ToggleColumn ищет первую соседку,
-        // которая в каталоге позже, а в перепутанном списке такая находится слишком рано.
+        // What we show on first run and on "reset". The order is as in Catalog, or a column
+        // switched on later would land in the wrong place: ToggleColumn looks for the first
+        // neighbour that comes later in the catalog, and in a jumbled list such a one is found
+        // too early.
         static readonly string[] DefaultSetCols =
             { "Set", "Modified", "BPM", "PluginCount", "FileCount", "Tags", "Size"};
 
@@ -232,7 +240,7 @@ namespace AbletonManager
 
             c.Add(new ColDef {
                 Id = "Set", En = "Set", Width = 0, Font = Theme.FTitle, Color = Theme.Text,
-                // «+3» — столько версий той же папки спрятано под этой строкой.
+                // "+3" — that many versions of the same folder are hidden under this row.
                 Text = delegate (SetEntry s)
                     { return s.CollapsedCount > 0 ? s.Name + "   +" + s.CollapsedCount : s.Name; },
                 Sort = delegate (SetEntry a, SetEntry b)
@@ -271,7 +279,7 @@ namespace AbletonManager
                 Text = delegate (SetEntry s) { return s.Key; },
                 Sort = delegate (SetEntry a, SetEntry b)
                     {
-                        // Сеты без тональности — всегда в конце, а не вперемешку.
+                        // Sets with no key always go at the end rather than being mixed in.
                         bool ea = a.Key.Length == 0, eb = b.Key.Length == 0;
                         if (ea != eb) return ea ? 1 : -1;
                         return string.Compare(a.Key, b.Key, StringComparison.CurrentCultureIgnoreCase);
@@ -282,9 +290,9 @@ namespace AbletonManager
                 Text = delegate (SetEntry s) { return s.Tracks > 0 ? s.Tracks.ToString() : ""; },
                 Sort = delegate (SetEntry a, SetEntry b) { return a.Tracks.CompareTo(b.Tracks); } });
 
-            // Просто «сколько их в проекте» — без оценок и цвета. Обе по умолчанию
-            // спрятаны и стоят перед своими «Missed»-соседками: сперва сколько всего,
-            // потом сколько из них потеряно.
+            // Simply "how many there are in the project" — with no judgement and no colour.
+            // Both are hidden by default and stand before their "Missed" neighbours: first how
+            // many there are in total, then how many of them are lost.
             c.Add(new ColDef {
                 Id = "PluginCount", En = "Plugins", Width = 100, Right = true,
                 Text = delegate (SetEntry s) { return s.Plugins.Length > 0 ? s.Plugins.Length.ToString() : ""; },
@@ -295,9 +303,10 @@ namespace AbletonManager
                 Text = delegate (SetEntry s) { return s.TotalRefs > 0 ? s.TotalRefs.ToString() : ""; },
                 Sort = delegate (SetEntry a, SetEntry b) { return a.TotalRefs.CompareTo(b.TotalRefs); } });
 
-            // Plugins и Files — только цветная отметка, текст ячейки пуст.
-            // Сортировка — именно по ПОТЕРЯННЫМ: колонка так и называется, а раньше она
-            // молча сортировала по общему числу плагинов, то есть не по тому, что показывает.
+            // Plugins and Files carry a coloured mark only; the cell text is empty. The sort is
+            // specifically by the LOST ones: that is what the column is called, while it used
+            // to sort silently by the total number of plugins, that is, by something other than
+            // what it shows.
             c.Add(new ColDef {
                 Id = "Plugins", En = "Plugins Missed", Width = 165, Right = true,
                 Text = delegate (SetEntry s) { return ""; },
@@ -313,8 +322,8 @@ namespace AbletonManager
                 Text = delegate (SetEntry s) { return ProjectMeta.JoinTags(ProjectMeta.TagsOf(s.ProjectDir)); },
                 Sort = delegate (SetEntry a, SetEntry b)
                     {
-                        // Непомеченные — в конец: колонка тегов нужна, чтобы видеть
-                        // помеченное, а не любоваться пустотой в начале списка.
+                        // Unmarked ones to the end: the tags column exists to show what is
+                        // marked rather than to admire the emptiness at the top of the list.
                         string ta = ProjectMeta.JoinTags(ProjectMeta.TagsOf(a.ProjectDir));
                         string tb = ProjectMeta.JoinTags(ProjectMeta.TagsOf(b.ProjectDir));
                         bool ea = ta.Length == 0, eb = tb.Length == 0;
@@ -322,9 +331,10 @@ namespace AbletonManager
                         return string.Compare(ta, tb, StringComparison.CurrentCultureIgnoreCase);
                     } });
 
-            // Вес всей папки проекта, а не одного .als: сам сет весит сотню-другую
-            // килобайт всегда, а вопрос «что тут занимает место» — про сэмплы и
-            // рендеры рядом с ним. Размер самого файла остался в панели сведений.
+            // The weight of the whole project folder rather than of one .als: the set itself
+            // always weighs a hundred or two kilobytes, while the question "what is taking up
+            // space here" is about the samples and renders beside it. The size of the file
+            // itself stayed in the details panel.
             c.Add(new ColDef {
                 Id = "Size", En = "Project size", Width = 130, Right = true,
                 Text = delegate (SetEntry s) { return SizeMB(s.ProjectSize); },
@@ -339,17 +349,17 @@ namespace AbletonManager
             return null;
         }
 
-        // ------------------------------------------- каталог колонок плагинов
+        // ------------------------------------------- the plugin column catalog
 
         delegate string PluginCellText(PluginStat p);
 
-        /// <summary>Описание одной возможной колонки таблицы плагинов — брат-близнец
-        /// ColDef, только про другую сущность.</summary>
+        /// <summary>The description of one possible column of the plugins table — ColDef's
+        /// twin, only about a different entity.</summary>
         sealed class PluginColDef
         {
             public string Id;
             public string En;
-            public int Width;          // логический дефолт; 0 — колонка тянется
+            public int Width;          // the logical default; 0 — the column stretches
             public bool Right;
             public Font Font;
             public Color? Color;
@@ -378,8 +388,8 @@ namespace AbletonManager
                 Text = delegate (PluginStat p) { return p.Vendor; },
                 Sort = delegate (PluginStat a, PluginStat b)
                     {
-                        // Безымянные — в конец: колонка нужна, чтобы находить по автору,
-                        // а не любоваться пустотой в начале списка.
+                        // Nameless ones to the end: the column exists to find things by author
+                        // rather than to admire the emptiness at the top of the list.
                         bool ea = a.Vendor.Length == 0, eb = b.Vendor.Length == 0;
                         if (ea != eb) return ea ? 1 : -1;
                         int r = string.Compare(a.Vendor, b.Vendor, StringComparison.CurrentCultureIgnoreCase);
@@ -403,9 +413,9 @@ namespace AbletonManager
                 Text = delegate (PluginStat p) { return p.Sets > 0 ? p.Sets.ToString() : "—"; },
                 Sort = delegate (PluginStat a, PluginStat b) { return a.Sets.CompareTo(b.Sets); } });
 
-            // Версия и файл — из базы самой Live, поэтому есть только у установленных.
-            // По умолчанию спрятаны: нужны, когда разбираешься с конкретным плагином,
-            // а не когда просматриваешь список.
+            // The version and the file come from Live's own database, so only installed ones
+            // have them. Hidden by default: they are wanted when working out a specific plugin,
+            // not when browsing the list.
             c.Add(new PluginColDef {
                 Id = "Version", En = "Version", Width = 110,
                 Text = delegate (PluginStat p) { return p.Installed != null ? p.Installed.Version : ""; },
@@ -430,7 +440,7 @@ namespace AbletonManager
                         return string.Compare(pa, pb, StringComparison.OrdinalIgnoreCase);
                     } });
 
-            // Только цветная отметка, текст ячейки пуст — как Plugins/Files у сетов.
+            // A coloured mark only; the cell text is empty — like Plugins/Files on sets.
             c.Add(new PluginColDef {
                 Id = "Status", En = "Status", Width = 160, Right = true,
                 Text = delegate (PluginStat p) { return ""; },
@@ -457,8 +467,8 @@ namespace AbletonManager
         }
 
         /// <summary>
-        /// Папка проекта легко тянет на гигабайты, а «3841 MB» читается хуже, чем
-        /// «3.75 GB» — поэтому после тысячи мегабайт переходим на гигабайты.
+        /// A project folder easily runs to gigabytes, and "3841 MB" reads worse than "3.75 GB"
+        /// — so past a thousand megabytes we switch to gigabytes.
         /// </summary>
         internal static string SizeMB(long bytes)
         {
@@ -472,16 +482,16 @@ namespace AbletonManager
             return mb.ToString(mb >= 100 ? "0" : "0.0", CultureInfo.InvariantCulture) + " MB";
         }
 
-        // ---------------------------------------------------- состояние колонок
+        // ---------------------------------------------------- the column state
 
         void LoadColumns()
         {
             LoadColumnSpec(_settings.SetColumns, _setOrder, _setColW, DefaultSetCols, "Set", true);
             LoadColumnSpec(_settings.PluginColumns, _pluginOrder, _pluginColW, DefaultPluginCols, "Plugin", false);
 
-            // Разовая починка старых настроек: до этого включённая колонка падала в конец,
-            // и сохранённый порядок — это просто история нажатий, а не чей-то замысел.
-            // Дальше порядок снова пользовательский и больше не трогается.
+            // A one-off repair of old settings: before this a column switched on fell to the
+            // end, and the saved order is merely a history of presses rather than anybody's
+            // intent. From here on the order is the user's again and is not touched.
             if (!_settings.ColumnsSorted)
             {
                 SortByCatalog(_setOrder, true);
@@ -492,12 +502,12 @@ namespace AbletonManager
         }
 
         /// <summary>
-        /// Разбор строки вида «Set,Modified:150,BPM:81». Порядок токенов — это и есть
-        /// порядок колонок на экране: с тех пор как заголовки можно перетаскивать,
-        /// восстановить его из канонического каталога уже нельзя.
+        /// Parsing a string of the form "Set,Modified:150,BPM:81". The order of the tokens IS
+        /// the order of the columns on screen: ever since the headings became draggable it can
+        /// no longer be recovered from the canonical catalog.
         ///
-        /// mandatory — колонка, которую убрать нельзя (имя сета, имя плагина): без неё
-        /// в строке не остаётся ничего, по чему её вообще опознать.
+        /// mandatory is the column that cannot be removed (the set name, the plugin name):
+        /// without it nothing is left in the row to recognise it by at all.
         /// </summary>
         void LoadColumnSpec(string spec, List<string> order, Dictionary<string, int> widths,
                             string[] defaults, string mandatory, bool sets)
@@ -518,7 +528,8 @@ namespace AbletonManager
                         id = t.Substring(0, colon);
                         int.TryParse(t.Substring(colon + 1), out w);
                     }
-                    // Колонка из другой версии программы либо уже перечисленная — мимо.
+                    // A column from another version of the program, or one already listed —
+                    // skip it.
                     if (sets ? FindCol(id) == null : FindPluginCol(id) == null) continue;
                     if (HasCol(order, id)) continue;
                     order.Add(id);
@@ -541,8 +552,9 @@ namespace AbletonManager
             List<string> toks = new List<string>();
             foreach (string id in order)
             {
-                // Тянущейся колонке (Width == 0) ширину не пишем: она всегда занимает
-                // остаток, и запомненное число всё равно ни на что не влияло бы.
+                // We do not write a width for a stretching column (Width == 0): it always takes
+                // the remainder, and a remembered number would have no effect on anything
+                // anyway.
                 int def = sets ? WidthOf(FindCol(id)) : WidthOf(FindPluginCol(id));
                 int w;
                 if (def != 0 && widths.TryGetValue(id, out w) && w > 0) toks.Add(id + ":" + w);
@@ -554,7 +566,7 @@ namespace AbletonManager
         static int WidthOf(ColDef d) { return d != null ? d.Width : 0; }
         static int WidthOf(PluginColDef d) { return d != null ? d.Width : 0; }
 
-        // ------------------------------------------------------------ построение
+        // ------------------------------------------------------------ construction
 
         void Build()
         {
@@ -574,8 +586,8 @@ namespace AbletonManager
             foreach (IconButton b in new IconButton[] { _folders, _settingsBtn, _helpBtn, _min, _max, _close })
                 Controls.Add(b);
 
-            // Кнопка нового сета переехала в футер и стала подписанной — доставать
-            // новый пустой проект по одной иконке было не очевидно.
+            // The new set button moved into the footer and gained a caption — getting a new
+            // empty project out of a single icon was not obvious.
             Controls.Add(_newProject);
 
             _playerClose.Icon = Glyph.Close;
@@ -735,9 +747,10 @@ namespace AbletonManager
                 _list.ScrollOffsetX = 0;
                 _list.ScrollOffset = 0;
 
-                // Сортировка и состав колонок у сетов и плагинов разные, и на переходе
-                // между ними их надо сбрасывать. А Home и Sets — один каталог в двух
-                // видах: сбивать там сортировку не за что, человек к ней и вернётся.
+                // The sort and the set of columns differ between sets and plugins, and they
+                // have to be reset when moving between them. Home and Sets, though, are one
+                // catalog in two views: there is nothing to knock the sort down for, and the
+                // person will come back to it.
                 bool domainChanged = _wasPlugins != !SetsDomain;
                 _wasPlugins = !SetsDomain;
                 if (domainChanged)
@@ -748,8 +761,9 @@ namespace AbletonManager
                     _list.SortColumn = -1;
                 }
 
-                // Выделенный сет переезжает из плиток в таблицу и обратно: вкладки
-                // показывают одно и то же, и терять на переходе место незачем.
+                // The selected set travels from the tiles to the table and back: the tabs show
+                // one and the same thing, and there is no reason to lose one's place in the
+                // transition.
                 SetEntry setFromTiles = _home.Selected;
                 RowData listRowBefore = _list.Selected;
                 SetEntry setFromList = listRowBefore != null ? listRowBefore.Tag as SetEntry : null;
@@ -783,8 +797,8 @@ namespace AbletonManager
             Controls.Add(_summary);
 
             _search.ShowClear = true;
-            // Появление строк заново на каждую букву — это дёрганье, а не анимация:
-            // содержимое не «пришло», оно просто отфильтровалось.
+            // Rows appearing anew on every letter is a twitch rather than an animation: the
+            // content did not "arrive", it was merely filtered.
             _search.Box.TextChanged += delegate { Refill(false); };
             Controls.Add(_search);
 
@@ -855,7 +869,7 @@ namespace AbletonManager
             _home.Activated += OnHomeActivated;
             _home.PlayRequested += OpenPlayer;
             _home.RevealRequested += RevealSet;
-            _home.DetailsRequested += OnSetRequested;   // «Show details» — уйти к сету в Sets
+            _home.DetailsRequested += OnSetRequested;   // "Show details" — go to the set in Sets
             _home.RescueRequested += RescueSet;
             _home.NotesRequested += EditNotes;
             _home.SelectionChanged += delegate { OnSelectionChanged(); };
@@ -865,14 +879,15 @@ namespace AbletonManager
             Controls.Add(_help);
             Controls.Add(_home);
 
-            // Сообщение поверх содержимого — добавляем последним и держим впереди, чтобы
-            // его не закрыл ни список, ни плитки.
+            // A message over the content — we add it last and keep it in front, so that neither
+            // the list nor the tiles cover it.
             Controls.Add(_toast);
             _toast.BringToFront();
 
         }
 
-        /// <summary>Плитка открыта двойным щелчком — это то же «Open in Live», что и в списке.</summary>
+        /// <summary>A tile opened by a double click is the same "Open in Live" as in the
+        /// list.</summary>
         void OnHomeActivated(SetEntry s)
         {
             OpenSet(s);
@@ -901,12 +916,14 @@ namespace AbletonManager
                 _filtersBtn.Count = _filter.ActiveCount;
             else
                 _filtersBtn.Count = _pluginFilterObj.ActiveCount;
-            // Со счётчиком пилюля шире — а за ней стоит вся правая половина панели.
+            // With a counter the pill is wider — and behind it stands the whole right half of
+            // the panel.
             if (_filtersBtn.Width != Math.Max(Sc(140), _filtersBtn.PreferredWidth)) LayoutAll();
             _filtersBtn.Invalidate();
         }
 
-        /// <summary>Показанное сейчас — это выборка, а не весь каталог.</summary>
+        /// <summary>What is shown right now is a selection rather than the whole
+        /// catalog.</summary>
         bool Filtering
         {
             get
@@ -920,7 +937,8 @@ namespace AbletonManager
         {
             if (SetsDomain) _filter.Clear(); else _pluginFilterObj.Clear();
             UpdateFiltersButton();
-            // Текст поля сам зовёт Refill через TextChanged — но только если он менялся.
+            // The field's text calls Refill itself through TextChanged — but only if it
+            // actually changed.
             if (_search.Box.Text.Length > 0) _search.Box.Text = "";
             else Refill(false);
         }
@@ -932,21 +950,22 @@ namespace AbletonManager
                 cue = "Search in plugins…";
             else
                 cue = "Search in sets…";
-            // Своя подсказка, а не системная EM_SETCUEBANNER — см. комментарий у FieldBox.Cue.
+            // Our own placeholder rather than the system EM_SETCUEBANNER — see the comment on
+            // FieldBox.Cue.
             if (_search.Cue == cue) return;
             _search.Cue = cue;
             _search.Invalidate();
         }
 
-        // ------------------------------------------------------------- раскладка
+        // ------------------------------------------------------------------ layout
 
         int Sc(int v) { return (int)Math.Round(v * (DeviceDpi / 96f)); }
 
         /// <summary>
-        /// Раскладка целиком построена на величинах из макета: поле окна 30, высота
-        /// органов управления 35, шаг круглых кнопок 45, содержимое с отметки 98.
-        /// Панель подробностей задаёт правую границу таблицы, поэтому колонки и значки
-        /// действий выстраиваются по одной вертикали.
+        /// The layout is built entirely on quantities from the mockup: a window margin of 30, a
+        /// control height of 35, a round-button pitch of 45, the content from the 98 mark. The
+        /// details panel sets the right boundary of the table, so the columns and the action
+        /// glyphs line up on one vertical.
         /// </summary>
         void LayoutAll()
         {
@@ -957,7 +976,8 @@ namespace AbletonManager
             int left = pad, right = ClientSize.Width - pad;
             int y = pad;
 
-            // Кнопки окна прижаты к правому краю, действия — к левому краю панели.
+            // The window buttons are pushed to the right edge, the actions to the left edge of
+            // the panel.
             _close.SetBounds(right - icon, y, icon, icon);
             _max.SetBounds(_close.Left - step, y, icon, icon);
             _min.SetBounds(_max.Left - step, y, icon, icon);
@@ -973,8 +993,8 @@ namespace AbletonManager
             _mode.Location = new Point(left, y);
             bool setsMode = SetsDomain;
 
-            // Кнопку «New Live Set» из футера убрали: нижняя полоса теперь только плеер.
-            // Создать сет по-прежнему можно первой плиткой в Recent.
+            // The "New Live Set" button was taken out of the footer: the bottom strip is now
+            // the player only. A set can still be created from the first tile in Recent.
             _newProject.Visible = false;
 
             _dice.SetBounds(_mode.Right + Sc(16), y, icon, icon);
@@ -984,18 +1004,19 @@ namespace AbletonManager
                                   Math.Max(Sc(140), _filtersBtn.PreferredWidth), h);
             _filtersBtn.Visible = true;
             int searchX = _filtersBtn.Right + Sc(15);
-            // Поиск не залезает на кнопки панели даже когда окно уже минимума (экран
-            // маленький и минимум упёрся в его ширину) — тогда он просто ужимается.
+            // The search does not climb onto the panel buttons even when the window is already
+            // at its minimum (the screen is small and the minimum has run into its width) — it
+            // then simply squeezes.
             int searchW = Math.Max(Sc(120), Math.Min(Sc(315), panelX - Sc(10) - searchX));
             _search.SetBounds(searchX, y, searchW, h);
-            // Полоса счётчика забирает весь просвет между поиском и кнопками панели:
-            // «368 / 599 shown» со кнопкой сброса в прежние поля по 16 не влезало и
-            // уходило в многоточие уже на обычном размере окна.
+            // The counter's strip takes the whole gap between the search and the panel buttons:
+            // "368 / 599 shown" with the reset button did not fit into the former fields of 16
+            // and went off into an ellipsis at an ordinary window size already.
             _rCount = new Rectangle(_search.Right + Sc(12), y,
                                     Math.Max(0, panelX - Sc(10) - _search.Right - Sc(12)), h);
             LayoutReset();
 
-            // Содержимое
+            // The content
             int top = Sc(Theme.ContentY);
             int statusH = Sc(28);
 
@@ -1005,8 +1026,8 @@ namespace AbletonManager
             int footerControlY = footerBottom - controlH;
             int listGap = Sc(20);
 
-            // Нижняя полоса — только плеер. Нет плеера — нет и полосы: содержимое
-            // забирает её высоту себе, а не оставляет пустой прогал во всю ширину.
+            // The bottom strip is the player only. No player, no strip: the content takes its
+            // height for itself rather than leaving an empty gap across the full width.
             bool playerOpen = _player != null && !_player.IsDisposed;
             bool showTransport = playerOpen;
             bool scanLine = SetsDomain && _status.Length > 0;
@@ -1019,8 +1040,9 @@ namespace AbletonManager
 
             int listTop = top;
 
-            // Мини-транспорт — везде, где есть что играть, включая вкладку плагинов:
-            // подпись про источник плагинов оттуда убрана, полоса свободна.
+            // The mini transport goes everywhere there is something to play, the plugins tab
+            // included: the caption about the plugin source has been taken out of there and the
+            // strip is free.
             _playerClose.Visible = _playerPrev.Visible = _playerPlayPause.Visible = _playerNext.Visible
                 = _playerExpand.Visible = _playerSeek.Visible = _playerVolBtn.Visible
                 = _playerSetLink.Visible = showTransport;
@@ -1033,41 +1055,44 @@ namespace AbletonManager
             {
                 int trIcon = controlH;
                 int trStep = trIcon + Sc(Theme.IconGap);
-                // Кнопка нового сета из футера убрана, и её место — тоже место имени:
-                // упираться в невидимый прямоугольник и резать имя многоточием незачем.
+                // The new set button has been taken out of the footer, and its place is the
+                // name's place too: there is no reason to run into an invisible rectangle and
+                // cut the name off with an ellipsis.
                 int contentRight = (_newProject.Visible ? _newProject.Left : panelX - listGap) - Sc(16);
 
-                // Ряд центрируем в полосе, оставшейся под таблицей: снизу поле окна
-                // Sc(Pad), сверху всего Sc(10) до таблицы — прижатый к нижнему полю ряд
-                // заметно уезжал вверх от середины этой полосы.
+                // We centre the row in the strip left under the table: below it is the window
+                // margin Sc(Pad), above it only Sc(10) to the table — a row pushed against the
+                // bottom margin sat noticeably above the middle of that strip.
                 int playerY = listBottom + ((ClientSize.Height - listBottom) - controlH) / 2;
 
                 int startX = left + Sc(7);
 
-                // 1. Крестик закрытия слева
+                // 1. The close cross on the left
                 _playerClose.SetBounds(startX, playerY, trIcon, trIcon);
                 int curX = _playerClose.Right + Sc(20);
 
-                // 2. Кнопки Prev, Play/Pause, Next
+                // 2. The Prev, Play/Pause and Next buttons
                 _playerPrev.SetBounds(curX, playerY, trIcon, trIcon);
                 _playerPlayPause.SetBounds(curX + trStep, playerY, trIcon, trIcon);
                 _playerNext.SetBounds(curX + trStep * 2, playerY, trIcon, trIcon);
                 curX = _playerNext.Right + Sc(24);
 
-                // 3. Прогресс-бар и подписи над ним: время по краям желобка,
-                //    имя файла — крупным по центру между ними.
+                // 3. The progress bar and the captions above it: the times at the ends of the
+                // trough,
+                //    the file name large and centred between them.
                 int seekW = Sc(348);
-                int seekPad = Sc(4);              // внутренний отступ желобка в SeekSlider
+                int seekPad = Sc(4);              // the trough's internal inset in SeekSlider
                 int timeW = Sc(38);
 
-                // Высоту строки подписей берём у самого крупного шрифта в ней: на
-                // глазок поставленное число режет имени файла хвосты букв (p, y, g).
+                // We take the height of the caption line from the largest font in it: a number
+                // set by eye shaves the tails of the letters (p, y, g) off the file name.
                 int textH = TextRenderer.MeasureText("Agjpq", Theme.FTitle).Height;
                 int seekH = Sc(14);
                 int textY = playerY + (controlH - (textH + Sc(1) + seekH)) / 2;
 
-                // Время мельче имени трека, и по верху коробки они встали бы на разные
-                // линии — сажаем мелкую строку на базовую линию крупной.
+                // The time is smaller than the track name, and by the top of their boxes they
+                // would stand on different lines — we seat the small line on the large one's
+                // baseline.
                 int timeH = TextRenderer.MeasureText("Agjpq", Theme.FMini).Height;
                 int timeY = textY + Theme.Baseline(Theme.FTitle) - Theme.Baseline(Theme.FMini);
 
@@ -1081,7 +1106,7 @@ namespace AbletonManager
                 _playerSeek.SetBounds(curX, textY + textH + Sc(1), seekW, seekH);
                 curX += seekW + Sc(24);
 
-                // 4. Кнопка громкости и всплывающий регулятор над ней
+                // 4. The volume button and the slider popping up above it
                 _playerVolBtn.SetBounds(curX, playerY, trIcon, trIcon);
                 int popupW = Sc(34);
                 int popupH = Sc(140);
@@ -1090,11 +1115,11 @@ namespace AbletonManager
                 _playerVolPopup.SetBounds(popupX, popupY, popupW, popupH);
                 curX += trIcon + Sc(Theme.IconGap);
 
-                // 5. Кнопка разворачивания плеера (OpenPlaylist)
+                // 5. The button that expands the player (OpenPlaylist)
                 _playerExpand.SetBounds(curX, playerY, trIcon, trIcon);
                 curX += trIcon + Sc(16);
 
-                // 6. Кликабельное название сета
+                // 6. The clickable set name
                 string sname = (_player != null && !_player.IsDisposed && _player.CurrentSet != null) ? _player.CurrentSet.Name : "";
                 _playerSetLink.SetName = sname;
                 int maxNameW = Math.Max(Sc(100), contentRight - curX);
@@ -1130,12 +1155,14 @@ namespace AbletonManager
             if (_toast.Visible) _toast.PlaceIn(_toastArea);
         }
 
-        // Куда садится всплывающее сообщение — левый нижний угол содержимого. Считается
-        // в раскладке, а не в момент показа: окно могли развернуть или растянуть, пока
-        // сообщения не было, и координаты к этому моменту уже другие.
+        // Where a popup message sits — the bottom-left corner of the content. Computed in the
+        // layout rather than at the moment of showing: the window may have been maximized or
+        // stretched while there was no message, and by that point the coordinates are
+        // different.
         Rectangle _toastArea;
 
-        /// <summary>Показать сообщение в углу содержимого на пару секунд.</summary>
+        /// <summary>Show a message in the corner of the content for a couple of
+        /// seconds.</summary>
         void Notify(string msg)
         {
             _toast.Post(msg, 2200);
@@ -1148,10 +1175,10 @@ namespace AbletonManager
         protected override void OnResize(EventArgs e)
         {
             base.OnResize(e);
-            // На развёрнутом окне рамка в точности совпадает с границами экрана, но
-            // скруглённые углы DWM всё равно рисует поверх — в уголках сквозь них виден
-            // рабочий стол. Гасим скругление ровно на переходе в Maximized и возвращаем
-            // на Normal, а не всегда: обычное окно должно остаться скруглённым.
+            // On a maximized window the frame matches the screen bounds exactly, yet DWM still
+            // draws its rounded corners over it — the desktop shows through in the corners. We
+            // kill the rounding precisely on the transition to Maximized and bring it back on
+            // Normal, rather than always: an ordinary window has to stay rounded.
             if (_lastWindowState != WindowState)
             {
                 _lastWindowState = WindowState;
@@ -1161,19 +1188,19 @@ namespace AbletonManager
             LayoutAll();
             if (_help.Visible) _help.Bounds = ClientRectangle;
 
-            // Пока окно тянут за край, обходимся дешёвой перерисовкой себя: Invalidate(true)
-            // проходит вдобавок по всем дочерним контролам, а их тут под два десятка, и
-            // делать это на каждое сообщение ресайза незачем — они и так перерисуются от
-            // собственной смены размера. Полную перерисовку делаем один раз, когда край
-            // отпустили (WM_EXITSIZEMOVE).
+            // While the window is being dragged by an edge we make do with a cheap repaint of
+            // ourselves: Invalidate(true) walks over every child control as well, and there are
+            // nearly two dozen of them here, so doing that on every resize message is pointless
+            // — they repaint from their own size change anyway. We do the full repaint once,
+            // when the edge is released (WM_EXITSIZEMOVE).
             if (_inSizeMove) Invalidate(); else Invalidate(true);
         }
 
         /// <summary>
-        /// Перерисовка на перемещение нужна только тогда, когда окно двигают не мышью
-        /// (снап с клавиатуры, перенос на другой монитор). Пока идёт перетаскивание,
-        /// пропускаем: содержимое от сдвига окна не меняется, а лишняя работа на каждое
-        /// WM_MOVE — ровно то, из-за чего окно уезжало за курсором с задержкой.
+        /// A repaint on a move is only needed when the window is moved by something other than
+        /// the mouse (a keyboard snap, a move to another monitor). While a drag is under way we
+        /// skip it: the content does not change from the window shifting, and extra work on
+        /// every WM_MOVE is exactly what made the window trail behind the cursor.
         /// </summary>
         protected override void OnMove(EventArgs e)
         {
@@ -1201,8 +1228,9 @@ namespace AbletonManager
         }
 
         /// <summary>
-        /// Стекло и скруглённые углы включаем по созданию хендла, а не по показу окна:
-        /// иначе первый кадр успевает нарисоваться непрозрачным и это видно как вспышку.
+        /// We turn the glass and the rounded corners on when the handle is created rather than
+        /// when the window is shown: otherwise the first frame gets drawn opaque and that is
+        /// visible as a flash.
         /// </summary>
         protected override void OnHandleCreated(EventArgs e)
         {
@@ -1211,7 +1239,7 @@ namespace AbletonManager
             RegisterMinimizeHotkey();
         }
 
-        // ------------------------------------------------------- Win+M: свернуть окно
+        // ------------------------------------------------- Win+M: minimize the window
 
         const int WM_HOTKEY = 0x0312;
         const int HotkeyMinimize = 0xA11E;
@@ -1228,10 +1256,11 @@ namespace AbletonManager
         static extern bool UnregisterHotKey(IntPtr hWnd, int id);
 
         /// <summary>
-        /// Win+M — сочетание системное, его держит проводник («свернуть все окна»), и
-        /// RegisterHotKey на занятом сочетании честно возвращает false. Тогда остаётся
-        /// поведение Windows: окно свернётся, но вместе со всеми остальными. Результат
-        /// пишем в журнал — иначе разбираться, почему «не сворачивает только моё», не с чем.
+        /// Win+M is a system combination held by Explorer ("minimize all windows"), and
+        /// RegisterHotKey on a taken combination honestly returns false. What is left then is
+        /// the Windows behaviour: the window will minimize, but together with all the others.
+        /// We write the result to the log — otherwise there is nothing to work out "why it does
+        /// not minimize just mine" from.
         /// </summary>
         void RegisterMinimizeHotkey()
         {
@@ -1248,9 +1277,9 @@ namespace AbletonManager
         }
 
         /// <summary>
-        /// Повтор по показу — не перестраховка: заданный до первого показа backdrop DWM
-        /// иногда не подхватывает, и стекло появлялось только после того, как окно
-        /// перетащат на другой рабочий стол (там визуал окна пересоздаётся заново).
+        /// The repeat on show is not belt and braces: a backdrop set before the first show is
+        /// sometimes not picked up by DWM, and the glass appeared only after the window had
+        /// been dragged to another desktop (where the window's visual is recreated).
         /// </summary>
         protected override void OnVisibleChanged(EventArgs e)
         {
@@ -1274,13 +1303,13 @@ namespace AbletonManager
             public Point Reserved, MaxSize, MaxPosition, MinTrackSize, MaxTrackSize;
         }
 
-        /// <summary>Окно сейчас тащат или тянут за край — идёт модальный цикл Windows
-        /// между WM_ENTERSIZEMOVE и WM_EXITSIZEMOVE.</summary>
+        /// <summary>The window is currently being dragged or resized by an edge — a modal
+        /// Windows loop is running between WM_ENTERSIZEMOVE and WM_EXITSIZEMOVE.</summary>
         bool _inSizeMove;
 
         protected override void WndProc(ref Message m)
         {
-            // Клик мимо открытого модального окна — системный звук отсюда и берётся.
+            // A click outside an open modal window — this is where the system sound comes from.
             if (Chrome.SwallowBlockedClick(ref m)) return;
 
             if (m.Msg == WM_HOTKEY && m.WParam.ToInt32() == HotkeyMinimize)
@@ -1292,14 +1321,15 @@ namespace AbletonManager
             MediaKeys.Cmd media = MediaKeys.Parse(m);
             if (media != MediaKeys.Cmd.None && HandleMedia(media))
             {
-                m.Result = (IntPtr)1;      // взяли себе, дальше по цепочке не пускаем
+                m.Result = (IntPtr)1;      // taken for ourselves, not passed further down the chain
                 return;
             }
 
-            // Окно взяли в руки: на время перетаскивания перестаём перерисовываться на
-            // каждое движение — см. OnMove/OnResize. Само размытие при этом не трогаем:
-            // подмена акрила на ходу заметна глазом и выглядит хуже, чем сами тормоза.
-            // Кому оно тяжело (Windows 10), тот выключает его насовсем — Settings.DisableGlass.
+            // The window has been taken in hand: for the duration of the drag we stop
+            // repainting on every movement — see OnMove/OnResize. We do not touch the blur
+            // itself: swapping the acrylic on the fly is visible to the eye and looks worse
+            // than the lag. Whoever finds it heavy (Windows 10) switches it off for good —
+            // Settings.DisableGlass.
             if (m.Msg == WM_ENTERSIZEMOVE) _inSizeMove = true;
             else if (m.Msg == WM_EXITSIZEMOVE)
             {
@@ -1312,12 +1342,13 @@ namespace AbletonManager
 
             if (m.Msg == WM_GETMINMAXINFO)
             {
-                // Развёрнутое окно без рамки Windows растягивает на весь МОНИТОР, а не на
-                // рабочую область, — и оно накрывает панель задач. Рамки у нас нет, значит
-                // и «съезжания под панель» ждать неоткуда: предел развёртки задаём сами.
+                // Windows stretches a maximized window with no frame across the whole MONITOR
+                // rather than the work area — and it covers the taskbar. We have no frame, so
+                // there is nowhere for "sliding under the taskbar" to come from: we set the
+                // maximize bound ourselves.
                 //
-                // Считаем от того монитора, на котором окно сейчас: на втором экране
-                // панель может стоять с другой стороны или не стоять вовсе.
+                // We count from the monitor the window is currently on: on a second screen the
+                // taskbar may be on another side or absent altogether.
                 Screen sc = Screen.FromHandle(Handle);
                 Rectangle work = sc.WorkingArea, full = sc.Bounds;
 
@@ -1333,12 +1364,12 @@ namespace AbletonManager
             int raw = m.LParam.ToInt32();
             Point p = PointToClient(new Point((short)(raw & 0xFFFF), (short)((raw >> 16) & 0xFFFF)));
 
-            // На развёрнутом окне краёв под растягивание нет вовсе. Иначе выходило так:
-            // потянул за край развёрнутого окна — Windows молча вывела его из Maximized
-            // в обычное состояние прямо во весь экран, и дальше «развернуть» уже ничего
-            // не делало (оно и так во весь экран), а «свернуть в окно» возвращало не тот
-            // размер, что был до этого. Тащить за панель инструментов при этом можно —
-            // это штатный способ вернуть окно к прежнему размеру.
+            // A maximized window has no edges to resize by at all. Otherwise it went like this:
+            // drag the edge of a maximized window and Windows silently took it out of Maximized
+            // into an ordinary state full screen, after which "maximize" no longer did anything
+            // (it was full screen as it was) while "restore down" gave back a size other than
+            // the one before. Dragging by the toolbar still works — that is the regular way to
+            // bring the window back to its former size.
             if (WindowState != FormWindowState.Maximized)
             {
                 int b = Sc(6);
@@ -1355,8 +1386,8 @@ namespace AbletonManager
                 if (d) { m.Result = (IntPtr)15; return; }
             }
 
-            // За панель инструментов тащим окно — но не за само имя программы: оно
-            // За панель инструментов тащим окно.
+            // We drag the window by the toolbar — but not by the program name itself: that
+            // opens the settings.
             if (p.Y < Sc(Theme.ContentY) - Sc(10)) m.Result = (IntPtr)2;
         }
 
@@ -1367,7 +1398,7 @@ namespace AbletonManager
         }
 
         /// <summary>
-        /// Открыть диалог настроек.
+        /// Open the settings dialog.
         /// </summary>
         void ShowSettings()
         {
@@ -1382,7 +1413,7 @@ namespace AbletonManager
             if (rescan) StartScan(true);
         }
 
-        // ----------------------------------------------------------------- справка
+        // ------------------------------------------------------------------- help
 
         void ShowHelp()
         {
@@ -1399,30 +1430,30 @@ namespace AbletonManager
         }
 
         /// <summary>
-        /// Стрелки и Ctrl+1/2/3 — специально ProcessCmdKey, а не OnKeyDown. Замерено:
-        /// до OnKeyDown они не доходят — Control.PreProcessMessage сперва спрашивает
-        /// IsInputKey у того, что сейчас в фокусе, и раз обычные кнопки отвечают «нет,
-        /// это не моя клавиша», клавиша уходит в фокус-навигацию (ProcessDialogKey) и
-        /// молча переставляет фокус на соседний control. ProcessCmdKey — единственная
-        /// точка, которая получает клавишу РАНЬШЕ фокус-навигации, независимо от того,
-        /// что сейчас выделено.
+        /// The arrows and Ctrl+1/2/3 go through ProcessCmdKey specifically rather than
+        /// OnKeyDown. Measured: they do not reach OnKeyDown — Control.PreProcessMessage first
+        /// asks IsInputKey of whatever has focus, and since ordinary buttons answer "no, that
+        /// is not my key", the key goes off into focus navigation (ProcessDialogKey) and
+        /// silently moves the focus to a neighbouring control. ProcessCmdKey is the one point
+        /// that gets a key BEFORE focus navigation, regardless of what is selected at the time.
         /// </summary>
         protected override bool ProcessCmdKey(ref Message msg, Keys keyData)
         {
-            // Пока открыта справка, каталог под ней клавиш не слышит: стрелки листают
-            // саму справку, а не выделение в спрятанном за ней списке. Ctrl+Q пропускаем —
-            // выйти из программы должно быть можно откуда угодно.
+            // While the help is open, the catalog beneath it hears no keys: the arrows page
+            // through the help itself rather than the selection in the list hidden behind it.
+            // We let Ctrl+Q through — quitting the program has to be possible from anywhere.
             if (_help.Visible && keyData != (Keys.Control | Keys.Q))
             {
                 Keys hk = keyData & Keys.KeyCode;
                 if (hk == Keys.Escape || hk == Keys.F1) { HideHelp(); return true; }
                 if (_help.HandleKey(hk)) return true;
-                if ((keyData & Keys.Alt) == 0) return true;   // Alt+F4 и прочее системное — мимо нас
+                if ((keyData & Keys.Alt) == 0) return true;   // Alt+F4 and other system things — past us
             }
 
-            // Стрелки ведут по каталогу независимо от того, где сейчас фокус. Через
-            // ProcessCmdKey, а не OnKeyDown: иначе их сперва разбирает навигация по
-            // фокусу и выделение уезжает в соседний контрол, а не по сетам.
+            // The arrows drive the catalog regardless of where the focus currently is. Through
+            // ProcessCmdKey rather than OnKeyDown: otherwise focus navigation handles them
+            // first and the selection drives off into a neighbouring control instead of along
+            // the sets.
             if (!_search.Box.Focused && (keyData & Keys.Modifiers) == Keys.None)
             {
                 Keys k = keyData & Keys.KeyCode;
@@ -1453,9 +1484,9 @@ namespace AbletonManager
         {
             bool typing = _search.Box.Focused;
 
-            // Esc окно больше не закрывает: слишком дорогая опечатка для клавиши, которой
-            // закрывают диалоги. Программу закрывает только Ctrl+Q. Здесь Esc остался
-            // выходом из поля поиска — то, зачем его в поле и жмут.
+            // Esc no longer closes the window: too expensive a slip for the key that closes
+            // dialogs. Only Ctrl+Q closes the program. Here Esc remained the way out of the
+            // search field — which is what it is pressed for in a field.
             if (e.KeyCode == Keys.Escape)
             {
                 if (!typing) return;
@@ -1476,8 +1507,8 @@ namespace AbletonManager
                 e.Handled = e.SuppressKeyPress = true;
             }
             else if (e.KeyCode == Keys.F1) { ShowHelp(); e.Handled = true; }
-            // Ctrl+, — как в любой другой программе; на русской раскладке это та же
-            // клавиша «б», код у неё от раскладки не зависит.
+            // Ctrl+, — as in any other program; on a Russian layout that is the same key, and
+            // its code does not depend on the layout.
             else if (e.Control && e.KeyCode == Keys.Oemcomma)
             {
                 ShowSettings();
@@ -1496,8 +1527,9 @@ namespace AbletonManager
                 e.Handled = e.SuppressKeyPress = true;
             }
 
-            // Свернуть окно. Win+M отобрать у Windows нельзя (см. RegisterMinimizeHotkey),
-            // а сворачивать с клавиатуры надо чем-то, что работает всегда.
+            // Minimize the window. Win+M cannot be taken from Windows (see
+            // RegisterMinimizeHotkey), and minimizing from the keyboard needs something that
+            // always works.
             else if (e.Control && e.KeyCode == Keys.M)
             {
                 WindowState = FormWindowState.Minimized;
@@ -1510,9 +1542,9 @@ namespace AbletonManager
                 ShowMenuForSelection();
                 e.Handled = e.SuppressKeyPress = true;
             }
-            // Ctrl+Пробел — аранжировка выбранного сета во весь экран. Проверяется до
-            // голого пробела: тот на модификаторы не смотрит и иначе перехватил бы
-            // сочетание себе, запустив прослушку вместо превью.
+            // Ctrl+Space — the arrangement of the selected set full screen. Checked before a
+            // bare space: that one does not look at modifiers and would otherwise intercept the
+            // combination for itself, starting the preview instead of the full-screen view.
             else if (e.Control && e.KeyCode == Keys.Space && !typing && SetsDomain)
             {
                 OpenPreview();
@@ -1520,7 +1552,8 @@ namespace AbletonManager
             }
             else if (e.KeyCode == Keys.Space && !typing && SetsDomain)
             {
-                // В поле поиска пробел остаётся пробелом — иначе искать станет нечем.
+                // In the search field a space stays a space — otherwise there would be nothing
+                // to search with.
                 TogglePlaySelected();
                 e.Handled = e.SuppressKeyPress = true;
             }
@@ -1531,15 +1564,15 @@ namespace AbletonManager
             }
             else if (e.KeyCode == Keys.Enter && (_list.Selected != null || SelectedSet() != null))
             {
-                // Работает и из поля поиска: пока ничего не выбрано, Enter просто ничего
-                // не делает, так что случайно открыть проект при наборе нельзя.
+                // It works from the search field too: while nothing is selected Enter simply
+                // does nothing, so a project cannot be opened by accident while typing.
                 if (e.Shift) RevealSelected(); else ActivateSelected();
                 e.Handled = e.SuppressKeyPress = true;
             }
             base.OnKeyDown(e);
         }
 
-        // ------------------------------------------------------------ отрисовка
+        // ------------------------------------------------------------------ drawing
 
         protected override void OnPaintBackground(PaintEventArgs e) { }
 
@@ -1549,10 +1582,10 @@ namespace AbletonManager
             Chrome.PaintBase(this, g, ClientRectangle, Theme.Backdrop);
             Theme.Smooth(g);
 
-            // Счётчик кончается там, где начинается кнопка сброса. В обычном случае
-            // она стоит сразу за текстом и ничего не режет; на узком окне её упирают
-            // в правый край полосы (см. LayoutReset) — и тогда обрезается уже текст,
-            // а не наоборот.
+            // The counter ends where the reset button begins. In the ordinary case it stands
+            // right after the text and cuts nothing; on a narrow window it is pushed against
+            // the right edge of the strip (see LayoutReset) — and then it is the text that gets
+            // clipped rather than the other way round.
             Rectangle count = _rCount;
             if (_resetBtn.Visible)
                 count.Width = Math.Max(0, Math.Min(count.Width, _resetBtn.Left - count.X));
@@ -1560,9 +1593,9 @@ namespace AbletonManager
                 TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.SingleLine |
                 TextFormatFlags.NoPrefix | TextFormatFlags.EndEllipsis);
 
-            // Над окном держат папку — обводим его, чтобы было видно, что бросать
-            // можно сюда. Обычным светлым, не акцентом — тот же принцип, что и у
-            // выделения строки/плитки.
+            // A folder is being held over the window — we outline it so that it is visible that
+            // this is where it can be dropped. In ordinary light rather than the accent — the
+            // same principle as with the row/tile selection.
             if (_dragOverWindow)
             {
                 RectangleF edge = new RectangleF(1.5f, 1.5f, ClientSize.Width - 3f, ClientSize.Height - 3f);
@@ -1571,13 +1604,13 @@ namespace AbletonManager
                     g.DrawPath(pen, ep);
             }
 
-            // Транспорт рисуется везде, где он разложен, — включая вкладку плагинов.
+            // The transport is drawn everywhere it is laid out — the plugins tab included.
             bool showTransport = _player != null && !_player.IsDisposed;
 
             if (showTransport)
             {
-                // Строго по верху коробки: прямоугольники уже разведены так, чтобы
-                // время и имя трека сели на одну базовую линию (см. LayoutAll).
+                // Strictly by the top of the box: the rectangles have already been spread so
+                // that the time and the track name sit on one baseline (see LayoutAll).
                 TextFormatFlags tfL = TextFormatFlags.Left | TextFormatFlags.Top | TextFormatFlags.SingleLine | TextFormatFlags.NoPrefix;
                 TextFormatFlags tfR = TextFormatFlags.Right | TextFormatFlags.Top | TextFormatFlags.SingleLine | TextFormatFlags.NoPrefix;
                 TextFormatFlags tfC = TextFormatFlags.HorizontalCenter | TextFormatFlags.Top | TextFormatFlags.SingleLine | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix;
@@ -1587,7 +1620,7 @@ namespace AbletonManager
                 if (!string.IsNullOrEmpty(_playerTimeRightStr) && !_rPlayerTimeRight.IsEmpty)
                     Chrome.DrawText(g, _playerTimeRightStr, Theme.FMini, _rPlayerTimeRight, Theme.TextDim, tfR);
 
-                // Имя трека (файла) над прогресс-баром
+                // The track (file) name above the progress bar
                 string trackName = (_player != null && !_player.IsDisposed) ? _player.CurrentFileName : "";
                 if (!string.IsNullOrEmpty(trackName) && !_rPlayerTrack.IsEmpty)
                     Chrome.DrawText(g, trackName, Theme.FTitle, _rPlayerTrack, Theme.Text, tfC);
@@ -1621,9 +1654,9 @@ namespace AbletonManager
             }
         }
 
-        /// <summary>Кнопка сброса встаёт вплотную за счётчиком, поэтому её место зависит
-        /// от ширины уже готового текста — считаем отдельно от общей раскладки и заново
-        /// после каждой пересборки, когда число могло измениться.</summary>
+        /// <summary>The reset button stands flush behind the counter, so its place depends on
+        /// the width of the finished text — we compute it separately from the general layout
+        /// and anew after every rebuild, when the number may have changed.</summary>
         void LayoutReset()
         {
             bool on = Filtering && !_scanning;
@@ -1632,13 +1665,14 @@ namespace AbletonManager
 
             int icon = Sc(Theme.IconSize);
             int w = TextRenderer.MeasureText(CountLabel(CountRoom()), Theme.FButton).Width;
-            // Полоса под счётчик кончается там, где начинаются кнопки панели: без
-            // упора кнопка сброса на узком окне уезжала прямо на них.
+            // The strip for the counter ends where the panel buttons begin: without a stop the
+            // reset button drove straight onto them on a narrow window.
             int x = Math.Min(_rCount.X + w + Sc(6), Math.Max(_rCount.X, _rCount.Right - icon));
             _resetBtn.SetBounds(x, _rCount.Y + (_rCount.Height - icon) / 2, icon, icon);
         }
 
-        /// <summary>Сколько места остаётся счётчику: полоса минус кнопка сброса, если она есть.</summary>
+        /// <summary>How much room is left for the counter: the strip minus the reset button, if
+        /// there is one.</summary>
         int CountRoom()
         {
             bool on = Filtering && !_scanning;
@@ -1646,9 +1680,9 @@ namespace AbletonManager
         }
 
         /// <summary>
-        /// Подпись счётчика под отведённую ширину. Не влезла целиком — убираем слово
-        /// «shown»: обрезанное «368 / 5…» читается как совсем другое число, а короткое
-        /// «368 / 599» — как то же самое.
+        /// The counter caption for the allotted width. If it does not fit whole we drop the
+        /// word "shown": a clipped "368 / 5…" reads as a completely different number, while a
+        /// short "368 / 599" reads as the same one.
         /// </summary>
         string CountLabel(int room)
         {
@@ -1662,15 +1696,15 @@ namespace AbletonManager
         string CountText()
         {
             if (_scanning)
-                // Пока корни только обходятся, общее число ещё неизвестно (total = 0), и
-                // «0 / 0» тут врало: на большой папке это единственное, что видно
-                // секундами, и читается как «программа ничего не делает».
+                // While the roots are still being walked the total is not yet known (total =
+                // 0), and "0 / 0" lied here: on a big folder that is the only thing visible for
+                // seconds, and it reads as "the program is doing nothing".
                 return _scanTotal > 0
                      ? "Scanning " + _scanDone + " / " + _scanTotal
                      : "Looking for sets… " + _scanDone;
-            // VisibleCount, а не VisibleSets().Count: счётчик рисуется на каждой
-            // перерисовке окна (при открытом плеере — двадцать раз в секунду), и строить
-            // ради него список сетов незачем.
+            // VisibleCount rather than VisibleSets().Count: the counter is drawn on every
+            // repaint of the window (twenty times a second with the player open), and building
+            // a list of sets for it would be pointless.
             int n = (Tiles)
                   ? _home.VisibleCount : _list.Rows.Count;
             return Filtering ? n + " / " + _total + " shown" : n + " shown";
@@ -1681,19 +1715,19 @@ namespace AbletonManager
             return _status.Length > 0 ? _status : "";
         }
 
-        // ------------------------------------------------------------ содержимое
+        // ------------------------------------------------------------------ content
 
         void Refill() { Refill(true); }
 
         /// <summary>
-        /// Пересборка после сканирования, которое человек не заказывал. Обычный Refill
-        /// строит список заново, а SetRows при этом всегда сбрасывает и выделение, и
-        /// прокрутку — то есть самопроизвольное обновление выдёргивало бы читающего в
-        /// начало каталога и снимало выбор посреди работы. Здесь и то, и другое
-        /// возвращается на место, а строки не влетают снизу заново.
+        /// A rebuild after a scan the person did not order. An ordinary Refill builds the list
+        /// anew, and SetRows always resets both the selection and the scroll along with it —
+        /// that is, a spontaneous refresh would yank a reader back to the top of the catalog
+        /// and clear their choice in the middle of their work. Here both are put back, and the
+        /// rows do not fly in from below again.
         ///
-        /// Сет ищем по пути, а не по ссылке: после пересканирования объекты в каталоге
-        /// другие, даже если файл на диске тот же самый.
+        /// We look the set up by path rather than by reference: after a rescan the objects in
+        /// the catalog are different even when the file on disk is the same.
         /// </summary>
         void RefillPreservingView()
         {
@@ -1723,17 +1757,17 @@ namespace AbletonManager
                 }
             }
 
-            // Строго после SelectRow: тот подкручивает список к найденной строке.
+            // Strictly after SelectRow: that one nudges the list to the row it found.
             _list.ScrollOffset = scroll;
             _list.ScrollOffsetX = scrollX;
         }
 
         /// <summary>
-        /// animate=false — пересобрать содержимое, не запуская появление строк и плиток
-        /// заново. Так пересобирается только набор в поиске: там Refill идёт на каждую
-        /// букву, и список всё время влетал снизу вместо того, чтобы отфильтроваться.
-        /// Все остальные поводы (скан закончился, сменили вкладку или вид, применили
-        /// фильтры, переставили колонки) появление показывают, как и раньше.
+        /// animate=false — rebuild the content without starting the entrance of the rows and
+        /// tiles again. Only typing in the search rebuilds that way: there Refill runs on every
+        /// letter, and the list kept flying in from below instead of being filtered. Every
+        /// other occasion (a scan finished, a tab or view switched, filters applied, columns
+        /// reordered) still shows the entrance as before.
         /// </summary>
         void Refill(bool animate)
         {
@@ -1762,7 +1796,7 @@ namespace AbletonManager
 
         void FillSets(bool animate)
         {
-            // Видимые колонки — в том порядке, в каком их расставил пользователь.
+            // The visible columns, in the order the user arranged them in.
             _setVisible = new List<ColDef>();
             foreach (string id in _setOrder)
             {
@@ -1774,7 +1808,7 @@ namespace AbletonManager
             for (int i = 0; i < _setVisible.Count; i++)
             {
                 ColDef d = _setVisible[i];
-                int w = d.Width;                                  // логическая ширина
+                int w = d.Width;                                  // the logical width
                 int ov;
                 if (d.Width != 0 && _setColW.TryGetValue(d.Id, out ov) && ov > 0) w = ov;
                 cols[i] = new Column(d.En, w)
@@ -1788,7 +1822,8 @@ namespace AbletonManager
             _list.Playing = _home.Playing = _player != null && !_player.IsDisposed && _player.IsPlaying;
             _list.SetColumns(cols);
 
-            // Индекс сортируемой колонки для стрелки в шапке (или -1, если её спрятали).
+            // The index of the sorted column for the arrow in the header (or -1 if it has been
+            // hidden).
             int si = -1;
             if (_setSortId != null)
                 for (int i = 0; i < _setVisible.Count; i++)
@@ -1805,9 +1840,9 @@ namespace AbletonManager
                 if (q.Length > 0 && !MatchesSet(s, q)) continue;
                 matched.Add(s);
             }
-            // Спрятанные версии запоминаем ДО схлопывания: после него список голов уже
-            // не помнит, кого он под собой держит, а «показать остальные» должно
-            // показывать ровно то, что прошло текущий отбор, — не всю папку с диска.
+            // We remember the hidden versions BEFORE collapsing: afterwards the list of heads
+            // no longer remembers whom it is holding under itself, and "show the rest" has to
+            // show exactly what passed the current filter — not the whole folder from disk.
             Dictionary<string, List<SetEntry>> hidden = null;
             if (_settings.GroupByFolder)
             {
@@ -1829,11 +1864,11 @@ namespace AbletonManager
             }
             else
             {
-                // CollapsedCount живёт на самом SetEntry и сбрасывается только внутри
-                // CollapseByFolder — сканирование его не трогает. Группировку могли
-                // выключить уже ПОСЛЕ того, как она однажды посчитала «+N»: без сброса
-                // здесь эта надпись осталась бы висеть на каждой строке даже сейчас,
-                // когда версии больше не схлопываются и каждая показана отдельно.
+                // CollapsedCount lives on the SetEntry itself and is reset only inside
+                // CollapseByFolder — scanning does not touch it. The grouping may have been
+                // switched off AFTER it once counted a "+N": without the reset here that
+                // caption would have stayed hanging on every row even now, when the versions
+                // are no longer collapsed and each is shown separately.
                 foreach (SetEntry s in matched) s.CollapsedCount = 0;
             }
 
@@ -1844,14 +1879,14 @@ namespace AbletonManager
             if (chosen == null)
                 order = delegate (SetEntry a, SetEntry b) { return b.Modified.CompareTo(a.Modified); };
             else if (_sortDesc)
-                // Разворачиваем сравнение, а не список после сортировки: с закреплёнными
-                // сверху Reverse перевернул бы заодно и сами группы местами.
+                // We reverse the comparison rather than the list after sorting: with the pinned
+                // on top, Reverse would have turned the groups themselves around as well.
                 order = delegate (SetEntry a, SetEntry b) { return chosen(b, a); };
             else
                 order = chosen;
 
-            // Закреплённые вперёд — но только как первый ключ сортировки: внутри своей
-            // группы они упорядочены ровно так же, как и все остальные.
+            // Pinned first — but only as the first sort key: within their own group they are
+            // ordered exactly as everything else is.
             HashSet<string> pins = null;
             if (_settings.PinnedFirst)
             {
@@ -1880,15 +1915,16 @@ namespace AbletonManager
                 List<SetEntry> kids;
                 if (!hidden.TryGetValue(dir, out kids)) continue;
 
-                // Внутри проекта версии всегда свежими вверх, независимо от того, как
-                // отсортирован сам каталог: это уже не список проектов, а история одного.
+                // Within a project the versions always go newest first, regardless of how the
+                // catalog itself is sorted: this is no longer a list of projects but the
+                // history of one.
                 kids.Sort(delegate (SetEntry a, SetEntry b) { return b.Modified.CompareTo(a.Modified); });
                 foreach (SetEntry k in kids) rows.Add(RowFor(k, pIdx, fIdx, false, true));
             }
             _list.SetRows(rows, animate);
 
-            // Разделитель — ровно там, где кончились закреплённые. Ни линии без группы,
-            // ни линии в самом низу, когда незакреплённых не осталось.
+            // The divider is exactly where the pinned ones ended. No line where there is no
+            // group, and no line right at the bottom when there are no unpinned ones left.
             OnSelectionChanged();
         }
 
@@ -1899,16 +1935,16 @@ namespace AbletonManager
         }
 
         /// <summary>
-        /// Одна строка каталога.
+        /// One row of the catalog.
         ///
-        /// expanded — эта папка сейчас раскрыта, и хвостик «+3» надо показать минусом:
-        /// знак и есть единственное, чем раскрытая группа отличается от схлопнутой,
-        /// поэтому меняем его прямо в готовой ячейке — сам Catalog о раскрытии не знает
-        /// и знать не должен, он статический.
+        /// expanded — this folder is currently expanded and the "+3" tail has to be shown as a
+        /// minus: the sign is the only thing an expanded group differs from a collapsed one by,
+        /// so we change it right in the finished cell — Catalog itself knows nothing about
+        /// expansion and should not, it is static.
         ///
-        /// childRow — это одна из версий, показанных под раскрытой строкой, а не сам
-        /// проект. RowListView отступает её имя, чтобы вложенность была видна даже без
-        /// подсветки группы, — см. RowData.ChildRow.
+        /// childRow — this is one of the versions shown under an expanded row rather than the
+        /// project itself. RowListView indents its name so the nesting is visible even without
+        /// the group being highlighted — see RowData.ChildRow.
         /// </summary>
         RowData RowFor(SetEntry s, int pIdx, int fIdx, bool expanded, bool childRow)
         {
@@ -1930,14 +1966,15 @@ namespace AbletonManager
             r.Cells = cells;
             r.ChildRow = childRow;
             r.Tag = s;
-            // У версий под раскрытой строкой кнопку прослушивания не показываем: играет
-            // всегда рендер главной версии проекта (см. RenderScan.Find — он смотрит
-            // на папку целиком, а не на конкретный .als), так что play у каждой версии
-            // играл бы один и тот же файл — кнопка без разницы в результате только сбивала бы с толку.
+            // We do not show the listen button on versions under an expanded row: what plays is
+            // always the render of the project's principal version (see RenderScan.Find — it
+            // looks at the folder as a whole rather than at a particular .als), so play on each
+            // version would play one and the same file — a button with no difference in the
+            // result would only confuse.
             r.CanPlay = s.HasRenders && !childRow;
             r.Pinned = HomeStore.IsPinned(s.Path);
 
-            // Отметки ставим только если их колонки сейчас видно.
+            // We set the marks only if their columns are currently visible.
             if (pIdx >= 0 && s.Plugins.Length > 0)
                 r.Marks.Add(new CellMark(pIdx, s.MissingPlugins > 0 ? Theme.Red : Theme.Green,
                                          s.MissingPlugins == 0 ? "" : s.MissingPlugins + " "));
@@ -1955,13 +1992,14 @@ namespace AbletonManager
         }
 
         /// <summary>
-        /// Папки, чьи спрятанные версии сейчас показаны под своей строкой. Живёт только
-        /// в памяти: раскрытие — это «посмотреть, что там», а не настройка, и тащить его
-        /// через перезапуск незачем.
+        /// The folders whose hidden versions are currently shown under their row. It lives in
+        /// memory only: expanding is "let me see what is in there" rather than a setting, and
+        /// there is no reason to carry it through a restart.
         /// </summary>
         readonly HashSet<string> _expandedDirs = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
-        /// <summary>Щёлкнули по «+3» — показать или снова спрятать версии этой папки.</summary>
+        /// <summary>"+3" was clicked — show this folder's versions or hide them
+        /// again.</summary>
         void OnRowCountClicked(int idx)
         {
             if (!SetsDomain) return;
@@ -1972,8 +2010,8 @@ namespace AbletonManager
             string dir = s.Directory ?? "";
             if (!_expandedDirs.Remove(dir)) _expandedDirs.Add(dir);
 
-            // Без анимации появления: раскрылась одна группа, а влетал бы снизу весь
-            // каталог целиком — как будто список построили заново.
+            // No entrance animation: one group was expanded, while the whole catalog would fly
+            // in from below — as though the list had been built anew.
             SetEntry keep = SelectedSet();
             int scroll = _list.ScrollOffset;
             int scrollX = _list.ScrollOffsetX;
@@ -2041,10 +2079,10 @@ namespace AbletonManager
                 matched.Add(st);
             }
 
-            // PluginUsage() уже отдаёт разумный порядок по умолчанию (по числу сетов, потом
-            // по имени) — трогаем его, только если пользователь явно кликнул по заголовку.
-            // Сортируем по id колонки, а не по её номеру: колонки теперь и переставляются,
-            // и прячутся, так что номер сам по себе ничего не значит.
+            // PluginUsage() already gives a sensible default order (by the number of sets, then
+            // by name) — we touch it only if the user explicitly clicked a heading. We sort by
+            // column id rather than by its number: columns are now both reordered and hidden,
+            // so a number on its own means nothing.
             if (_pluginSortId != null)
             {
                 PluginColDef d = FindPluginCol(_pluginSortId);
@@ -2068,8 +2106,8 @@ namespace AbletonManager
                 r.Cells = cells;
                 r.Tag = st;
 
-                // Отметку ставим, только если колонку состояния сейчас видно:
-                // три состояния — Installed (✔️), not installed (❌), other format.
+                // We set the mark only if the state column is currently visible: three states —
+                // Installed (✔️), not installed (❌), other format.
                 if (stIdx >= 0)
                 {
                     if (st.Match == MatchKind.Missing || (st.Installed != null && st.Installed.FileMissing))
@@ -2091,7 +2129,7 @@ namespace AbletonManager
             return -1;
         }
 
-        /// <summary>Отбор по выбранной карточке сводки.</summary>
+        /// <summary>Filtering by the selected summary card.</summary>
         bool PassesView(PluginStat st)
         {
             switch (_pluginView)
@@ -2113,8 +2151,8 @@ namespace AbletonManager
         }
 
         /// <summary>
-        /// Версии сравниваются по числам, а не как строки: посимвольно «12.4.3» оказывается
-        /// меньше «9.7.2», потому что '1' идёт раньше '9'.
+        /// Versions are compared as numbers rather than as strings: character by character
+        /// "12.4.3" comes out less than "9.7.2", because '1' comes before '9'.
         /// </summary>
         static int CompareVersion(string a, string b)
         {
@@ -2129,7 +2167,7 @@ namespace AbletonManager
             return string.Compare(a, b, StringComparison.OrdinalIgnoreCase);
         }
 
-        /// <summary>Ведущие цифры фрагмента версии: «6b3» -> 6, пустое -> 0.</summary>
+        /// <summary>The leading digits of a version fragment: "6b3" -> 6, empty -> 0.</summary>
         static int Num(string s)
         {
             int v = 0, i = 0;
@@ -2138,9 +2176,9 @@ namespace AbletonManager
         }
 
         /// <summary>
-        /// Сортировка по id колонки, а не по её номеру, в обеих таблицах: набор и
-        /// порядок колонок подвижны, и индекс сам по себе между перерисовками ничего
-        /// не значит.
+        /// Sorting by column id rather than by its number, in both tables: the set and the
+        /// order of the columns are movable, and an index on its own means nothing between
+        /// repaints.
         /// </summary>
         void OnHeaderClicked(int column)
         {
@@ -2157,7 +2195,7 @@ namespace AbletonManager
                 string id = _setVisible[column].Id;
                 if (_setSortId == id) _sortDesc = !_sortDesc;
                 else { _setSortId = id; _sortDesc = false; }
-                Refill(false);     // FillSets проставит _list.SortColumn/Descending
+                Refill(false);     // FillSets will set _list.SortColumn/Descending
                 if (keepSetPath != null)
                 {
                     _list.SelectRow(delegate (RowData r)
@@ -2173,7 +2211,7 @@ namespace AbletonManager
                 string pid = _pluginVisible[column].Id;
                 if (_pluginSortId == pid) _sortDesc = !_sortDesc;
                 else { _pluginSortId = pid; _sortDesc = false; }
-                Refill(false);         // FillPlugins проставит _list.SortColumn/Descending
+                Refill(false);         // FillPlugins will set _list.SortColumn/Descending
                 if (keepPluginName != null)
                 {
                     _list.SelectRow(delegate (RowData r)
@@ -2188,24 +2226,24 @@ namespace AbletonManager
             _list.ScrollOffsetX = scrollX;
         }
 
-        // ------------------------------------------------------- меню колонок
+        // ------------------------------------------------------- the column menu
 
         /// <summary>
-        /// Меню колонок по правой кнопке — одно и то же для обеих таблиц: набор колонок,
-        /// сброс по умолчанию, а у сетов ещё и группировка по папкам. Раньше меню было
-        /// только у сетов, и таблица плагинов оставалась намертво зашитой.
+        /// The column menu on the right button — one and the same for both tables: the set of
+        /// columns, a reset to the defaults, and for sets the grouping by folders as well. The
+        /// menu used to be on sets only, and the plugins table stayed hard-wired.
         /// </summary>
         void OnHeaderRightClick(Point pt)
         {
             bool sets = SetsDomain;
 
             ContextMenuStrip menu = DarkMenu.Create();
-            menu.ShowCheckMargin = true;   // видно, какие колонки уже включены — как в проводнике
+            menu.ShowCheckMargin = true;   // it is visible which columns are already on — as in Explorer
 
             if (sets)
             {
-                // Группировка живёт здесь же: это про то, что показывает список, ровно как
-                // и набор колонок, и другого места для неё в интерфейсе нет.
+                // The grouping lives here too: it is about what the list shows, exactly as the
+                // set of columns is, and there is no other place for it in the interface.
                 ToolStripMenuItem group = new ToolStripMenuItem(
                     "One row per folder");
                 group.Checked = _settings.GroupByFolder;
@@ -2221,9 +2259,10 @@ namespace AbletonManager
                 menu.Items.Add(new ToolStripSeparator());
             }
 
-            // Клик по пункту — это переключатель, не команда «сделал и уйди»: не закрываем
-            // меню, чтобы можно было проставить сразу несколько галочек подряд. Закрывается
-            // как обычно — кликом мимо или Esc (это уже не ItemClicked, а другая причина).
+            // A click on an item is a toggle rather than a "do it and go" command: we do not
+            // close the menu, so that several boxes can be ticked in a row. It closes as usual
+            // — with a click outside or Esc (which is no longer ItemClicked but another
+            // reason).
             menu.Closing += delegate (object s, ToolStripDropDownClosingEventArgs e)
             {
                 if (e.CloseReason == ToolStripDropDownCloseReason.ItemClicked) e.Cancel = true;
@@ -2232,9 +2271,9 @@ namespace AbletonManager
             List<string> order = sets ? _setOrder : _pluginOrder;
             string mandatory = sets ? "Set" : "Plugin";
 
-            // Пункты — в каноническом порядке каталога, а не в пользовательском: меню
-            // это перечень того, что вообще бывает, и переставлять его вслед за таблицей
-            // значило бы каждый раз искать нужную строчку на новом месте.
+            // The items are in the catalog's canonical order rather than the user's: the menu
+            // is a list of what there is at all, and reordering it after the table would mean
+            // hunting for the right line in a new place every time.
             List<string> ids = new List<string>();
             List<string> titles = new List<string>();
             if (sets)
@@ -2247,7 +2286,7 @@ namespace AbletonManager
             {
                 ToolStripMenuItem mi = new ToolStripMenuItem(titles[i]);
                 mi.Checked = HasCol(order, ids[i]);
-                if (ids[i] == mandatory) mi.Enabled = false;   // главную колонку убрать нельзя
+                if (ids[i] == mandatory) mi.Enabled = false;   // the principal column cannot be removed
                 else
                 {
                     string id = ids[i];
@@ -2287,9 +2326,9 @@ namespace AbletonManager
                     if (string.Equals(order[i], id, StringComparison.OrdinalIgnoreCase))
                     { order.RemoveAt(i); break; }
             }
-            // Включённая колонка встаёт на своё место в каталоге, а не в конец: иначе
-            // таблица читается совсем не в том порядке, что меню, из которого её только
-            // что собрали. Перетащить заголовок потом по-прежнему можно.
+            // A column switched on takes its own place in the catalog rather than going to the
+            // end: otherwise the table reads in a completely different order from the menu it
+            // was just assembled from. The heading can still be dragged afterwards.
             else
             {
                 int pos = CatalogPos(sets, id), at = order.Count;
@@ -2298,7 +2337,7 @@ namespace AbletonManager
                 order.Insert(at, id);
             }
 
-            // Сортировка могла стоять по спрятанной колонке — вернёмся к порядку по умолчанию.
+            // The sort may have been on a hidden column — we go back to the default order.
             if (sets) { if (_setSortId != null && !HasCol(order, _setSortId)) _setSortId = null; }
             else { if (_pluginSortId != null && !HasCol(order, _pluginSortId)) _pluginSortId = null; }
 
@@ -2336,8 +2375,8 @@ namespace AbletonManager
         }
 
         /// <summary>
-        /// Заголовок перетащили на новое место. Переставляем id в пользовательском
-        /// порядке — он и есть то, что рисует таблица и что уезжает в настройки.
+        /// A heading was dragged to a new place. We move the id within the user order — that is
+        /// what the table draws and what goes into the settings.
         /// </summary>
         void OnColumnsReordered(int from, int to)
         {
@@ -2346,18 +2385,18 @@ namespace AbletonManager
 
             string moved = order[from];
             order.RemoveAt(from);
-            if (to > from) to--;                 // после изъятия всё, что правее, съехало
+            if (to > from) to--;                 // after the removal everything to the right has shifted
             if (to > order.Count) to = order.Count;
             order.Insert(to, moved);
             SaveColumns();
 
-            // Строки не изменились — переехала только колонка, поэтому выделение и
-            // прокрутку возвращаем прямо по номеру строки, без поиска. Без этого
-            // перестановка колонки стоила бы выбранного проекта и места в списке.
+            // The rows have not changed — only a column moved, so we put the selection and the
+            // scroll back straight by row number, with no search. Without this, moving a column
+            // would cost the selected project and one's place in the list.
             int sel = _list.SelectedIndex;
             int scroll = _list.ScrollOffset;
             int scrollX = _list.ScrollOffsetX;
-            Refill(false);                        // строки те же — влетать снизу им незачем
+            Refill(false);                        // the rows are the same — there is no reason for them to fly in from below
             _list.SelectIndex(sel);
             _list.ScrollOffset = scroll;
             _list.ScrollOffsetX = scrollX;
@@ -2371,14 +2410,14 @@ namespace AbletonManager
             foreach (string p in s.Plugins)
                 if (p.IndexOf(q, StringComparison.CurrentCultureIgnoreCase) >= 0) return true;
 
-            // Рендер — то же самое «имя проекта» для человека, который ищет по звуку,
-            // а не по названию сета. Выборка та же, что у предпрослушки (без Samples),
-            // см. RenderNames.
+            // A render is the same "project name" for somebody searching by sound rather than
+            // by a set's name. The selection is the same as the preview uses (without Samples),
+            // see RenderNames.
             foreach (string r in s.RenderNames)
                 if (r.IndexOf(q, StringComparison.CurrentCultureIgnoreCase) >= 0) return true;
 
-            // Свои теги и заметки — тоже поиск: иначе метка, которую человек поставил
-            // руками, была бы видна только глазами в панели справа.
+            // One's own tags and notes are search material too: otherwise a label put on by
+            // hand would be visible only to the eye in the panel on the right.
             foreach (string tag in ProjectMeta.TagsOf(s.ProjectDir))
                 if (tag.IndexOf(q, StringComparison.CurrentCultureIgnoreCase) >= 0) return true;
             if (ProjectMeta.NoteOf(s.ProjectDir).IndexOf(q, StringComparison.CurrentCultureIgnoreCase) >= 0)
@@ -2421,15 +2460,16 @@ namespace AbletonManager
 
         void ActivateSelected()
         {
-            // По плагину активировать нечего: раньше двойной клик утаскивал на вкладку
-            // Sets с фильтром по этому плагину — неожиданный прыжок вместо действия над
-            // тем, по чему ткнули. Сеты плагина и так перечислены в панели сведений.
+            // There is nothing to activate on a plugin: a double click used to carry one off to
+            // the Sets tab filtered by that plugin — an unexpected jump instead of an action on
+            // what was clicked. A plugin's sets are listed in the details panel as it is.
             if (!SetsDomain) return;
             OpenSelected();
         }
 
-        /// <summary>Клик по сету в списке «Sets» у плагина или «Show Details» на главной —
-        /// переход к нему на вкладке Sets в табличный вид с открытием панели деталей.</summary>
+        /// <summary>A click on a set in a plugin's "Sets" list or on "Show Details" on the home
+        /// page — a jump to it on the Sets tab in table view, with the details panel
+        /// opened.</summary>
         void OnSetRequested(SetEntry set)
         {
             if (set == null) return;
@@ -2437,16 +2477,16 @@ namespace AbletonManager
             _mode.SelectedIndex = ModeSets;
             _list.SelectRow(delegate (RowData r) { return ReferenceEquals(r.Tag, set); });
 
-            // Версия, спрятанная под схлопнутой строкой, своей строки в списке не имеет —
-            // SelectRow её не найдёт. Показываем её прямо в панели: клик по версии
-            // должен показать версию, а не молча ничего не сделать.
+            // A version hidden under a collapsed row has no row of its own in the list —
+            // SelectRow will not find it. We show it straight in the panel: a click on a
+            // version has to show the version rather than silently do nothing.
             RowData sel = _list.Selected;
             if (sel == null || !ReferenceEquals(sel.Tag, set)) _detail.Show(set);
         }
 
-        /// <summary>Клик по плагину в списке «Plugins» у сета — обратный переход,
-        /// к самому плагину на вкладке Plugins. Ряды там пересобираются каждый Refill,
-        /// поэтому ищем по имени, а не по ссылке на объект.</summary>
+        /// <summary>A click on a plugin in a set's "Plugins" list — the reverse jump, to the
+        /// plugin itself on the Plugins tab. The rows there are rebuilt on every Refill, so we
+        /// look it up by name rather than by object reference.</summary>
         void OnPluginRequested(string pluginName)
         {
             if (string.IsNullOrEmpty(pluginName)) return;
@@ -2481,7 +2521,8 @@ namespace AbletonManager
                 UpdateFiltersButton();
             }
 
-            // Смена вкладки сама перестроит список; если уже на ней — перестроим тут.
+            // Changing the tab will rebuild the list itself; if we are already on it, we
+            // rebuild here.
             bool tabChanged = !TableView;
             _mode.SelectedIndex = ModeSets;
             if (!tabChanged) Refill();
@@ -2526,7 +2567,7 @@ namespace AbletonManager
             try { SetForegroundWindow(Handle); } catch { }
         }
 
-        // ------------------------------------------------------------ действия
+        // ------------------------------------------------------------------ actions
 
         SetEntry SelectedSet()
         {
@@ -2537,15 +2578,15 @@ namespace AbletonManager
         }
 
         /// <summary>
-        /// Возврат на вкладку Sets (например, с Plugins, куда увёл клик по плагину в
-        /// панели сведений) пересобирает список и снимает выделение — здесь находим по
-        /// пути тот же сет и выделяем его заново. Тихо ничего не делает, если сета с
-        /// таким путём сейчас не видно — например, его исключил фильтр.
+        /// Returning to the Sets tab (from Plugins, say, where a click on a plugin in the
+        /// details panel took us) rebuilds the list and clears the selection — here we find the
+        /// same set by path and select it again. It quietly does nothing if a set with that
+        /// path is not visible right now — excluded by a filter, for instance.
         /// </summary>
         /// <summary>
-        /// Звёздочку переключили — на плитках или в шапке таблицы, неважно. Настройка
-        /// одна на оба вида, и второй вид обязан узнать об этом сразу, а не при
-        /// следующем заходе.
+        /// The star was toggled — on the tiles or in the table header, it makes no difference.
+        /// The setting is one for both views, and the other view has to learn of it at once
+        /// rather than on the next visit.
         /// </summary>
         void PinnedFirstChanged(bool on)
         {
@@ -2553,8 +2594,8 @@ namespace AbletonManager
             _settings.Save();
             _list.PinnedFirst = on;
             _home.PinnedFirst = on;
-            // Плитки не пересобираем заново, а переставляем: закреплённые уезжают
-            // наверх на глазах, и видно, что именно поменялось.
+            // We do not rebuild the tiles anew but move them: the pinned ones travel upwards
+            // before one's eyes, and it is visible what exactly changed.
             if (Tiles) _home.RebuildTransition(); else Refill();
         }
 
@@ -2580,20 +2621,20 @@ namespace AbletonManager
         }
 
         /// <summary>
-        /// Кубик рядом с переключателем вида — выбирает случайный сет из того же
-        /// набора, что сейчас на экране (с учётом фильтров и поиска), и не трогает
-        /// сам вид: плитки остаются плитками, список — списком.
+        /// The die next to the view switch — it picks a random set out of the same set of them
+        /// as is on screen right now (filters and search included) and does not touch the view
+        /// itself: the tiles stay tiles and the list stays a list.
         /// </summary>
         /// <summary>
-        /// Кубик показывает новую грань на каждый бросок. Повтор выбрасываем: одна и та
-        /// же грань дважды подряд читается как «кнопка не сработала», а не как честный
-        /// случай — за проворотом значка должна быть видна перемена.
+        /// The die shows a new face on every throw. We throw out a repeat: the same face twice
+        /// in a row reads as "the button did not work" rather than as honest chance — behind
+        /// the glyph's spin there has to be a visible change.
         /// </summary>
         void RollDiceFace()
         {
             int cur = _dice.Icon - Glyph.Dice1;
             int next = _rng.Next(5);
-            if (next >= cur) next++;          // 0..5 без текущей грани
+            if (next >= cur) next++;          // 0..5 without the current face
             _dice.Icon = Glyph.Dice1 + next;
         }
 
@@ -2632,7 +2673,8 @@ namespace AbletonManager
             RescueSet(SelectedSet());
         }
 
-        /// <summary>Открыть конкретный сет в Live — общее для списка и плиток главной.</summary>
+        /// <summary>Open a specific set in Live — shared by the list and the home
+        /// tiles.</summary>
         void OpenSet(SetEntry s)
         {
             if (s == null) return;
@@ -2644,15 +2686,16 @@ namespace AbletonManager
             try
             {
                 Process.Start(new ProcessStartInfo(s.Path) { UseShellExecute = true });
-                // Live поднимается не сразу — то же самое «кнопка как будто не сработала»,
-                // что и у запуска пустой Live, только тут ещё и не сразу ясно, ТОТ ли
-                // именно сет открывается: имя сохраняет и в заголовке двойных строк.
+                // Live does not come up at once — the same "as though the button did not work"
+                // as with starting an empty Live, only here it is also not immediately clear
+                // WHICH set is opening: it keeps the name in the title bar of its splash lines
+                // too.
                 Notify("Opening “" + s.Name + ".als”…");
             }
             catch (Exception ex) { Status("Could not open: " + ex.Message); }
         }
 
-        /// <summary>Показать сет в проводнике — общее для списка и плиток главной.</summary>
+        /// <summary>Show a set in Explorer — shared by the list and the home tiles.</summary>
         void RevealSet(SetEntry s)
         {
             if (s == null) return;
@@ -2665,8 +2708,9 @@ namespace AbletonManager
         }
 
         /// <summary>
-        /// Помощник по восстановлению: сет не открывается, и надо выяснить, какой плагин
-        /// его роняет. Оригинал он не трогает — работает на пробных копиях, см. RescueDialog.
+        /// The rescue helper: a set will not open and it has to be worked out which plugin is
+        /// bringing it down. It does not touch the original — it works on probe copies, see
+        /// RescueDialog.
         /// </summary>
         void RescueSet(SetEntry s)
         {
@@ -2692,8 +2736,8 @@ namespace AbletonManager
         }
 
         /// <summary>
-        /// Собрать проект: все нужные ему медиафайлы в одну папку рядом с ним, плюс копия
-        /// сета с переписанными путями. Оригинал не трогается — см. CollectAll.
+        /// Collect a project: every media file it needs into one folder beside it, plus a copy
+        /// of the set with the paths rewritten. The original is not touched — see CollectAll.
         /// </summary>
         void CollectSet(SetEntry s)
         {
@@ -2714,13 +2758,14 @@ namespace AbletonManager
                                         Path.GetFileName(d.Produced), d.Failed)
                         : "Exported to " + Path.GetFileName(d.Produced));
 
-                    // Не открывать проводник на наполовину собранной папке: тост про
-                    // отказы уже отправил человека в журнал, а не смотреть на то, чего
-                    // там не хватает.
+                    // Do not open Explorer on a half-collected folder: the toast about the
+                    // failures has already sent the person to the log rather than to look at
+                    // what is missing there.
                     if (d.Failed == 0)
                     {
-                        // Архив показываем выделенным в его папке: открывать .zip как
-                        // папку — значит прятать то, что человек только что собрал.
+                        // We show the archive selected in its folder: opening a .zip as a
+                        // folder would mean hiding the very thing the person has just
+                        // collected.
                         string arg = File.Exists(d.Produced)
                             ? "/select,\"" + d.Produced + "\""
                             : "\"" + d.Produced + "\"";
@@ -2754,8 +2799,9 @@ namespace AbletonManager
         {
             using (FiltersDialog d = new FiltersDialog(_filter, _index.Sets, _versions))
             {
-                // Фильтры применяются на лету: пока окно открыто, список и счётчик
-                // «N shown» за ним меняются на глазах, а кнопка снизу просто закрывает.
+                // The filters apply live: while the window is open, the list and the "N shown"
+                // counter behind it change before one's eyes, and the button at the bottom
+                // simply closes.
                 d.Changed += delegate
                 {
                     _filter.CopyFrom(d.Result);
@@ -2774,8 +2820,8 @@ namespace AbletonManager
             List<PluginStat> all = _index.PluginUsage();
             using (PluginFiltersDialog d = new PluginFiltersDialog(_pluginFilterObj, all))
             {
-                // Фильтры применяются на лету: пока окно открыто, список плагинов
-                // за ним меняется на глазах, а кнопка снизу просто закрывает.
+                // The filters apply live: while the window is open, the plugin list behind it
+                // changes before one's eyes, and the button at the bottom simply closes.
                 d.Changed += delegate
                 {
                     _pluginFilterObj.CopyFrom(d.Result);
@@ -2789,9 +2835,10 @@ namespace AbletonManager
             }
         }
 
-        // --------------------------------------------------- клавиатура: навигация
+        // --------------------------------------------------- keyboard: navigation
 
-        /// <summary>Стрелка — на соседний сет. Список и плитки ходят по-разному.</summary>
+        /// <summary>An arrow moves to a neighbouring set. The list and the tiles walk
+        /// differently.</summary>
         bool MoveSelection(Keys k)
         {
             if (Tiles)
@@ -2813,10 +2860,11 @@ namespace AbletonManager
                 case Keys.PageUp: return _list.MoveSelection(-_list.PageStep);
                 case Keys.PageDown: return _list.MoveSelection(+_list.PageStep);
             }
-            return false;   // влево-вправо в списке водить некуда
+            return false;   // there is nowhere to go left and right in a list
         }
 
-        /// <summary>Клавиша вызова меню — то же меню, что по правой кнопке мыши.</summary>
+        /// <summary>The context menu key — the same menu as on the right mouse
+        /// button.</summary>
         void ShowMenuForSelection()
         {
             if (!SetsDomain) return;
@@ -2826,12 +2874,12 @@ namespace AbletonManager
             if (idx >= 0) OnListRowRightClick(idx, _list.RowMenuPoint(idx));
         }
 
-        // -------------------------------------------------- клавиатура: прослушка
+        // -------------------------------------------------- keyboard: listening
 
         /// <summary>
-        /// Пробел — предпрослушка рендера выбранного сета. Если выбран тот же сет, что
-        /// уже в плеере, это пауза/продолжить (за это отвечает PlayOrToggle); если
-        /// другой — плеер переезжает на него.
+        /// Space previews the render of the selected set. If the selected one is the same set
+        /// as is already in the player, this is pause/resume (PlayOrToggle sees to that); if it
+        /// is a different one, the player moves to it.
         /// </summary>
         void TogglePlaySelected()
         {
@@ -2840,8 +2888,9 @@ namespace AbletonManager
 
             if (s == null || !s.HasRenders)
             {
-                // Слушать у выбранного нечего — но если что-то уже играет, пробел
-                // логичнее понять как паузу, чем не сделать ничего.
+                // There is nothing to listen to on the selected one — but if something is
+                // already playing, it is more logical to read space as a pause than to do
+                // nothing.
                 if (player) { _player.PlayPause(); UpdatePlayerTransport(); }
                 else if (s != null)
                     Status("No renders next to this set");
@@ -2854,12 +2903,13 @@ namespace AbletonManager
         }
 
         /// <summary>
-        /// Медиаклавиши. «Следующий трек» здесь — следующий СЕТ в том плейлисте, что
-        /// сейчас на экране, а не следующий рендер внутри одного сета: между рендерами
-        /// одного проекта ходят кнопки в самом плеере.
+        /// The media keys. "Next track" here means the next SET in the playlist currently on
+        /// screen rather than the next render within one set: the buttons in the player itself
+        /// walk between the renders of one project.
         ///
-        /// false — команду не берём, и Windows отдаст её дальше, обычному плееру: когда
-        /// у нас ничего не играет, отбирать у человека паузу в Spotify незачем.
+        /// false — we do not take the command, and Windows passes it on to an ordinary player:
+        /// when nothing of ours is playing, there is no reason to take a person's pause in
+        /// Spotify away from them.
         /// </summary>
         bool HandleMedia(MediaKeys.Cmd cmd)
         {
@@ -2898,8 +2948,9 @@ namespace AbletonManager
         }
 
         /// <summary>
-        /// Теги и заметка проекта. Привязаны к папке, поэтому правка видна сразу всем
-        /// версиям сета из неё — и список надо пересобрать целиком, а не только строку.
+        /// A project's tags and note. They are bound to the folder, so an edit is immediately
+        /// visible to every version of the set in it — and the list has to be rebuilt whole
+        /// rather than just the row.
         /// </summary>
         void EditNotes(SetEntry s)
         {
@@ -2911,9 +2962,10 @@ namespace AbletonManager
                 int scrollX = _list.ScrollOffsetX;
                 Refill(false);
 
-                // Refill пересобирает список с нуля (SetRows всегда сбрасывает выделение —
-                // так и панель справа, и подсветка строки гаснут посреди правки её же
-                // тегов). Объект сета не меняется, поэтому просто выделяем его снова.
+                // Refill rebuilds the list from scratch (SetRows always resets the selection —
+                // so both the panel on the right and the row highlight go out in the middle of
+                // editing that very row's tags). The set object does not change, so we simply
+                // select it again.
                 if (Tiles) _home.Selected = s;
                 else
                 {
@@ -2938,9 +2990,9 @@ namespace AbletonManager
         }
 
         /// <summary>
-        /// Прослушивание рендера без запуска Live. Плеер один на всё приложение: второй
-        /// сет просто заезжает в то же окно, иначе после десятка нажатий экран будет
-        /// завален плеерами, играющими друг поверх друга.
+        /// Listening to a render without starting Live. The player is one for the whole
+        /// application: a second set simply drives into the same window, or after a dozen
+        /// presses the screen would be littered with players sounding over each other.
         /// </summary>
         void OnRowPlay(int idx)
         {
@@ -2949,8 +3001,8 @@ namespace AbletonManager
             SetEntry s = _list.Rows[idx].Tag as SetEntry;
             if (s == null) return;
 
-            // Плейлист — то, что сейчас видно в списке: следующий трек логично берётся
-            // из того же отбора, который человек перед собой видит.
+            // The playlist is what is currently visible in the list: the next track is
+            // logically taken from the same selection the person has in front of them.
             List<SetEntry> playlist = new List<SetEntry>();
             foreach (RowData row in _list.Rows)
             {
@@ -2961,11 +3013,10 @@ namespace AbletonManager
         }
 
         /// <summary>
-        /// Плитка главной: плейлистом берём то, что показано на главной, и в том же
-        /// порядке, в каком оно там лежит — то есть сперва закреплённые в порядке
-        /// закрепления, потом недавние. Раньше сюда уходил null, плейлист вырождался
-        /// в один сет, и кнопки «предыдущий/следующий» в футере на главной не делали
-        /// вообще ничего.
+        /// A home tile: we take what is shown on the home page as the playlist, in the order it
+        /// lies there — that is, the pinned first in pin order, then the recent. null used to
+        /// go in here, the playlist degenerated into a single set, and the "previous/next"
+        /// buttons in the footer on the home page did nothing at all.
         /// </summary>
         void OpenPlayer(SetEntry s)
         {
@@ -2975,8 +3026,8 @@ namespace AbletonManager
             PlayOrToggle(s, playlist);
         }
 
-        /// <summary>ПКМ по строке в списке сетов — то же меню, что и у плитки на главной,
-        /// чтобы закреплять проекты можно было не выходя из основного каталога.</summary>
+        /// <summary>A right click on a row in the sets list — the same menu as on a home tile,
+        /// so that projects can be pinned without leaving the main catalog.</summary>
         void OnListRowRightClick(int idx, Point at)
         {
             if (!SetsDomain) return;
@@ -3027,8 +3078,8 @@ namespace AbletonManager
             m.Show(_list, at);
         }
 
-        /// <summary>Закрепление сета — общее для звёздочки в строке и пункта меню:
-        /// сразу подкрашивает конкретную строку, не перестраивая весь список.</summary>
+        /// <summary>Pinning a set — shared by the star in the row and the menu item: it
+        /// recolours that particular row at once, without rebuilding the whole list.</summary>
         void TogglePinAndRefresh(SetEntry s)
         {
             if (s == null) return;
@@ -3049,23 +3100,23 @@ namespace AbletonManager
             if (_player == null || _player.IsDisposed)
             {
                 _player = new PlayerDialog();
-                // Владельца задаём сами — Show(owner) тут не будет, а окно всё равно
-                // должно центрироваться и позиционироваться относительно главного.
+                // We set the owner ourselves — there will be no Show(owner) here, and the
+                // window still has to be centred and positioned relative to the main one.
                 _player.Owner = this;
-                // Хендл форсируем без показа окна: предпрослушка — это звук и мини-
-                // транспорт в футере, а не всплывающее окно. Без хендла BeginInvoke внутри
-                // плеера (волна, автопереход) работать не станет. CreateControl() тут не
-                // годится — при Visible=false он тихо ничего не делает; а сам по себе
-                // Handle не считает раскладку дочерних контролов, поэтому следом лёгкий
-                // пинок ресайзом — тот же приём, которым в этой сессии проверяли форму
-                // офлайн, только без экрана он ничего не показывает.
+                // We force the handle without showing the window: a preview is sound and a mini
+                // transport in the footer, not a popup window. Without a handle BeginInvoke
+                // inside the player (the waveform, the auto-advance) will not work.
+                // CreateControl() will not do here — with Visible=false it quietly does
+                // nothing; and Handle by itself does not lay the child controls out, so a
+                // gentle nudge with a resize follows — the same device used in this session to
+                // check a form offline, only with no screen it shows nothing.
                 IntPtr forceHandle = _player.Handle;
                 Size s0 = _player.Size;
                 _player.Size = new Size(s0.Width + 1, s0.Height);
                 _player.Size = s0;
                 _player.SetChanged += delegate (SetEntry changed) {
                     _list.PlayingTag = _home.PlayingTag = changed;
-                    UpdatePlayerTransport();   // трек сменился — Playing сверяем заново
+                    UpdatePlayerTransport();   // the track changed — we re-check Playing
                     _list.Invalidate();
                     _home.Invalidate();
                 };
@@ -3083,15 +3134,15 @@ namespace AbletonManager
                     _list.Playing = _home.Playing = false;
                     _list.Invalidate();
                     _home.Invalidate();
-                    LayoutAll();       // прячет мини-транспорт — управлять больше нечем
+                    LayoutAll();       // hides the mini transport — there is nothing left to control
                     Invalidate(true);
                 };
                 _playerTimer.Start();
-                _status = "";          // подпись «нет рендеров» относилась к прошлому сету
-                LayoutAll();           // показывает мини-транспорт теперь, когда плеер есть
-                // Раскладка сама по себе не перерисовывает фон формы, а на месте
-                // футера оставалась старая строка состояния — поверх неё вставали
-                // кнопки транспорта. Полная перерисовка ровно один раз, при открытии.
+                _status = "";          // the "no renders" caption belonged to the previous set
+                LayoutAll();           // shows the mini transport now that there is a player
+                // The layout does not repaint the form background by itself, and the old status
+                // line stayed in the footer's place — the transport buttons stood on top of it.
+                // A full repaint exactly once, on opening.
                 Invalidate(true);
             }
 
@@ -3109,9 +3160,9 @@ namespace AbletonManager
             _home.Invalidate();
             UpdatePlayerTransport();
 
-            // Окно само не поднимаем: если пользователь его уже разворачивал — пусть
-            // остаётся видимым и просто обновится, а если нет — так и играет молча,
-            // пока не нажмут «развернуть».
+            // We do not raise the window ourselves: if the user has already expanded it, let it
+            // stay visible and simply refresh, and if not, let it play quietly until "expand"
+            // is pressed.
             if (_player.Visible)
             {
                 if (_player.WindowState == FormWindowState.Minimized)
@@ -3120,7 +3171,8 @@ namespace AbletonManager
             }
         }
 
-        /// <summary>Кнопка «развернуть» в футере — единственный способ показать окно плеера.</summary>
+        /// <summary>The "expand" button in the footer is the only way to show the player
+        /// window.</summary>
         void ExpandPlayer()
         {
             if (_player == null || _player.IsDisposed) return;
@@ -3130,10 +3182,11 @@ namespace AbletonManager
         }
 
         /// <summary>
-        /// Значок play/pause в футере — вслед за тем, что реально играет в плеере. Заодно
-        /// единственное место, где список и плитки узнают, что это не просто «текущий
-        /// трек», а именно ЗВУЧИТ ли он сейчас — иначе после паузы кнопка в строке или
-        /// на плитке продолжала бы показывать паузу, хотя играть уже нечему.
+        /// The play/pause glyph in the footer follows what is really playing in the player. It
+        /// is also the one place where the list and the tiles learn that this is not merely
+        /// "the current track" but whether it is actually SOUNDING right now — otherwise after
+        /// a pause the button in a row or on a tile would go on showing a pause although there
+        /// is nothing left playing.
         /// </summary>
         static string TimeStr(int ms)
         {
@@ -3236,9 +3289,9 @@ namespace AbletonManager
         }
 
         /// <summary>
-        /// Клик по play/pause в строке или на плитке: если это уже тот трек, что сейчас
-        /// в плеере, — просто переключаем паузу, не перезапуская его с начала. Если
-        /// другой — грузим и играем заново, как раньше.
+        /// A click on play/pause in a row or on a tile: if this is already the track in the
+        /// player, we simply toggle the pause rather than restarting it from the beginning. If
+        /// it is a different one, we load and play it anew, as before.
         /// </summary>
         void PlayOrToggle(SetEntry s, List<SetEntry> playlist)
         {
@@ -3251,9 +3304,10 @@ namespace AbletonManager
         }
 
         /// <summary>
-        /// «New Live Set» просто открывает саму Live — как двойной щелчок по её иконке,
-        /// без выбора папки и без подсовывания шаблона сета. Дальше пользователь решает
-        /// сам, средствами самой Live: новый проект, недавние или мастер-шаблон.
+        /// "New Live Set" simply opens Live itself — like a double click on its icon, with no
+        /// folder chosen and no set template slipped in. From there the user decides for
+        /// themselves, by Live's own means: a new project, the recent ones or a master
+        /// template.
         /// </summary>
         void NewProject()
         {
@@ -3266,17 +3320,17 @@ namespace AbletonManager
             try
             {
                 Process.Start(new ProcessStartInfo(exe) { UseShellExecute = true });
-                // Live поднимается долгие секунды и до первого своего окна не подаёт
-                // никаких признаков жизни — без этой строчки нажатие выглядит как
-                // «кнопка не сработала», и её жмут ещё раз.
+                // Live takes long seconds to come up and gives no sign of life until its first
+                // window — without this line the press looks like "the button did not work" and
+                // gets pressed again.
                 Notify("Starting Live…");
             }
             catch (Exception ex) { Status(ex.Message); }
         }
 
-        // ------------------------------------------------- папка перетаскиванием
+        // ------------------------------------------------- a folder by drag and drop
 
-        /// <summary>Подсветка окна, пока над ним держат папку.</summary>
+        /// <summary>Highlighting the window while a folder is held over it.</summary>
         bool _dragOverWindow;
 
         protected override void OnDragEnter(DragEventArgs e)
@@ -3294,9 +3348,9 @@ namespace AbletonManager
         }
 
         /// <summary>
-        /// Брошенная на окно папка становится новым корнем. Раньше корни добавлялись
-        /// только через отдельное окно «Folders…», хотя перетаскивание — первое, что
-        /// пробуют сделать с менеджером файлов.
+        /// A folder dropped onto the window becomes a new root. Roots used to be added only
+        /// through the separate "Folders…" window, although dragging is the first thing one
+        /// tries with a file manager.
         /// </summary>
         protected override void OnDragDrop(DragEventArgs e)
         {
@@ -3356,7 +3410,7 @@ namespace AbletonManager
                 _settings.Save();
                 Settings.NotifyRootsChanged(this);
                 StartScan(true);
-                Rewatch();          // набор корней другой — переставляем наблюдение
+                Rewatch();          // the set of roots is different — we re-point the watch
                 return true;
             }
         }
@@ -3374,12 +3428,12 @@ namespace AbletonManager
             Rewatch();
         }
 
-        // -------------------------------------------------------- автообновление
+        // -------------------------------------------------------- auto-refresh
 
         /// <summary>
-        /// Пересканирование, которое началось само. Отличается от F5 двумя вещами:
-        /// молчит (никакой полосы прогресса поверх каталога) и бережёт то, на что
-        /// человек сейчас смотрит, — см. RefillPreservingView.
+        /// A rescan that started by itself. It differs from F5 in two ways: it keeps quiet (no
+        /// progress bar over the catalog) and it looks after what the person is currently
+        /// looking at — see RefillPreservingView.
         /// </summary>
         FolderWatch _watch;
         bool _rescanPending;
@@ -3396,14 +3450,14 @@ namespace AbletonManager
 
         void OnFoldersChanged()
         {
-            // Пока идёт сканирование, второе поверх него не запускаем — но и не теряем:
-            // изменения могли прийти как раз в те папки, которые уже прошли, и без
-            // отметки они дождались бы только следующего F5.
+            // While a scan is running we do not start a second one over it — but neither do we
+            // lose it: the changes may have arrived in exactly the folders already passed, and
+            // without the mark they would have waited for the next F5.
             if (_scanning) { _rescanPending = true; return; }
             StartScan(false);
         }
 
-        // ----------------------------------------------------------- сканирование
+        // ----------------------------------------------------------- scanning
 
         void StartScan(bool force)
         {
@@ -3450,14 +3504,15 @@ namespace AbletonManager
                         _scanning = false;
                         RefreshVersions();
                         if (wasManual) Refill(); else RefillPreservingView();
-                        // Итоговую сводку («Indexed N sets · M with missing files») больше
-                        // не пишем: сколько сетов показано, и так стоит наверху, а потери
-                        // видны цветными отметками в самих строках. Строка внизу остаётся
-                        // только под то, о чём иначе никак не узнать, — ошибки действий.
+                        // We no longer write the final summary ("Indexed N sets · M with
+                        // missing files"): how many sets are shown stands at the top as it is,
+                        // and the losses are visible as coloured marks in the rows themselves.
+                        // The line at the bottom is left only for what there is no other way of
+                        // learning — errors from actions.
                         Status("");
 
-                        // Пока сканировали, на диске успело измениться ещё что-то —
-                        // проходим ещё раз, иначе те правки ждали бы следующего повода.
+                        // Something else on disk changed while we were scanning — we go round
+                        // once more, or those edits would wait for the next occasion.
                         if (_rescanPending) { _rescanPending = false; StartScan(false); }
                     });
                 }
@@ -3475,15 +3530,15 @@ namespace AbletonManager
                 string v = s.ShortVersion;
                 if (v.Length > 0 && !_versions.Contains(v)) _versions.Add(v);
             }
-            _versions.Sort(delegate (string a, string b) { return CompareVersion(b, a); });   // новые сверху
+            _versions.Sort(delegate (string a, string b) { return CompareVersion(b, a); });   // the new ones on top
         }
 
         void Status(string msg)
         {
-            // Появление и исчезновение строки состояния меняет высоту содержимого
-            // (нижняя полоса теперь резервируется только под то, что в ней есть),
-            // поэтому раскладку пересчитываем — но лишь когда строка реально
-            // появилась или пропала, а не на каждое её обновление.
+            // A status line appearing and disappearing changes the height of the content (the
+            // bottom strip is now reserved only for what is in it), so we recompute the layout
+            // — but only when the line really did appear or vanish rather than on every update
+            // of it.
             bool had = _status.Length > 0;
             _status = msg;
             if (had != (_status.Length > 0)) LayoutAll();
