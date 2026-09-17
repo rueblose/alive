@@ -8,15 +8,15 @@ using System.Windows.Forms;
 namespace AbletonManager
 {
     /// <summary>
-    /// Помощник по восстановлению проекта, который не открывается.
+    /// The helper for rescuing a project that will not open.
     ///
-    /// Работает в полуавтомате: программа готовит пробную копию сета с отключёнными
-    /// плагинами и открывает её, а Live запускает и закрывает человек. Сама она в чужой
-    /// редактор не лезет — уронить вместе с пробой чей-то несохранённый проект было бы
-    /// ровно тем, от чего это окно и спасает.
+    /// It works semi-automatically: the program prepares a probe copy of the set with plugins
+    /// disabled and opens it, while Live is started and closed by a person. It does not climb
+    /// into somebody else's editor itself — bringing down an unsaved project of theirs along
+    /// with the probe would be exactly what this window saves people from.
     ///
-    /// Чем кончилась проба, спрашивать не нужно: Live пишет это в свой Log.txt, окно его
-    /// дочитывает и показывает исход само (см. LiveLog).
+    /// There is no need to ask how a probe ended: Live writes it into its own Log.txt, and the
+    /// window reads that and shows the outcome by itself (see LiveLog).
     /// </summary>
     public sealed class RescueDialog : GlassDialog
     {
@@ -32,26 +32,27 @@ namespace AbletonManager
 
         readonly Timer _poll = new Timer();
 
-        bool _waiting;              // проба лежит на диске, ждём вердикта от Live
+        bool _waiting;              // the probe is on disk, we are waiting for Live to deliver its verdict
         DateTime _waitingSince;
         string _status = "";
         string _hint = "";
 
-        // Что показывать — своими флагами, а не через Control.Visible. Пока форма не
-        // показана, Visible у её детей false, и раскладка, спрошенная в конструкторе,
-        // молча пропустила бы все кнопки — они так и остались бы нулевой ширины у
-        // правого края (ровно это и было видно на первом снимке окна).
+        // What to show is decided by flags of our own rather than through Control.Visible.
+        // Until a form is shown, Visible on its children is false, and a layout asked for in
+        // the constructor would silently skip every button — they would stay at zero width
+        // against the right edge (which is exactly what the first shot of the window showed).
         bool _showQuick = true;
         bool _showRescued;
 
         /// <summary>
-        /// Запущена ли Live. Ответ кешируется: спрашивать его — это перебрать все процессы
-        /// системы, а UpdateButtons зовётся и на каждый щелчок по галочке, и раз в секунду
-        /// по таймеру.
+        /// Whether Live is running. The answer is cached: asking it means walking every process
+        /// in the system, while UpdateButtons is called both on each click of a checkbox and
+        /// once a second by the timer.
         /// </summary>
         bool _liveRunning;
 
-        /// <summary>Сет, который стоит показать в каталоге после закрытия окна, — спасённая копия.</summary>
+        /// <summary>The set worth showing in the catalog after the window closes — the rescued
+        /// copy.</summary>
         public string Produced = "";
 
         public RescueDialog(SetEntry set, PluginInventory inv)
@@ -60,10 +61,10 @@ namespace AbletonManager
 
             Caption = "Rescue: " + set.Name;
 
-            // Высота — по числу плагинов: у сета их бывает и один, и полсотни, а окно
-            // постоянной высоты в первом случае наполовину пустое, во втором прокручивается
-            // там, где могло бы показать всё сразу. Двенадцать строк — потолок, дальше
-            // окно упёрлось бы в невысокие экраны.
+            // The height follows the number of plugins: a set can have one or fifty, and a
+            // window of fixed height is half empty in the first case and scrolls in the second
+            // where it could have shown everything at once. Twelve rows is the cap; beyond that
+            // the window would run into short screens.
             int rows = Math.Max(3, Math.Min(12, _s.Targets.Count));
             ClientSize = new Size(Sc(780), Sc(280) + HintHeight + rows * _list.RowHeight);
 
@@ -71,10 +72,9 @@ namespace AbletonManager
             _list.Changed += delegate { UpdateButtons(); };
             Controls.Add(_list);
 
-            // Галочка у плагина означает «остаётся включён» (см. PluginCheckList),
-            // поэтому «All Off» снимает все галочки, а «All On» их все ставит —
-            // кнопки названы по тому, что получится, а не по тому, что они делают
-            // с галочками.
+            // A tick next to a plugin means "stays enabled" (see PluginCheckList), so "All Off"
+            // clears every tick and "All On" sets them all — the buttons are named after the
+            // result, not after what they do to the ticks.
             Quick(_all, "All Off", delegate { _list.CheckAll(false); });
             Quick(_none, "All On", delegate { _list.CheckAll(true); });
             Quick(_suggested, "Suggested", delegate { _list.SetDisabled(_s.Suggest()); });
@@ -88,17 +88,17 @@ namespace AbletonManager
             _run.Click += delegate { OnRun(); };
             Controls.Add(_run);
 
-            // Секунда — это шаг, на котором «Live грузит» ещё выглядит живым отсчётом, а
-            // журнал перечитывается только хвостом, так что стоит это почти ничего.
+            // A second is the step at which "Live is loading" still looks like a live
+            // countdown, and only the tail of the log is re-read, so it costs almost nothing.
             _poll.Interval = 1000;
             _poll.Tick += delegate { Tick(); };
             _poll.Start();
 
-            // Открывается со всеми галочками — ничего ещё не отключено, пока человек сам
-            // не снимет галочку или не нажмёт «Выключить все»/«Предложенные». Автоматически
-            // подставлять сюда Suggest() значило бы сразу готовить пробу за человека —
-            // а решение, что пробовать первым, должно быть видимым и обратимым действием,
-            // а не стартовым состоянием окна.
+            // It opens with every box ticked — nothing is disabled yet until a person unticks
+            // one themselves or presses "All Off"/"Suggested". Putting Suggest() in here
+            // automatically would mean preparing the probe for them straight away — and the
+            // decision of what to try first has to be a visible, reversible action rather than
+            // the window's starting state.
             _liveRunning = RescueSession.LiveIsRunning();
             _list.CheckAll(true);
             Describe();
@@ -115,9 +115,9 @@ namespace AbletonManager
             Controls.Add(b);
         }
 
-        // ------------------------------------------------------------------ состояние
+        // ------------------------------------------------------------------ state
 
-        /// <summary>Верхний абзац: что вообще известно про этот сет прямо сейчас.</summary>
+        /// <summary>The top paragraph: what is known about this set at all right now.</summary>
         void Describe()
         {
             if (_s.Error != null)
@@ -176,9 +176,9 @@ namespace AbletonManager
         }
 
         /// <summary>
-        /// Дата для интерфейса. Инвариантная культура, а не системная: интерфейс тут
-        /// только английский (см. L.S), а CurrentCulture на этой машине русская — и в
-        /// английскую фразу приезжало «24 авг».
+        /// The date for the interface. The invariant culture rather than the system one: the
+        /// interface here is English only, while CurrentCulture on this machine is Russian —
+        /// and a localised month name turned up in the middle of an English sentence.
         /// </summary>
         static string When(DateTime t)
         {
@@ -243,7 +243,7 @@ namespace AbletonManager
                 Path.GetFileName(RescueProbe.PathFor(_s.Set)));
         }
 
-        // ------------------------------------------------------------------ проба
+        // ------------------------------------------------------------------ the probe
 
         void OnRun()
         {
@@ -276,15 +276,16 @@ namespace AbletonManager
             bool changed = live != _liveRunning;
             _liveRunning = live;
 
-            // Пока пробы нет, единственное, что здесь меняется, — запущена ли Live.
-            // Перерисовывать окно каждую секунду просто так незачем.
+            // While there is no probe, the only thing that changes here is whether Live is
+            // running. Redrawing the window every second for nothing is pointless.
             if (!_waiting) { if (changed) UpdateButtons(); return; }
 
             LoadAttempt a = _s.Poll();
             if (a == null)
             {
-                // Пробу так и не открыли: человек передумал, или Live не запустилась.
-                // Через пять минут перестаём ждать, чтобы окно не висело вечно.
+                // The probe was never opened: the person changed their mind, or Live did not
+                // start. After five minutes we stop waiting so the window does not hang
+                // forever.
                 if (DateTime.Now - _waitingSince > TimeSpan.FromMinutes(5)
                     && !RescueSession.LiveIsRunning())
                 {
@@ -334,7 +335,7 @@ namespace AbletonManager
             UpdateButtons();
         }
 
-        // ------------------------------------------------------------------ итог
+        // ------------------------------------------------------------------ the outcome
 
         void SaveRescued()
         {
@@ -360,8 +361,9 @@ namespace AbletonManager
 
         protected override void OnFormClosing(FormClosingEventArgs e)
         {
-            // Пробу за собой убираем всегда: это .als в папке проекта, и оставленный
-            // там навсегда он однажды откроется вместо настоящего сета.
+            // We always clear the probe up after ourselves: it is an .als inside a project
+            // folder, and left there for good it will one day be opened instead of the real
+            // set.
             _poll.Stop();
             _s.Cancel();
             base.OnFormClosing(e);
@@ -373,17 +375,17 @@ namespace AbletonManager
             base.Dispose(disposing);
         }
 
-        // ------------------------------------------------------------------ раскладка
+        // ------------------------------------------------------------------ layout
 
         Rectangle _statusRect, _listLabel, _hintRect;
 
         /// <summary>
-        /// Две строки FSmall — под обычную подсказку. Самая длинная (в ней разворачивается
-        /// имя пробного файла) изредка занимает три; NoClipping в OnPaint даёт третьей
-        /// строке вылезти в зазор над кнопкой, а не срезаться. Резервировать три строки
-        /// всегда — значило оставлять под однострочной подсказкой пустую полосу над кнопкой.
-        /// ponytail: окно под 3-ю строку не растёт. Короткое имя файла в неё не упирается;
-        /// если начнёт — считать высоту от реального переноса текста.
+        /// Two lines of FSmall — enough for an ordinary hint. The longest one (the probe file
+        /// name unfolds in it) occasionally takes three; NoClipping in OnPaint lets the third
+        /// line spill into the gap above the button rather than be cut off. Always reserving
+        /// three lines would mean leaving an empty band above the button under a one-line hint.
+        /// ponytail: the window does not grow for a 3rd line. A short file name does not run
+        /// into it; if it starts to, compute the height from the actual text wrapping.
         /// </summary>
         int HintHeight { get { return Theme.FSmall.Height * 2 + Sc(4); } }
 
@@ -394,8 +396,8 @@ namespace AbletonManager
         }
 
         /// <summary>
-        /// Ещё раз по показу: размеры кнопок в конструкторе считались по тексту, который
-        /// с тех пор поменялся, а Card тогда ещё не был известен.
+        /// Once more on show: the button sizes were computed in the constructor from text that
+        /// has changed since, and Card was not known back then.
         /// </summary>
         protected override void OnShown(EventArgs e)
         {
@@ -425,25 +427,27 @@ namespace AbletonManager
                 b.SetBounds(qx, qy, b.Width, Sc(26));
                 qx -= Sc(6);
             }
-            // Воздух между строкой кнопок (All Off / All On / Suggested) и списком: без него
-            // кнопки садятся вплотную к таблице и читаются как шапка столбцов, которой нет.
+            // Air between the row of buttons (All Off / All On / Suggested) and the list:
+            // without it the buttons sit flush against the table and read as a column header
+            // that is not there.
             y += Sc(26) + Sc(16);
 
             int by = Card.Bottom - pad - _run.Height;
 
-            // Высоту подсказки считаем от самого шрифта, а не пикселями на глаз: Sc()
-            // в Alive — множитель ×1, а шрифт задан в
-            // пунктах и на масштабированном экране растёт сам. От сорока «пикселей»
-            // третья строка там уезжала под нижний край — ровно это и было видно.
+            // The hint height is computed from the font itself rather than by eye in pixels:
+            // Sc() in Alive is a ×1 multiplier, while the font is set in points and grows by
+            // itself on a scaled screen. At forty "pixels" the third line slid under the bottom
+            // edge there — which is precisely what could be seen.
             _hintRect = new Rectangle(x, by - Sc(8) - HintHeight, w, HintHeight);
 
-            // Высота списка — по целым строкам: половина строки, срезанная нижним краем,
-            // читается как обрыв отрисовки, а не как «дальше прокрути». Меньше строки не
-            // опускаем, но и не поднимаем принудительно: высота окна уже посчитана под
-            // нужное число строк, и любой «минимум» здесь налез бы на подсказку под списком.
+            // The list height goes by whole rows: half a row shaved off by the bottom edge
+            // reads as drawing cut short rather than as "scroll for more". We do not go below
+            // one row, but neither do we force it up: the window height has already been
+            // computed for the number of rows needed, and any "minimum" here would run into the
+            // hint under the list.
             int room = Math.Max(_list.RowHeight, _hintRect.Top - Sc(12) - y);
-            // Не выше, чем нужно самим строкам: лишнюю высоту список показывал пустой
-            // полосой фона под последним плагином — она читалась как обрыв отрисовки.
+            // No taller than the rows themselves need: the extra height showed as an empty band
+            // of background under the last plugin — which read as drawing cut short.
             room = Math.Min(room, _list.Items.Count * _list.RowHeight);
             _list.SetBounds(x, y, w, room - room % _list.RowHeight);
 
@@ -479,21 +483,22 @@ namespace AbletonManager
     }
 
     /// <summary>
-    /// Список плагинов с галочками. Своя отрисовка, а не CheckedListBox: нативный список
-    /// на этом окне был бы светлым прямоугольником с чужой полосой прокрутки — ровно тем
-    /// же, из-за чего в заметках отключено стекло (см. NotesDialog).
+    /// A list of plugins with tick boxes. Drawn by hand rather than a CheckedListBox: a native
+    /// list on this window would be a pale rectangle with a foreign scrollbar — exactly what
+    /// glass is switched off in the notes for (see NotesDialog).
     ///
-    /// Галочка стоит там же, где и в самой Live у включённого девайса, — то есть означает
-    /// «остаётся работать». Сняли галочку — плагин выключен в пробе, и строка гаснет тем
-    /// же способом, каким Live сама гасит выключенное устройство. Наружу список отдаёт обе
-    /// стороны: Checked — что отмечено в интерфейсе, Disabled — что фактически уйдёт
-    /// отключённым в пробу (то есть ровно наоборот).
+    /// The tick stands where it does in Live itself on an enabled device — meaning it says
+    /// "carries on working". Untick it and the plugin is off in the probe, and the row dims the
+    /// same way Live itself dims a disabled device. Outward the list gives both sides: Checked
+    /// is what is ticked in the interface, Disabled is what will actually go into the probe
+    /// switched off (that is, exactly the opposite).
     /// </summary>
     public sealed class PluginCheckList : GlassControl
     {
         public readonly List<AlsPluginSlot> Items = new List<AlsPluginSlot>();
 
-        /// <summary>Короткая пометка справа от плагина: «под подозрением», «ломает сет».</summary>
+        /// <summary>A short mark to the right of a plugin: "suspected", "breaks the
+        /// set".</summary>
         public readonly Dictionary<string, string> Notes =
             new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 
@@ -512,7 +517,8 @@ namespace AbletonManager
             Cursor = Cursors.Hand;
         }
 
-        /// <summary>Шаг строки. Открыт наружу — по нему окно подгоняет высоту списка под целые строки.</summary>
+        /// <summary>The row pitch. Exposed outward — the window fits the list height to whole
+        /// rows by it.</summary>
         public int RowHeight { get { return Sc(36); } }
 
         int RowH { get { return RowHeight; } }
@@ -528,7 +534,8 @@ namespace AbletonManager
             }
         }
 
-        /// <summary>Плагины без галочки — то, что фактически отключится в пробе. Дополнение к Checked.</summary>
+        /// <summary>The plugins with no tick — what will actually be disabled in the probe. The
+        /// complement of Checked.</summary>
         public List<AlsPluginSlot> Disabled
         {
             get
@@ -554,10 +561,9 @@ namespace AbletonManager
         }
 
         /// <summary>
-        /// Снять галочки ровно у off, остальным — поставить. Дополнение к Check(): та
-        /// сторона имеет дело с отмеченным, эта — с тем, что должно отключиться, а
-        /// именно в этих терминах думает вызывающий код (Suggest() тоже возвращает то,
-        /// что отключить).
+        /// Untick exactly off and tick the rest. The complement of Check(): that side deals
+        /// with what is ticked, this one with what has to be disabled, and those are precisely
+        /// the terms the calling code thinks in (Suggest() also returns what to disable).
         /// </summary>
         public void SetDisabled(List<AlsPluginSlot> off)
         {
@@ -578,8 +584,8 @@ namespace AbletonManager
         protected override void OnMouseDown(MouseEventArgs e)
         {
             base.OnMouseDown(e);
-            // Колесо приходит тому, кто в фокусе, — без этого длинный список не
-            // прокручивался бы вовсе (тем же приёмом ловит колесо таблица сетов).
+            // The wheel goes to whoever has focus — without this a long list would not scroll
+            // at all (the sets table catches the wheel the same way).
             Focus();
             if (ReadOnly) return;
             int i = RowAt(e.Y);
@@ -621,7 +627,7 @@ namespace AbletonManager
         protected override void OnResize(EventArgs e)
         {
             base.OnResize(e);
-            // Список стал выше — снизу могла открыться пустота под последней строкой.
+            // The list grew taller — emptiness under the last row may have opened up below.
             Scroll(_scroll);
         }
 
@@ -649,9 +655,10 @@ namespace AbletonManager
             int pad = Sc(12);
             int box = Sc(15);
 
-            // Ширину столбца формата меряем по шрифту, а не берём Sc(): в Alive Sc — ×1,
-            // а текст рисуется крупнее (см. RescueDialog.HintHeight), и «VST3» в фиксированные
-            // 52 пикселя не влезал — на снимке от него оставалось «VS…».
+            // We measure the format column's width by the font rather than taking Sc(): in
+            // Alive Sc is ×1 while the text is drawn larger (see RescueDialog.HintHeight), and
+            // "VST3" did not fit into a fixed 52 pixels — in the shot all that was left of it
+            // was "VS…".
             int fmtW = TextRenderer.MeasureText("VST3", Theme.FBadge).Width + Sc(4);
 
             for (int i = 0; i < Items.Count; i++)
@@ -665,9 +672,9 @@ namespace AbletonManager
                 if (i == _hover && !ReadOnly)
                     Theme.FillRound(g, row, Sc(8), Theme.RowHover);
 
-                // Галочка = «остаётся включён», как у девайса в самой Live. Отмеченное —
-                // светлая заливка, как у главной кнопки; снятая галочка гасит и подпись
-                // строки (см. ниже) — «этот плагин выключен в пробе» читается одним взглядом.
+                // A tick = "stays enabled", as on a device in Live itself. What is ticked gets
+                // a light fill, like the primary button; an unticked box also dims the row's
+                // caption (see below) — "this plugin is off in the probe" reads at a glance.
                 Rectangle mark = new Rectangle(pad, top + (RowH - box) / 2, box, box);
                 bool on = _on.Contains(s.Uid);
                 if (on)
@@ -714,9 +721,9 @@ namespace AbletonManager
                 Chrome.DrawText(g, "no third-party plugins in this set",
                                 Theme.FBody, new Rectangle(0, 0, Width, Height), Theme.TextDim, Chrome.Center);
 
-            // Полоска прокрутки — та же волосяная, что и в таблице сетов. Без неё в
-            // длинном списке не видно, что под нижним краем есть ещё плагины, а именно
-            // они обычно и нужны.
+            // The scrollbar is the same hairline as in the sets table. Without it a long list
+            // gives no sign that there are more plugins below the bottom edge — and those are
+            // usually the ones wanted.
             int over = Inner - Height;
             if (over > 0)
             {

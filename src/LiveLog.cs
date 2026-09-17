@@ -6,61 +6,62 @@ using System.Text;
 
 namespace AbletonManager
 {
-    /// <summary>Чем кончилась одна попытка открыть сет.</summary>
+    /// <summary>How one attempt to open a set ended.</summary>
     public enum LoadResult
     {
-        Running,    // блок начался и ещё пишется — Live прямо сейчас грузит
-        Loaded,     // «Loaded document was created by …» — документ дочитан целиком
-        Broke       // блок оборвался: дальше в журнале другая попытка или конец файла
+        Running,    // the block started and is still being written — Live is loading right now
+        Loaded,     // "Loaded document was created by …" — the document was read through in full
+        Broke       // the block broke off: further on in the log there is another attempt or the end of the file
     }
 
-    /// <summary>Один плагин, который Live поднимала при открытии сета.</summary>
+    /// <summary>One plugin Live was raising while opening a set.</summary>
     public sealed class PluginLoad
     {
         public string Name = "";
         public PluginKind Kind;
-        public bool Restored;      // видели парное «Restored: имя»
-        public bool Failed;        // видели «Restore N failed: имя» — плагин отказался, но Live выжила
+        public bool Restored;      // we saw the matching "Restored: name"
+        public bool Failed;        // we saw "Restore N failed: name" — the plugin refused, but Live survived
         public DateTime At;
 
         public string Format { get { return Kind == PluginKind.Vst3 ? "VST3" : "VST2"; } }
 
-        /// <summary>Ни ответа, ни ошибки: Live вошла в плагин и оттуда не вернулась.</summary>
+        /// <summary>Neither an answer nor an error: Live went into the plugin and never came
+        /// back.</summary>
         public bool Hung { get { return !Restored && !Failed; } }
     }
 
     /// <summary>
-    /// Блок журнала от «Loading document …» до следующего такого же — то есть ровно
-    /// одна попытка открыть один сет, со списком поднятых по дороге плагинов.
+    /// A block of the log from "Loading document …" to the next one just like it — that is,
+    /// exactly one attempt to open one set, with the list of plugins raised along the way.
     /// </summary>
     public sealed class LoadAttempt
     {
         public string LogPath = "";
-        public string LiveVersion = "";      // имя папки настроек: «Live 12.4.3»
-        public string Document = "";         // путь так, как его записала Live
+        public string LiveVersion = "";      // the settings folder name: "Live 12.4.3"
+        public string Document = "";         // the path exactly as Live wrote it
         public DateTime Started;
         public DateTime LastEvent;
-        public string CreatedBy = "";        // «Ableton Live 11.2.6» из строки Loaded document
+        public string CreatedBy = "";        // "Ableton Live 11.2.6" out of the Loaded document line
         public LoadResult Result = LoadResult.Running;
 
         public readonly List<PluginLoad> Plugins = new List<PluginLoad>();
 
         /// <summary>
-        /// Плагин, на котором всё оборвалось. Это обязательно ПОСЛЕДНЯЯ запись блока и
-        /// обязательно без пары: Live умерла внутри его кода, не успев дописать журнал,
-        /// поэтому после него в блоке физически ничего нет.
+        /// The plugin everything broke off on. It is necessarily the LAST record of the block
+        /// and necessarily without a pair: Live died inside its code before it could finish
+        /// writing the log, so there is physically nothing after it in the block.
         ///
-        /// Именно «последняя», а не «любая без пары». Без пары запись остаётся и когда
-        /// плагин представился одним именем, а отчитался другим:
+        /// "The last" specifically, not "any one without a pair". A record also stays unpaired
+        /// when a plugin introduced itself by one name and reported back under another:
         ///
         ///     info: VST3: Going to restore: SpaceCarver
         ///     info: VST3: plugin processor successfully loaded: Blindspot Audio 'Oppressor'
         ///     info: VST3: Restored: Oppressor
         ///
-        /// Так ведут себя плагины одной сборки с общим префиксом класса (в журнале с этой
-        /// машины таких шесть штук, и все — в сетах, которые прекрасно открылись). Считать
-        /// их зависшими значит обвинить исправный плагин, а расследование начинается
-        /// именно с этого имени.
+        /// That is how plugins from one build with a shared class prefix behave (there are six
+        /// of them in the log from this machine, and every one is in a set that opened
+        /// perfectly well). Counting them as hung means accusing a healthy plugin, and the
+        /// investigation begins with that very name.
         /// </summary>
         public PluginLoad Hung
         {
@@ -89,23 +90,23 @@ namespace AbletonManager
     }
 
     /// <summary>
-    /// Журнал самой Live: %APPDATA%\Ableton\Live &lt;версия&gt;\Preferences\Log.txt.
+    /// Live's own log: %APPDATA%\Ableton\Live &lt;version&gt;\Preferences\Log.txt.
     ///
-    /// Это тот редкий случай, когда разбираться не нужно вовсе — Live сама пишет всё,
-    /// что нам требуется, и пишет до того, как упасть:
+    /// This is the rare case where nothing needs working out at all — Live writes everything we
+    /// need itself, and writes it before falling over:
     ///
     ///     info: Loading document "E:\...\big black.als"
     ///     info: VST3: Going to restore: soothe2
     ///     info: VST3: Restored: soothe2
     ///     info: Loaded document was created by Ableton Live 11.2.6
     ///
-    /// Если Live умирает внутри плагина, последняя строка блока — «Going to restore»
-    /// без пары. Это и есть имя виновника, без единого запуска и без бинарного поиска.
-    /// В журнале с этой машины 663 «Going to restore» против 563 «Restored»: сотня
-    /// оборванных загрузок, каждая — готовый диагноз.
+    /// If Live dies inside a plugin, the last line of the block is a "Going to restore" with no
+    /// pair. That is the culprit's name, without a single launch and without a binary search.
+    /// The log from this machine holds 663 "Going to restore" against 563 "Restored": a hundred
+    /// aborted loads, each one a ready diagnosis.
     ///
-    /// Журнал накопительный и не переписывается между запусками Live, поэтому попытку
-    /// недельной давности видно так же, как сегодняшнюю.
+    /// The log is cumulative and is not rewritten between runs of Live, so an attempt from a
+    /// week ago is as visible as today's.
     /// </summary>
     public static class LiveLog
     {
@@ -115,7 +116,8 @@ namespace AbletonManager
         const string LoadingMark = "Loading document \"";
         const string LoadedMark = "Loaded document was created by ";
 
-        /// <summary>Журналы всех установок Live — от той, что писалась последней, к старым.</summary>
+        /// <summary>The logs of every Live install — from the one written to last back to the
+        /// older ones.</summary>
         public static List<LiveLogFile> Files()
         {
             List<LiveLogFile> found = new List<LiveLogFile>();
@@ -138,9 +140,9 @@ namespace AbletonManager
         }
 
         /// <summary>
-        /// Самая свежая попытка открыть именно этот сет — по всем установленным версиям
-        /// Live сразу. Версий на машине обычно несколько, а какая из них ломалась на
-        /// проекте, пользователь не помнит и знать не обязан.
+        /// The most recent attempt to open this particular set — across every installed version
+        /// of Live at once. There are usually several versions on a machine, and which of them
+        /// broke on a project the user neither remembers nor is obliged to know.
         /// </summary>
         public static LoadAttempt LastAttempt(string alsPath)
         {
@@ -154,12 +156,12 @@ namespace AbletonManager
             return best;
         }
 
-        // ------------------------------------------------------------------- разбор
+        // ------------------------------------------------------------------ parsing
 
         /// <summary>
-        /// Разбирает уже прочитанный кусок журнала в попытки открытия. Отдельный метод,
-        /// а не приватная кишка LiveLogFile: так его можно позвать и на хвосте файла при
-        /// слежении, и на файле целиком при разовой диагностике.
+        /// Parses an already-read chunk of the log into open attempts. A method of its own
+        /// rather than a private gut of LiveLogFile: that way it can be called both on the tail
+        /// of a file while watching and on a whole file for a one-off diagnosis.
         /// </summary>
         internal static List<LoadAttempt> Parse(IEnumerable<string> lines, string logPath, string version)
         {
@@ -172,12 +174,12 @@ namespace AbletonManager
 
                 DateTime at;
                 string text = Payload(raw, out at);
-                if (text == null) continue;   // продолжение многострочной записи — там маркеров нет
+                if (text == null) continue;   // the continuation of a multi-line record — there are no markers in it
 
                 if (text.StartsWith(LoadingMark, StringComparison.Ordinal))
                 {
-                    // Новый блок закрывает предыдущий: если тот не успел сказать
-                    // «Loaded document», значит он и не загрузился.
+                    // A new block closes the previous one: if that one never managed to say
+                    // "Loaded document", then it never loaded.
                     Close(cur);
                     cur = new LoadAttempt();
                     cur.LogPath = logPath;
@@ -216,7 +218,8 @@ namespace AbletonManager
                 }
                 else if (rest.StartsWith("Restore ", StringComparison.Ordinal))
                 {
-                    // «Restore 1 failed: Dist COLDFIRE» — номер попытки нам не нужен.
+                    // "Restore 1 failed: Dist COLDFIRE" — the attempt number is of no use to
+                    // us.
                     int failed = rest.IndexOf(" failed: ", StringComparison.Ordinal);
                     if (failed > 0)
                         Pending(cur, rest.Substring(failed + " failed: ".Length).Trim(), false, true);
@@ -227,9 +230,9 @@ namespace AbletonManager
         }
 
         /// <summary>
-        /// Блок кончился, а «Loaded document» так и не было — значит оборвался. Пока блок
-        /// последний в файле, это ещё может быть просто «Live грузит прямо сейчас», и
-        /// такой вердикт выносит уже вызывающий (см. LiveLogFile.Finish).
+        /// The block ended and there was no "Loaded document" — meaning it broke off. While the
+        /// block is the last one in the file this may still be simply "Live is loading right
+        /// now", and that verdict is passed by the caller (see LiveLogFile.Finish).
         /// </summary>
         static void Close(LoadAttempt a)
         {
@@ -237,9 +240,9 @@ namespace AbletonManager
         }
 
         /// <summary>
-        /// Закрыть последнюю незакрытую запись с этим именем. По имени, а не «последнюю
-        /// вообще»: у Live бывают вложенные восстановления (плагин внутри стойки), и
-        /// тогда порядок закрытия не совпадает с порядком открытия.
+        /// Close the last unclosed record with this name. By name rather than "the last one at
+        /// all": Live has nested restores (a plugin inside a rack), and the order of closing
+        /// then does not match the order of opening.
         /// </summary>
         static void Pending(LoadAttempt a, string name, bool restored, bool failed)
         {
@@ -253,8 +256,8 @@ namespace AbletonManager
                 return;
             }
 
-            // Пары не нашлось: журнал начали читать с середины блока. Запись всё равно
-            // ценна — она говорит, что этот плагин через загрузку прошёл.
+            // No pair was found: the log was read starting from the middle of a block. The
+            // record is valuable all the same — it says this plugin got through loading.
             PluginLoad orphan = new PluginLoad();
             orphan.Name = name;
             orphan.Restored = restored;
@@ -262,7 +265,8 @@ namespace AbletonManager
             a.Plugins.Add(orphan);
         }
 
-        /// <summary>«VST3: Going to restore: X» → «Going to restore: X», иначе null.</summary>
+        /// <summary>"VST3: Going to restore: X" → "Going to restore: X", otherwise
+        /// null.</summary>
         static string AfterVstTag(string text, out PluginKind kind)
         {
             kind = PluginKind.Vst3;
@@ -276,17 +280,19 @@ namespace AbletonManager
         }
 
         /// <summary>
-        /// «2026-08-24T15:15:42.939602: info: Loading document "…"» → сам текст записи.
-        /// Строки без такой шапки — это продолжение предыдущей записи (Live переносит
-        /// списки MIDI-устройств на несколько строк), маркеров в них не бывает.
+        /// "2026-08-24T15:15:42.939602: info: Loading document "…"" → the text of the record
+        /// itself. Lines without such a header are the continuation of the previous record
+        /// (Live wraps MIDI device lists over several lines), and there are never markers in
+        /// them.
         /// </summary>
         static string Payload(string line, out DateTime at)
         {
             at = DateTime.MinValue;
 
-            // «info» или «error» — сам уровень нам без надобности: всё, что нужно
-            // различать, различается по тексту записи («Restore 1 failed» приходит
-            // ошибкой, «Restored» — сообщением, и ловим мы их по словам, не по уровню).
+            // "info" or "error" — the level itself is of no use to us: everything that needs
+            // telling apart is told apart by the record's text ("Restore 1 failed" comes as an
+            // error and "Restored" as a message, and we catch them by their words, not by their
+            // level).
             int mark = line.IndexOf(InfoMark, StringComparison.Ordinal);
             int len = InfoMark.Length;
             if (mark < 0)
@@ -318,11 +324,12 @@ namespace AbletonManager
             return close < 0 ? text.Substring(from) : text.Substring(from, close - from);
         }
 
-        // -------------------------------------------------------------- сравнение путей
+        // ------------------------------------------------------- comparing paths
 
         /// <summary>
-        /// Тот ли это файл. Live пишет путь то с обратными слэшами (командная строка),
-        /// то с прямыми (шаблон из библиотеки), поэтому сравнивать строки как есть нельзя.
+        /// Whether this is the same file. Live writes the path sometimes with backslashes (the
+        /// command line) and sometimes with forward ones (a template from the library), so the
+        /// strings cannot be compared as they are.
         /// </summary>
         public static bool SamePath(string a, string b)
         {
@@ -340,10 +347,10 @@ namespace AbletonManager
     }
 
     /// <summary>
-    /// Один Log.txt, который можно и прочитать целиком, и дочитывать по мере того, как
-    /// Live в него пишет. Дочитывание нужно окну восстановления: оно ждёт, чем кончится
-    /// проба, и должно показать ответ сразу, а не гонять по девять мегабайт на каждый
-    /// тик таймера.
+    /// One Log.txt that can be both read whole and read on as Live writes into it. The
+    /// reading-on is needed by the rescue window: it waits to see how a probe ends and has to
+    /// show the answer at once rather than chew through nine megabytes on every tick of the
+    /// timer.
     /// </summary>
     public sealed class LiveLogFile
     {
@@ -351,9 +358,9 @@ namespace AbletonManager
         public readonly string Version;
 
         /// <summary>
-        /// С какого байта дочитывать. Стоит не на конце файла, а на начале последнего
-        /// незакрытого блока «Loading document»: блок разбирается целиком каждый раз,
-        /// иначе попытка, начавшаяся между тиками, приезжала бы без первых плагинов.
+        /// Which byte to read on from. It stands not at the end of the file but at the start of
+        /// the last unclosed "Loading document" block: the block is parsed whole every time, or
+        /// an attempt that began between ticks would arrive without its first plugins.
         /// </summary>
         long _offset;
 
@@ -373,10 +380,11 @@ namespace AbletonManager
             get { try { return new FileInfo(Path).Length; } catch { return 0; } }
         }
 
-        /// <summary>Начать слежение с текущего конца — прошлое нас в пробе не интересует.</summary>
+        /// <summary>Start watching from the current end — the past is of no interest to us in a
+        /// probe.</summary>
         public void SkipToEnd() { _offset = Length; }
 
-        /// <summary>Самая свежая попытка открыть этот сет во всём файле.</summary>
+        /// <summary>The most recent attempt to open this set in the whole file.</summary>
         public LoadAttempt LastAttempt(string alsPath)
         {
             LoadAttempt best = null;
@@ -388,7 +396,7 @@ namespace AbletonManager
             return best;
         }
 
-        /// <summary>Все попытки из файла целиком.</summary>
+        /// <summary>Every attempt in the whole file.</summary>
         public List<LoadAttempt> All()
         {
             long start = 0;
@@ -396,8 +404,9 @@ namespace AbletonManager
         }
 
         /// <summary>
-        /// Что дописалось с прошлого раза. Последний блок может быть ещё не дописан —
-        /// он вернётся с Result = Running, и в следующий раз приедет снова, уже целиком.
+        /// What has been appended since last time. The last block may not be finished yet — it
+        /// comes back with Result = Running, and next time it will arrive again, this time
+        /// whole.
         /// </summary>
         public List<LoadAttempt> ReadNew()
         {
@@ -415,11 +424,12 @@ namespace AbletonManager
             byte[] buf;
             try
             {
-                // Файл укоротился — Live переустановили или журнал подрезали. Начинаем заново.
+                // The file got shorter — Live was reinstalled or the log was trimmed. We start
+                // over.
                 if (Length < from) from = 0;
 
-                // FileShare.ReadWrite обязателен: журнал открыт самой Live на запись, и
-                // без него чтение падало бы ровно в тот момент, ради которого затевалось.
+                // FileShare.ReadWrite is mandatory: the log is open for writing by Live itself,
+                // and without it reading would fail at exactly the moment it was set up for.
                 using (FileStream fs = new FileStream(Path, FileMode.Open, FileAccess.Read,
                                                       FileShare.ReadWrite | FileShare.Delete, 64 * 1024))
                 {
@@ -446,11 +456,12 @@ namespace AbletonManager
                 return new List<LoadAttempt>();
             }
 
-            // Разбиваем сами, по байтам. StreamReader.ReadLine тут не годится: нужно
-            // точное смещение начала строки в файле, чтобы вернуться к незакрытому блоку,
-            // а пересчитать его из длины декодированной строки нельзя — журнал Live в
-            // UTF-8 и полон кириллицы из имён проектов, символ там не равен байту.
-            // Переводы строк у Live одиночные LF, но \r на конце снимаем на всякий случай.
+            // We split it ourselves, by bytes. StreamReader.ReadLine will not do here: we need
+            // the exact offset of a line's start in the file in order to come back to an
+            // unclosed block, and it cannot be recomputed from the length of the decoded string
+            // — Live's log is UTF-8 and full of Cyrillic from project names, where a character
+            // is not a byte. Live's line endings are lone LFs, but we strip a trailing \r just
+            // in case.
             long lastOpenBlock = -1;
             List<string> lines = new List<string>();
             int start = 0;
@@ -473,9 +484,10 @@ namespace AbletonManager
             List<LoadAttempt> attempts = LiveLog.Parse(lines, Path, Version);
             Settle(attempts);
 
-            // Последний блок мог быть ещё не дописан — Live грузит прямо сейчас. Тогда
-            // смещение отступает к его началу, чтобы в следующий раз перечитать блок
-            // целиком и увидеть развязку. Дочитанный блок так возвращать незачем.
+            // The last block may not have been finished — Live is loading right now. The offset
+            // then steps back to its start so that next time the block is re-read whole and the
+            // denouement is seen. A block that has been read through does not need returning
+            // that way.
             bool tailOpen = attempts.Count > 0
                          && attempts[attempts.Count - 1].Result == LoadResult.Running
                          && lastOpenBlock >= 0;
@@ -486,9 +498,10 @@ namespace AbletonManager
         }
 
         /// <summary>
-        /// Последний блок файла разбор всегда оставляет «Running»: закрыть его нечем —
-        /// следующего «Loading document» ещё нет. Но если в журнал давно никто не писал,
-        /// значит Live не грузит, а не пишет вовсе — и блок оборвался.
+        /// Parsing always leaves the last block of a file as "Running": there is nothing to
+        /// close it with — the next "Loading document" is not there yet. But if nobody has
+        /// written to the log for a long time, then Live is not loading but not writing at all
+        /// — and the block broke off.
         /// </summary>
         void Settle(List<LoadAttempt> attempts)
         {
@@ -504,17 +517,17 @@ namespace AbletonManager
         const string OpenBlock = ": info: Loading document \"";
 
         /// <summary>
-        /// Сколько журнал должен молчать, чтобы считать загрузку оборванной. Порог
-        /// щедрый нарочно: между строками «Going to restore» и «Restored» у тяжёлого
-        /// плагина проходит до десятка секунд тишины (замерено на Addictive Drums 2 —
-        /// семь секунд), и торопливый порог назвал бы виновным исправный плагин.
+        /// How long the log has to stay silent before a load counts as aborted. The threshold
+        /// is generous on purpose: between the "Going to restore" and "Restored" lines a heavy
+        /// plugin leaves up to ten seconds of silence (measured on Addictive Drums 2 — seven
+        /// seconds), and a hasty threshold would name a healthy plugin guilty.
         /// </summary>
         static readonly TimeSpan Silence = TimeSpan.FromSeconds(45);
 
         /// <summary>
-        /// Сколько байт журнала читать за раз. Log.txt накопительный и на этой машине
-        /// доходит до девяти мегабайт; тридцать два — потолок и для разовой диагностики,
-        /// и от разросшегося до неприличия файла.
+        /// How many bytes of the log to read at a time. Log.txt is cumulative and on this
+        /// machine reaches nine megabytes; thirty-two is a cap both for a one-off diagnosis and
+        /// against a file grown indecently large.
         /// </summary>
         const long MaxRead = 32L * 1024 * 1024;
     }

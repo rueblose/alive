@@ -8,11 +8,12 @@ using AbletonManager;
 namespace AliveTools
 {
     /// <summary>
-    /// Стенд для модели сэмплов. Не входит в поставку — он проверяет вещь, а не является ею.
+    /// A test bench for the sample model. Not part of the distribution — it checks the thing
+    /// rather than being it.
     ///
-    ///     SampleTest.exe scan &lt;корень или .als&gt;   разбивка по категориям, сверка сумм
+    ///     SampleTest.exe scan &lt;root or .als&gt;   a breakdown by category, with the sums cross-checked
     ///
-    /// Сборка: tools\build-sample-test.cmd
+    /// Build: tools\build-sample-test.cmd
     /// </summary>
     internal static class SampleTest
     {
@@ -83,8 +84,9 @@ namespace AliveTools
 
                 List<SampleDep> deps = SampleScan.Of(info, Path.GetDirectoryName(file), env);
 
-                // Каждая ссылка учтена ровно один раз: сумма RefIndexes по всем
-                // зависимостям равна числу отобранных FileRef, и номера не повторяются.
+                // Every reference is accounted for exactly once: the sum of RefIndexes over all
+                // dependencies equals the number of FileRefs selected, and the numbers do not
+                // repeat.
                 HashSet<int> seen = new HashSet<int>();
                 int refsHere = 0;
                 foreach (SampleDep d in deps)
@@ -105,8 +107,9 @@ namespace AliveTools
                     Check(d.Origin != SampleOrigin.FactoryPack || d.PackName.Length > 0,
                           "FactoryPack dep without a pack name in " + file);
 
-                    // Найденная зависимость-папка (.adg/.amxd бывают папками) должна
-                    // иметь ненулевой размер — иначе она неотличима от «не нашли».
+                    // A dependency found as a folder (.adg/.amxd are sometimes folders) has to
+                    // have a non-zero size — otherwise it is indistinguishable from "not
+                    // found".
                     if (d.Origin != SampleOrigin.Missing && Directory.Exists(d.Path))
                     {
                         dirDeps++;
@@ -140,10 +143,10 @@ namespace AliveTools
         }
 
         /// <summary>
-        /// Круг: переписать пути у части ссылок, прочитать результат тем же AlsFile и
-        /// убедиться, что поменялось ровно заказанное и ровно на заказанное, а всё
-        /// остальное осталось прежним. Это тот самый инвариант, ради которого патчер
-        /// адресует узлы по номеру, а не по содержимому.
+        /// A round trip: rewrite the paths of some of the references, read the result back with
+        /// the same AlsFile and make sure that exactly what was ordered changed and exactly to
+        /// what was ordered, while everything else stayed as it was. That is the very invariant
+        /// the patcher addresses nodes by number rather than by content for.
         /// </summary>
         static void Patch(string file)
         {
@@ -158,12 +161,12 @@ namespace AliveTools
             Check(deps.Count > 0, "no sample dependencies in " + file);
             if (deps.Count == 0) return;
 
-            // Берём каждую вторую зависимость — так проверяется и что тронутое
-            // изменилось, и что нетронутое рядом с ним уцелело. «Drum & Bass» в каждом
-            // пробном пути — не украшение: Escape() экранирует «&» в XML, и до этого
-            // проб ни один прогон стенда символ «&» вообще не трогал (пути были без
-            // спецсимволов), хотя это ровно тот случай, что ревью назвало одним из двух,
-            // тихо ломающих файл.
+            // We take every second dependency — that checks both that what was touched changed
+            // and that what was untouched beside it survived. The "Drum & Bass" in every probe
+            // path is not decoration: Escape() escapes "&" in XML, and before this probe not a
+            // single run of the bench had touched the "&" character at all (the paths had no
+            // special characters), although that is precisely one of the two cases the review
+            // named as quietly breaking the file.
             Dictionary<int, NewRef> rewrites = new Dictionary<int, NewRef>();
             HashSet<int> touched = new HashSet<int>();
             int n = 0;
@@ -212,14 +215,15 @@ namespace AliveTools
                 }
             }
 
-            // AlsFile поле LivePackId не разбирает — его в модели просто нет, — а обнулённый
-            // LivePackId и есть то, что отцепляет собранную копию от пака: RefResolver ходит
-            // по имени пака, а сама Live — по идентификатору. Проверяем по сырому тексту,
-            // независимо от модели, тем же правилом обхода узлов, что и сам патчер.
+            // AlsFile does not parse the LivePackId field — it simply is not in the model —
+            // while a zeroed LivePackId is exactly what detaches a collected copy from a pack:
+            // RefResolver goes by the pack name while Live itself goes by the identifier. We
+            // check against the raw text, independently of the model, by the same node-walking
+            // rule the patcher uses.
             int packChecked = CheckPackCleared(dst, rewrites);
             Check(packChecked == rewrites.Count, "pack-clear check did not cover all touched nodes");
 
-            // Неверное ожидаемое число узлов обязано убить результат, а не записать его.
+            // A wrong expected node count has to kill the result rather than write it.
             string bad = Path.Combine(Path.GetTempPath(), "alive-patch-bad.als");
             bool threw = false;
             try { AlsSamplePatch.Rewrite(file, bad, rewrites, before.Files.Count + 1); }
@@ -234,15 +238,15 @@ namespace AliveTools
         }
 
         /// <summary>
-        /// Собирает сет во временную папку и проверяет главное обещание сборки: каждая
-        /// ссылка собранной копии разрешается в существующий файл ВНУТРИ этой папки.
-        /// Ради этого сборка и делается, и проверять это надо тем же RefResolver,
-        /// которым потом будет пользоваться каталог.
+        /// Collects a set into a temporary folder and checks the main promise of collecting:
+        /// every reference of the collected copy resolves to an existing file INSIDE that
+        /// folder. That is what the collecting is done for, and it has to be checked with the
+        /// same RefResolver the catalog will use afterwards.
         /// </summary>
         static void Collect(string file)
         {
-            // Не зависит от file — CRITICAL 1 финального ревью воспроизводится без
-            // единого реального файла на диске (см. комментарий у CollisionProbe).
+            // It does not depend on file — CRITICAL 1 of the final review reproduces without a
+            // single real file on disk (see the comment on CollisionProbe).
             CollisionProbe();
 
             if (!File.Exists(file)) { Check(false, "no such set: " + file); return; }
@@ -252,11 +256,11 @@ namespace AliveTools
             Check(info.Error == null, "cannot read " + file);
             if (info.Error != null) return;
 
-            // Оригинал обязан остаться в точности тем же файлом: Run открывает src
-            // только на чтение (FileShare.ReadWrite, а не эксклюзивно), и это главное
-            // обещание всей ветки — «оригинал не трогается никогда». Снимок берём тут,
-            // до всего, и сверяем в самом конце — после всех вызовов Run() ниже, включая
-            // отменённые попытки.
+            // The original has to remain exactly the same file: Run opens src read-only
+            // (FileShare.ReadWrite rather than exclusively), and that is the main promise of
+            // this whole branch — "the original is never touched". The snapshot is taken here,
+            // before anything, and compared at the very end — after every Run() below,
+            // including the cancelled attempts.
             FileInfo srcBefore = new FileInfo(file);
             long srcLenBefore = srcBefore.Length;
             DateTime srcWriteBefore = srcBefore.LastWriteTimeUtc;
@@ -270,17 +274,17 @@ namespace AliveTools
             if (deps.Count == 0) return;
 
             CollectOptions opt = new CollectOptions();
-            opt.FromFactoryPacks = true;    // в стенде собираем всё, чтобы проверить все ветки
+            opt.FromFactoryPacks = true;    // in the bench we collect everything, to exercise every branch
 
             CollectPlan plan = CollectAll.Plan(set, deps, opt);
 
-            // План обязан разложить каждую зависимость ровно в одну корзину.
+            // The plan has to sort every dependency into exactly one basket.
             int total = plan.Copy.Count + plan.Skipped.Count + plan.NotFound.Count;
             Check(total == deps.Count,
                   string.Format("plan covers {0} deps of {1}", total, deps.Count));
             Check(plan.Skipped.Count == 0, "nothing should be skipped when all options are on");
 
-            // Разные файлы не должны попасть в одно место назначения.
+            // Different files must not land in the same destination.
             HashSet<string> dests = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             foreach (SampleDep d in plan.Copy)
             {
@@ -289,14 +293,16 @@ namespace AliveTools
                 if (rel != null) Check(dests.Add(rel), "two files land on " + rel);
             }
 
-            // Внутрипроектные ссылки не переписываются: их путь в копии верен как есть.
+            // In-project references are not rewritten: their path in the copy is right as it
+            // is.
             foreach (SampleDep d in plan.Copy)
                 if (d.Origin == SampleOrigin.InProject)
                     foreach (int i in d.RefIndexes)
                         Check(!plan.Rewrites.ContainsKey(i), "in-project ref rewritten at " + i);
 
-            // Экспорт ложится рядом с проектом, без промежуточной папки. Проверяем до
-            // подмены TargetDir ниже: дальше стенд уводит сборку в %TEMP%.
+            // The export lands next to the project, with no intermediate folder. We check
+            // before the TargetDir substitution below: beyond that the bench takes the
+            // collecting off into %TEMP%.
             Check(plan.TargetDir == Path.Combine(set.ProjectDir, set.Name + " Project_export"),
                   "unexpected export folder: " + plan.TargetDir);
 
@@ -307,10 +313,10 @@ namespace AliveTools
 
             CollectAll.Run(plan, set, info, null, System.Threading.CancellationToken.None);
 
-            // done == plan.Copy.Count было тавтологией: done растёт в Run() безусловно,
-            // в том числе на каждом провалившемся File.Copy — она не могла упасть, даже
-            // если бы не скопировалось ни одного файла. plan.Failed — то же самое место,
-            // которое Run() заполняет именно при отказе копирования.
+            // done == plan.Copy.Count was a tautology: done grows in Run() unconditionally,
+            // including on every File.Copy that failed — it could not have failed even if not a
+            // single file had been copied. plan.Failed is the very place Run() fills in
+            // precisely when a copy is refused.
             Check(plan.Failed.Count == 0,
                   string.Format("{0} of {1} files failed to copy: {2}", plan.Failed.Count, plan.Copy.Count,
                                 string.Join(", ", plan.Failed.ToArray())));
@@ -337,15 +343,16 @@ namespace AliveTools
             Console.WriteLine(string.Format("collected {0} files, {1:N1} MB -> {2}",
                                             plan.Copy.Count, plan.TotalBytes / 1048576.0, plan.TargetDir));
 
-            // Run() при обрыве обязан удалить только ту папку, которую создал сам:
-            // TargetDir у двух Plan() по одному сету может совпасть, и снос чужой
-            // уже собранной копии — потеря данных. Проверяем оба исхода отдельным
-            // Run с заранее отменённым токеном: cancel.ThrowIfCancellationRequested()
-            // в цикле копирования бросает на первой же итерации.
+            // On being cut short, Run() has to delete only the folder it created itself:
+            // TargetDir from two Plan()s over one set may coincide, and wiping somebody else's
+            // already-collected copy is data loss. We check both outcomes with a separate Run
+            // on a pre-cancelled token: cancel.ThrowIfCancellationRequested() in the copy loop
+            // throws on the very first iteration.
             System.Threading.CancellationTokenSource cts = new System.Threading.CancellationTokenSource();
             cts.Cancel();
 
-            // Свежая папка — Run создаёт её сам, при обрыве обязана исчезнуть.
+            // A fresh folder — Run creates it itself, and on being cut short it has to
+            // disappear.
             CollectPlan freshPlan = CollectAll.Plan(set, deps, opt);
             freshPlan.TargetDir = Path.Combine(temp, "cancel-fresh Project");
             bool threwFresh = false;
@@ -354,8 +361,8 @@ namespace AliveTools
             Check(threwFresh, "cancelled Run did not throw on a fresh target dir");
             Check(!Directory.Exists(freshPlan.TargetDir), "cancelled Run left behind a folder it created itself");
 
-            // Уже существующая папка с чужим файлом — Run её не создавал, при обрыве
-            // обязана остаться нетронутой вместе с содержимым.
+            // An already-existing folder with somebody else's file in it — Run did not create
+            // it, and on being cut short it has to stay untouched along with its contents.
             CollectPlan existingPlan = CollectAll.Plan(set, deps, opt);
             existingPlan.TargetDir = Path.Combine(temp, "cancel-existing Project");
             Directory.CreateDirectory(existingPlan.TargetDir);
@@ -368,7 +375,8 @@ namespace AliveTools
             Check(Directory.Exists(existingPlan.TargetDir), "cancelled Run deleted a folder it did not create");
             Check(File.Exists(marker), "cancelled Run deleted someone else's file from a pre-existing folder");
 
-            // Режим .zip: то же самое, но на выходе архив, а папки-заготовки не остаётся.
+            // .zip mode: the same again, but with an archive on the way out and no staging
+            // folder left behind.
             CollectOptions zipOpt = new CollectOptions();
             zipOpt.FromFactoryPacks = true;
             zipOpt.ToZip = true;
@@ -376,12 +384,12 @@ namespace AliveTools
             CollectPlan zipPlan = CollectAll.Plan(set, deps, zipOpt);
             zipPlan.TargetDir = Path.Combine(temp, "zipped Project");
 
-            // Папки-заготовки не должно быть не только в конце, но и ни в один момент
-            // сборки: архив пишется потоком прямо из исходников. Проверка именно здесь,
-            // на прогрессе, — единственное место, откуда видно середину Run(). Сверка
-            // постфактум (ниже) прошла бы и на старом приёме «скопировать, упаковать,
-            // снести», а он ровно тем и плох, что заводит на диске вторую копию сета
-            // и потом её стирает.
+            // There must be no staging folder not only at the end but at any moment of the
+            // collecting: the archive is written as a stream straight from the sources. The
+            // check belongs exactly here, on the progress callback — the one place the middle
+            // of Run() is visible from. A check after the fact (below) would have passed on the
+            // old trick of "copy, pack, delete" too, and that is bad precisely because it puts
+            // a second copy of the set on disk and then erases it.
             bool staged = false;
             Action<int, int, string> watch = delegate
             {
@@ -398,15 +406,15 @@ namespace AliveTools
                 using (ZipArchive za = ZipFile.OpenRead(zipPlan.ZipPath))
                 {
                     Check(za.GetEntry(set.Name + ".als") != null, "collected .als is missing from the archive");
-                    // Больше либо равно: бандлы (.adg, .amxd) — это папки, в архиве они
-                    // разворачиваются в несколько записей каждая.
+                    // Greater or equal: bundles (.adg, .amxd) are folders, and each unfolds
+                    // into several entries in the archive.
                     Check(za.Entries.Count >= zipPlan.Copy.Count + 1,
                           string.Format("archive holds {0} entries for {1} copied files",
                                         za.Entries.Count, zipPlan.Copy.Count));
                 }
 
-            // Оборванный .zip не должен остаться на диске — снаружи он выглядит готовым
-            // экспортом, а внутри половина сета.
+            // An aborted .zip must not be left on disk — from outside it looks like a finished
+            // export with half a set inside.
             CollectPlan zipCancel = CollectAll.Plan(set, deps, zipOpt);
             zipCancel.TargetDir = Path.Combine(temp, "cancel-zip Project");
             bool threwZip = false;
@@ -416,9 +424,9 @@ namespace AliveTools
             Check(!File.Exists(zipCancel.ZipPath), "cancelled zip Run left a half-written archive");
             Check(!Directory.Exists(zipCancel.TargetDir), "cancelled zip Run left behind a folder it created itself");
 
-            // Тот самый снимок с начала функции — после всех Run() выше, успешного и
-            // двух отменённых. Малейшее расхождение здесь означает, что где-то в Run
-            // src открылся на запись, а не только на чтение.
+            // That very snapshot from the start of the function — after every Run() above, the
+            // successful one and the two cancelled. The slightest discrepancy here means that
+            // somewhere in Run src was opened for writing rather than only for reading.
             FileInfo srcAfter = new FileInfo(file);
             Check(srcAfter.Length == srcLenBefore, "original .als size changed after collect");
             Check(srcAfter.LastWriteTimeUtc == srcWriteBefore, "original .als write time changed after collect");
@@ -427,9 +435,10 @@ namespace AliveTools
         }
 
         /// <summary>
-        /// Снести папку стенда. Копии наследуют «только чтение» у исходников (у сэмплов из
-        /// паков атрибут сплошь и рядом), а такой файл Delete не берёт — и мусор прошлого
-        /// прогона ломает следующий: File.Copy поверх readonly-файла падает отказом в доступе.
+        /// Wipe the bench folder. Copies inherit "read only" from their sources (on samples
+        /// from packs the attribute is everywhere), and Delete will not take such a file — so
+        /// the litter of the previous run breaks the next one: File.Copy over a read-only file
+        /// fails with an access denial.
         /// </summary>
         static void Nuke(string dir)
         {
@@ -444,19 +453,20 @@ namespace AliveTools
         }
 
         /// <summary>
-        /// CRITICAL 1 (финальное ревью): внешняя зависимость, чьё имя файла совпадает с
-        /// внутрипроектной, не должна получить то же место назначения. Раньше Plan()
-        /// раздавал имена внешним через Unique() в том же проходе, где InProject только
-        /// помечал своё место занятым, не проверяя результат HashSet.Add. Встреться
-        /// внешняя зависимость в deps РАНЬШЕ внутрипроектной с тем же именем файла (а
-        /// порядок в deps — это порядок FileRef в документе, его выбирает автор сета, не
-        /// мы) — Unique() успевал отдать ей будущий путь внутрипроектной прежде, чем та
-        /// его застолбит, и обе получали один Dest: Run() копировал их в один и тот же
-        /// файл на диске, а переписанная ссылка внешней уже вела туда же.
+        /// CRITICAL 1 (the final review): an external dependency whose file name coincides with
+        /// an in-project one must not get the same destination. Plan() used to hand out names
+        /// to external ones through Unique() in the same pass where InProject merely marked its
+        /// place as taken, without checking the result of HashSet.Add. Let an external
+        /// dependency come in deps BEFORE an in-project one with the same file name (and the
+        /// order in deps is the order of FileRefs in the document, chosen by the set's author,
+        /// not by us) — and Unique() managed to give it the in-project one's future path before
+        /// that one staked it out, and both got one Dest: Run() copied them into one and the
+        /// same file on disk, while the external one's rewritten reference already led there
+        /// too.
         ///
-        /// Реальный .als не нужен: у Plan() нет побочных эффектов, зависящих от того,
-        /// существуют ли исходные файлы на диске, — только SetEntry.ProjectDir и
-        /// DriveInfo.AvailableFreeSpace, а оба не бросают на «нет такой папки».
+        /// A real .als is not needed: Plan() has no side effects depending on whether the
+        /// source files exist on disk — only SetEntry.ProjectDir and
+        /// DriveInfo.AvailableFreeSpace, and neither throws on "no such folder".
         /// </summary>
         static void CollisionProbe()
         {
@@ -483,8 +493,8 @@ namespace AliveTools
 
             Check(inProject.Name == elsewhere.Name, "collision probe: setup is broken, file names differ");
 
-            // Порядок воспроизводит находку ревью: внешняя зависимость идёт в deps
-            // раньше внутрипроектной с тем же именем файла.
+            // The order reproduces the review's finding: the external dependency comes in deps
+            // before the in-project one with the same file name.
             List<SampleDep> deps = new List<SampleDep>();
             deps.Add(elsewhere);
             deps.Add(inProject);
@@ -503,9 +513,9 @@ namespace AliveTools
         }
 
         /// <summary>
-        /// Открывает окно сборки и больше ничего не делает — чтобы его можно было снять
-        /// Shot.exe, не сидя за машиной. Собранный exe, который «компилируется без
-        /// ошибок», ещё ничего не говорит о том, что нарисовалось.
+        /// Opens the collecting window and does nothing else — so it can be captured with
+        /// Shot.exe without sitting at the machine. A built exe that "compiles without errors"
+        /// still says nothing about what got drawn.
         /// </summary>
         static void Show(string file)
         {
@@ -522,15 +532,15 @@ namespace AliveTools
         }
 
         /// <summary>
-        /// Сырая, не зависящая от AlsFile проверка обнуления LivePackId у тронутых узлов —
-        /// того самого поля, которого нет в модели FileRefInfo. Распаковывает dst сама
-        /// (GZipStream поверх FileStream, как AlsSamplePatch.Rewrite) и находит &lt;FileRef&gt;
-        /// тем же правилом, что и патчер: открывающий тег, не самозакрывающийся, до
-        /// &lt;/FileRef&gt;. У каждого узла, чей номер есть в rewrites, утверждает пустоту
-        /// LivePackId; заодно тем же проходом по тексту сверяет LivePackName — дешёвая
-        /// независимая от модели проверка того, что уже проверяется через AlsFile выше.
-        /// Про узлы вне rewrites ничего не утверждает: их патчер не трогает, пак у них может
-        /// быть любым. Возвращает число проверенных узлов.
+        /// A raw check, independent of AlsFile, that LivePackId is zeroed on the nodes that
+        /// were touched — the very field that is not in the FileRefInfo model. It decompresses
+        /// dst itself (GZipStream over FileStream, as AlsSamplePatch.Rewrite does) and finds
+        /// &lt;FileRef&gt; by the same rule as the patcher: an opening tag, not self-closing,
+        /// up to &lt;/FileRef&gt;. For every node whose number is in rewrites it asserts that
+        /// LivePackId is empty; in the same pass over the text it also checks LivePackName — a
+        /// cheap model-independent check of what is already checked through AlsFile above.
+        /// About nodes outside rewrites it asserts nothing: the patcher does not touch them and
+        /// their pack may be anything. Returns the number of nodes checked.
         /// </summary>
         static int CheckPackCleared(string dst, Dictionary<int, NewRef> rewrites)
         {
@@ -569,7 +579,8 @@ namespace AliveTools
             return checkedNodes;
         }
 
-        /// <summary>Тег найден, и сразу после открывающей кавычки значения идёт закрывающая — значение пустое.</summary>
+        /// <summary>The tag was found, and right after the value's opening quote comes the
+        /// closing one — the value is empty.</summary>
         static bool AttrEmpty(string node, string tag)
         {
             int at = node.IndexOf(tag, StringComparison.Ordinal);
@@ -577,8 +588,9 @@ namespace AliveTools
         }
 
         /// <summary>
-        /// Стоит ли «/» перед закрывающей скобкой тега — то есть узел пустой. Копия того же
-        /// правила из AlsSamplePatch: там оно приватно классу и общей сборки не разделяет.
+        /// Whether a "/" stands before the tag's closing bracket — that is, the node is empty.
+        /// A copy of the same rule from AlsSamplePatch: there it is private to the class and
+        /// shares no common assembly.
         /// </summary>
         static bool SelfClosing(string line, int at)
         {
