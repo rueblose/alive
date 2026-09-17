@@ -9,12 +9,14 @@ using System.Windows.Forms;
 namespace AbletonManager
 {
     /// <summary>
-    /// Сборка проекта в переносимую папку. Одно окно, два состояния: выбор и копирование, —
-    /// тем же приёмом, что RescueDialog, и по той же причине: это один поступок, а не два
-    /// разных дела, и второе окно поверх первого только мешало бы.
+    /// Collecting a project into a portable folder. One window, two states — choosing and
+    /// copying — by the same trick as RescueDialog and for the same reason: this is one act
+    /// rather than two separate affairs, and a second window over the first would only get in
+    /// the way.
     ///
-    /// Пункты — ровно те четыре, что задаёт «Collect All and Save» самой Live. Сверх неё
-    /// показаны число файлов и вес: 5.8 ГБ у паков надо видеть ДО нажатия OK, а не после.
+    /// The items are exactly the four "Collect All and Save" asks in Live. Over and above that,
+    /// the file count and the weight are shown: 5.8 GB of packs has to be seen BEFORE OK is
+    /// pressed, not after.
     /// </summary>
     public sealed class CollectDialog : GlassDialog
     {
@@ -38,12 +40,12 @@ namespace AbletonManager
 
         const string ZipLabel = "Add to ZIP";
 
-        /// <summary>Самый широкий итог, какой бывает, — по нему меряется полка.</summary>
+        /// <summary>The widest total there can be — the shelf is measured by it.</summary>
         const string WidestSummary = "Will copy 9999 files, 999.9 GB";
 
-        // Ширина — нижняя граница, а не размер: полка внизу может попросить больше, см.
-        // OnHandleCreated. Высота — под четыре строки, итоги и полку; строка «не нашлись»
-        // есть не всегда, запас на неё заложен.
+        // The width is a lower bound rather than a size: the shelf at the bottom may ask for
+        // more, see OnHandleCreated. The height covers four rows, the totals and the shelf; the
+        // "not found" line is not always there, and room for it is allowed.
         const int DialogW = 720;
         const int DialogH = 350;
         readonly System.Windows.Forms.Timer _tick = new System.Windows.Forms.Timer();
@@ -60,21 +62,23 @@ namespace AbletonManager
         bool _running;
         string _error = "";
 
-        // Своё поле, а не переиспользование _error: тот про чтение сета (не удалось
-        // разобрать .als), этот — про сбой самого копирования. Разные причины, разный текст.
+        // A field of its own rather than reusing _error: that one is about reading the set (the
+        // .als would not parse), this one about a failure of the copying itself. Different
+        // causes, different text.
         string _collectError = "";
 
-        // Прогресс пишется рабочим потоком, читается таймером окна. Простые поля:
-        // int и long читаются и пишутся атомарно, а точность до одного файла тут
-        // никому не нужна — это полоса, а не отчёт.
+        // Progress is written by the worker thread and read by the window's timer. Plain
+        // fields: an int and a long are read and written atomically, and accuracy down to a
+        // single file matters to nobody here — this is a bar, not a report.
         volatile int _done, _total;
         volatile string _current = "";
         CancellationTokenSource _cts;
 
-        /// <summary>Папка собранного проекта. Пусто, если отменили или не дошло до сборки.</summary>
+        /// <summary>The folder of the collected project. Empty if it was cancelled or never got
+        /// that far.</summary>
         public string Produced = "";
 
-        /// <summary>Сколько файлов скопировать не вышло — занято, слишком длинный путь.</summary>
+        /// <summary>How many files could not be copied — busy, or the path too long.</summary>
         public int Failed;
 
         public CollectDialog(SetEntry set, LiveEnvironment env, Settings settings)
@@ -86,9 +90,9 @@ namespace AbletonManager
             Caption = "Export: " + set.Name;
             ClientSize = new Size(Sc(DialogW), Sc(DialogH));
 
-            // Тот же экземпляр, что грузит и сохраняет MainForm, — не Settings.Load()
-            // заново: своя копия не видела бы изменений с других окон и, что хуже,
-            // затиралась бы следующим чужим Save() из устаревшего снимка на диске.
+            // The same instance MainForm loads and saves, not a fresh Settings.Load(): a copy
+            // of our own would not see changes from other windows and, worse, would be
+            // overwritten by the next Save() from elsewhere out of a stale snapshot on disk.
             _opt.FromElsewhere = _settings.CollectElsewhere;
             _opt.FromOtherProjects = _settings.CollectOtherProjects;
             _opt.FromUserLibrary = _settings.CollectUserLibrary;
@@ -111,8 +115,8 @@ namespace AbletonManager
             _cancel.Click += delegate { OnCancel(); };
             Controls.Add(_cancel);
 
-            // Тот же тумблер, что у строк выше, и в той же полке, что кнопки: архив —
-            // это про то, чем кончится сборка, а не ещё один вид файлов для неё.
+            // The same toggle as the rows above, and on the same shelf as the buttons: an
+            // archive is about how the collecting ends, not another kind of file for it.
             _zip.IsSwitch = true;
             _zip.Size = new Size(Sc(42), Sc(24));
             _zip.Checked = _settings.CollectToZip;
@@ -126,12 +130,13 @@ namespace AbletonManager
         }
 
         /// <summary>
-        /// Ширину окна задаёт не только Sc(). Sc() считает по DeviceDpi, а текст GDI рисует
-        /// по DPI шрифта, и это разные числа: на системе со 125% окно выходило 96-точечным,
-        /// а буквы в нём — 120-точечными. Нижняя полка — единственная строка, где всё стоит
-        /// впритык, и она переставала помещаться в собственное окно: итог слева обрезался
-        /// многоточием. Поэтому меряем полку настоящим текстом и, если ей тесно, раздаём
-        /// окну ровно столько, сколько она просит.
+        /// The window width is not set by Sc() alone. Sc() counts from DeviceDpi while GDI
+        /// draws text at the font's DPI, and those are different numbers: on a system at 125%
+        /// the window came out 96-point while the letters in it were 120-point. The bottom
+        /// shelf is the one line where everything stands flush, and it stopped fitting into its
+        /// own window: the total on the left was cut off with an ellipsis. So we measure the
+        /// shelf with real text and, if it is tight, give the window exactly as much as it asks
+        /// for.
         /// </summary>
         protected override void OnHandleCreated(EventArgs e)
         {
@@ -146,9 +151,10 @@ namespace AbletonManager
                      + TextRenderer.MeasureText(ZipLabel, Theme.FBody).Width
                      + Sc(24) + _cancel.Width + Sc(10) + _ok.Width;
 
-            // Только когда тесно: присваивание ClientSize уже созданному окну проходит
-            // через пересчёт рамки и прибавляет к высоте лишнее, а при обычном масштабе
-            // менять нечего — размер из конструктора и так верен.
+            // Only when it is tight: assigning ClientSize to an already-created window goes
+            // through a frame recalculation and adds extra to the height, while at ordinary
+            // scale there is nothing to change — the size from the constructor is right as it
+            // is.
             if (need > ClientSize.Width) ClientSize = new Size(need, ClientSize.Height);
         }
 
@@ -157,9 +163,9 @@ namespace AbletonManager
         protected override void OnShown(EventArgs e)
         {
             base.OnShown(e);
-            // Считать начинаем, только когда окно показано. BeginInvoke до создания
-            // хендла бросает InvalidOperationException, а подсчёт вполне успевает
-            // кончиться раньше, чем ShowDialog доберётся до показа окна.
+            // We only start counting once the window is shown. BeginInvoke before the handle
+            // exists throws InvalidOperationException, and the count can well finish before
+            // ShowDialog gets round to showing the window.
             if (_started) return;
             _started = true;
             ThreadPool.QueueUserWorkItem(delegate { CountInBackground(); });
@@ -174,18 +180,19 @@ namespace AbletonManager
             r.Toggle.IsSwitch = true;
             r.Toggle.Size = new Size(Sc(42), Sc(24));
             r.Toggle.Checked = on;
-            r.Toggle.Enabled = false;           // до конца подсчёта трогать нечего
+            r.Toggle.Enabled = false;           // nothing to touch until the count is done
             r.Toggle.CheckedChanged += delegate { Recount(); };
             Controls.Add(r.Toggle);
             _rows.Add(r);
         }
 
-        // ------------------------------------------------------------------ подсчёт
+        // ------------------------------------------------------------------ counting
 
         /// <summary>
-        /// Вернуться в поток окна из фонового. Окно могут закрыть, пока фоновая работа
-        /// идёт: тогда хендла уже нет и BeginInvoke бросает — ловим здесь, в одном месте,
-        /// а не проверкой IsDisposed в каждом обработчике (она всё равно гонка).
+        /// Return to the window's thread from a background one. The window can be closed while
+        /// background work is running: the handle is then gone and BeginInvoke throws — we
+        /// catch it here, in one place, rather than by an IsDisposed check in every handler
+        /// (which is a race anyway).
         /// </summary>
         void Post(MethodInvoker action)
         {
@@ -237,8 +244,9 @@ namespace AbletonManager
         void Recount()
         {
             if (_deps == null || _info == null) return;
-            // По Origin, а не по индексу: индекс — это порядок AddRow в конструкторе,
-            // и молчаливая привязка к нему рвётся первой же перестановкой строк.
+            // By Origin rather than by index: the index is the order of AddRow in the
+            // constructor, and a silent dependency on it breaks with the first reordering of
+            // the rows.
             foreach (Row r in _rows)
             {
                 switch (r.Origin)
@@ -257,8 +265,9 @@ namespace AbletonManager
         }
 
         /// <summary>
-        /// Хватит ли места. В режиме .zip нужно вдвое: архив пишется рядом с папкой, и
-        /// пока он не готов, на диске лежат оба. Сжатие в расчёт не берём — сэмплы не жмутся.
+        /// Whether there is room. In .zip mode twice as much is needed: the archive is written
+        /// next to the folder, and until it is finished both are on disk. Compression is not
+        /// counted on — samples do not compress.
         /// </summary>
         bool Fits
         {
@@ -270,7 +279,7 @@ namespace AbletonManager
             }
         }
 
-        // ------------------------------------------------------------------ сборка
+        // ------------------------------------------------------------------ collecting
 
         void Start()
         {
@@ -287,7 +296,7 @@ namespace AbletonManager
             _ok.Enabled = false;
             foreach (Row r in _rows) r.Toggle.Enabled = false;
             _zip.Enabled = false;
-            LayoutRows();            // пересинхронизировать Visible — иначе строки не прячутся
+            LayoutRows();            // resync Visible — otherwise the rows do not hide
             _total = _plan.Copy.Count;
             _done = 0;
             _cts = new CancellationTokenSource();
@@ -310,8 +319,8 @@ namespace AbletonManager
                 catch (OperationCanceledException) { }
                 catch (Exception ex)
                 {
-                    // В окне эта строка стоит в нижней полке и длинное сообщение там
-                    // обрежется — целиком оно остаётся в журнале.
+                    // In the window this line sits on the bottom shelf and a long message there
+                    // gets clipped — it stays whole in the log.
                     error = ex.Message;
                     Diag.Line("export: " + ex);
                 }
@@ -329,16 +338,16 @@ namespace AbletonManager
                     else
                     {
                         _collectError = error;
-                        if (error.Length == 0) Close();     // отменили — просто закрываемся
+                        if (error.Length == 0) Close();     // cancelled — we simply close
                         else
                         {
-                            // Настоящий сбой копирования (не отмена) — окно остаётся
-                            // открытым, экран выбора должен вернуться полностью: и
-                            // Enabled, и Visible строк, иначе Collect бьёт в стену.
-                            // Enabled считает Recount() — не «true» в лоб: место на диске
-                            // могло кончиться как раз за время неудачной попытки, и план
-                            // на устаревших цифрах включил бы Collect там, где он снова
-                            // не поместится.
+                            // A real copying failure (not a cancellation) — the window stays
+                            // open and the selection screen has to come back in full: both the
+                            // Enabled and the Visible of the rows, or Collect hits a wall.
+                            // Enabled is decided by Recount() rather than a blunt "true": the
+                            // disk space may have run out during the very attempt that failed,
+                            // and a plan on stale numbers would enable Collect where it will
+                            // not fit again.
                             foreach (Row r in _rows) r.Toggle.Enabled = true;
                             _zip.Enabled = true;
                             Recount();
@@ -366,9 +375,10 @@ namespace AbletonManager
             base.OnFormClosed(e);
         }
 
-        // ------------------------------------------------------------------ раскладка
+        // ------------------------------------------------------------------ layout
 
-        // Сразу под шапкой окна: та кончается на +59 (заголовок и крестик), дальше список.
+        // Right under the window header: that ends at +59 (title and cross), and the list
+        // follows.
         int RowTop { get { return Card.Top + Sc(72); } }
         int RowStep { get { return Sc(34); } }
 
@@ -387,8 +397,9 @@ namespace AbletonManager
             _ok.SetBounds(Card.Right - pad - _ok.Width, by, _ok.Width, h);
             _cancel.SetBounds(_ok.Left - Sc(10) - _cancel.Width, by, _cancel.Width, h);
 
-            // Подпись тумблера рисует OnPaint — ширину её меряем здесь, чтобы отодвинуть
-            // сам тумблер ровно настолько, насколько она займёт справа от него.
+            // The toggle's caption is drawn by OnPaint — we measure its width here in order to
+            // push the toggle itself over by exactly as much as the caption will take to its
+            // right.
             int labelW = TextRenderer.MeasureText(ZipLabel, Theme.FBody).Width;
             _zip.Location = new Point(_cancel.Left - Sc(24) - labelW - Sc(14) - _zip.Width,
                                       by + (h - _zip.Height) / 2);
@@ -404,7 +415,7 @@ namespace AbletonManager
             }
         }
 
-        // ------------------------------------------------------------------ рисование
+        // ------------------------------------------------------------------ painting
 
         static string Mb(long bytes)
         {
@@ -422,8 +433,8 @@ namespace AbletonManager
             int pad = Sc(24);
             int left = Card.Left + pad, right = Card.Right - pad;
 
-            // Нижняя полка есть в любом состоянии: Cancel стоит в ней и пока идёт подсчёт,
-            // и пока копируем. Линейка отделяет её от списка.
+            // The bottom shelf is there in every state: Cancel sits on it both while counting
+            // and while copying. A rule separates it from the list.
             int barTop = _ok.Top;
             int rule = barTop - Sc(14);
             using (Pen p = new Pen(Theme.Hairline)) g.DrawLine(p, left, rule, right, rule);
@@ -444,9 +455,9 @@ namespace AbletonManager
 
             if (_running)
             {
-                // «Exporting», а не «Copying»: в режиме .zip за копированием идёт второй
-                // проход, упаковка, и счётчик пробегает шкалу дважды. Что именно идёт
-                // сейчас, говорит строка под полосой.
+                // "Exporting" rather than "Copying": in .zip mode the copying is followed by a
+                // second pass, the packing, and the counter runs the scale twice. What exactly
+                // is going on is told by the line under the bar.
                 int total = _total, done = _done;
                 Chrome.DrawText(g, string.Format("Exporting {0} of {1}", done, total),
                                 Theme.FBody, head, Theme.Text, Chrome.Left);
@@ -489,15 +500,16 @@ namespace AbletonManager
                             new Rectangle(_zip.Right + Sc(14), barTop, _cancel.Left - Sc(24) - _zip.Right, barH),
                             Theme.Text, Chrome.Left);
 
-            // Левый край полки — итог, он же место для «не влезет» и для сбоя сборки:
-            // всё это ответ на один вопрос, можно ли жать Export.
+            // The left edge of the shelf holds the total, and the same place serves for "will
+            // not fit" and for a failure of the collecting: all of it answers one question,
+            // whether Export can be pressed.
             string sum = "";
             Color color = Theme.Text;
             if (_collectError.Length > 0) { sum = "Could not export: " + _collectError; color = Theme.Red; }
             else if (_plan != null)
             {
-                // Не влезает — цифры уступают место причине: они разбиты по строкам выше,
-                // а здесь важно одно, почему Export не нажимается.
+                // It does not fit — the numbers give way to the reason: they are broken down by
+                // row above, and what matters here is the one thing, why Export will not press.
                 if (Fits)
                     sum = string.Format("Will copy {0}, {1}",
                                         Chrome.Plural(_plan.Copy.Count, "file"), Mb(_plan.TotalBytes));

@@ -10,25 +10,26 @@ namespace AbletonManager.Nebula
     public delegate string MetricText(SetEntry s);
 
     /// <summary>
-    /// Одна величина сета, которую можно подставить в любой из шести каналов облака.
-    /// Величина всегда число: положение по оси, размер, прозрачность и цвет считаются
-    /// из него одинаково. NaN означает «у этого сета такого нет» — не ноль: у сета из
-    /// Live 10 нет тональности вовсе, и ставить её в начало шкалы было бы враньём.
+    /// One value of a set that can be plugged into any of the cloud's six channels. The value
+    /// is always a number: position along an axis, size, transparency and colour are all
+    /// computed from it the same way. NaN means "this set does not have one" — not zero: a set
+    /// from Live 10 has no key at all, and putting it at the start of the scale would be a lie.
     /// </summary>
     public sealed class Metric
     {
         public string Id = "";
         public string Title = "";
 
-        /// <summary>Шкала логарифмическая. Нужна там, где хвост тянется на порядки:
-        /// размеры папок и число ссылок на сэмплы отличаются в тысячи раз.</summary>
+        /// <summary>The scale is logarithmic. Needed where the tail stretches over orders of
+        /// magnitude: folder sizes and sample reference counts differ by thousands of
+        /// times.</summary>
         public bool Log;
 
-        /// <summary>Значение — номер класса, а не количество: тональность, лад, полка.
-        /// В цвете такие раскрашиваются палитрой, а не градиентом.</summary>
+        /// <summary>The value is a class number rather than a quantity: key, scale, shelf. In
+        /// colour these are painted with a palette rather than a gradient.</summary>
         public bool Categorical;
 
-        /// <summary>Как красить, когда величина стоит в канале цвета.</summary>
+        /// <summary>How to colour it when the value sits in the colour channel.</summary>
         public ColorMode Color = ColorMode.Ramp;
 
         public MetricValue Value;
@@ -37,9 +38,9 @@ namespace AbletonManager.Nebula
 
     public enum ColorMode
     {
-        Ramp,      // непрерывный градиент
-        Classes,   // палитра по номеру класса
-        Key        // круг квинт: тональность → оттенок
+        Ramp,      // a continuous gradient
+        Classes,   // a palette by class number
+        Key        // the circle of fifths: key → hue
     }
 
     public static class Metrics
@@ -65,7 +66,7 @@ namespace AbletonManager.Nebula
             return t;
         }
 
-        // ------------------------------------------------------------------ каталог
+        // ------------------------------------------------------------------ catalog
 
         static List<Metric> Build()
         {
@@ -83,8 +84,8 @@ namespace AbletonManager.Nebula
                 delegate (SetEntry s) { return s.Tempo > 0 ? s.Tempo : double.NaN; },
                 delegate (SetEntry s) { return s.Tempo > 0 ? s.Tempo.ToString("0.##", CultureInfo.InvariantCulture) : "—"; }));
 
-            // Тональность как число — это номер ноты, а не «сколько». По оси она даёт
-            // двенадцать плоскостей, в цвете — круг квинт (см. Palette.Key).
+            // A key as a number is a note number, not a "how much". Along an axis it gives
+            // twelve planes; in colour, the circle of fifths (see Palette.Key).
             Metric key = Num("key", "Key",
                 delegate (SetEntry s) { return s.ScaleRoot >= 0 ? s.ScaleRoot : double.NaN; },
                 delegate (SetEntry s) { return s.Key.Length > 0 ? s.Key : "—"; });
@@ -163,9 +164,10 @@ namespace AbletonManager.Nebula
             return m;
         }
 
-        // ------------------------------------------------------------ преобразования
+        // ------------------------------------------------------------- conversions
 
-        /// <summary>Дни от эпохи. Дата как число — чтобы шкала считалась как у любой другой величины.</summary>
+        /// <summary>Days since the epoch. A date as a number — so the scale is computed like
+        /// any other value's.</summary>
         static double Days(DateTime d)
         {
             if (d == default(DateTime) || d.Year < 1990) return double.NaN;
@@ -178,7 +180,8 @@ namespace AbletonManager.Nebula
             return d.ToLocalTime().ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
         }
 
-        /// <summary>«12.3.5» → 12.0305: версии должны сравниваться по частям, а не по строке.</summary>
+        /// <summary>"12.3.5" → 12.0305: versions have to compare part by part, not as
+        /// strings.</summary>
         static double Version(string v)
         {
             if (string.IsNullOrEmpty(v)) return double.NaN;
@@ -202,8 +205,8 @@ namespace AbletonManager.Nebula
             return (b / 1024.0).ToString("0", CultureInfo.InvariantCulture) + " KB";
         }
 
-        /// <summary>Имя как число: первые шесть знаков в базе 40, чтобы ось «A→Z» была
-        /// действительно алфавитной, а не случайной.</summary>
+        /// <summary>A name as a number: the first six characters in base 40, so that an "A→Z"
+        /// axis is genuinely alphabetical rather than random.</summary>
         static double Alphabetical(string name)
         {
             if (string.IsNullOrEmpty(name)) return 0;
@@ -223,9 +226,9 @@ namespace AbletonManager.Nebula
             return v;
         }
 
-        /// <summary>Устойчивое число 0..1 из строки — рассыпать точки там, где своей
-        /// величины нет. Своё, а не GetHashCode: тот не обещает одинаковый результат
-        /// между запусками, и облако прыгало бы при каждом старте.</summary>
+        /// <summary>A stable 0..1 number out of a string — for scattering dots where there is
+        /// no value of their own. Ours rather than GetHashCode: that one promises no
+        /// consistency between runs, and the cloud would jump on every start.</summary>
         public static double Hash01(string s)
         {
             return (Hash(s) & 0xFFFFFF) / (double)0x1000000;
@@ -242,8 +245,8 @@ namespace AbletonManager.Nebula
             }
         }
 
-        // Полки нумеруем по первому появлению: имена папок заранее неизвестны, а цвет
-        // класса должен быть один и тот же весь сеанс.
+        // Shelves are numbered by first appearance: folder names are not known in advance,
+        // while a class's colour has to stay the same for the whole session.
         static readonly Dictionary<string, int> _places =
             new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
         static readonly List<string> _placeNames = new List<string>();
@@ -264,9 +267,9 @@ namespace AbletonManager.Nebula
     }
 
     /// <summary>
-    /// Шкала одной величины по текущему набору сетов. Края берутся не по минимуму и
-    /// максимуму, а по 2-му и 98-му процентилю: один проект-монстр на 40 ГБ иначе
-    /// сплющивает все остальные в точку у нуля.
+    /// The scale of one value over the current set of sets. The edges are taken not from the
+    /// minimum and maximum but from the 2nd and 98th percentile: one 40 GB monster of a project
+    /// would otherwise squash all the rest into a dot at zero.
     /// </summary>
     public sealed class Range
     {
@@ -290,8 +293,8 @@ namespace AbletonManager.Nebula
 
             v.Sort();
             r.Empty = false;
-            // У категорий процентили ни к чему: классы должны попадать на шкалу все,
-            // включая единственный сет в редком ладу.
+            // Percentiles are of no use for categories: every class has to land on the scale,
+            // including the single set in a rare mode.
             if (m.Categorical || v.Count < 20)
             {
                 r.Lo = v[0];
@@ -306,7 +309,7 @@ namespace AbletonManager.Nebula
             return r;
         }
 
-        /// <summary>0..1 с обрезкой по краям. NaN на входе — NaN на выходе.</summary>
+        /// <summary>0..1 with clamping at the edges. NaN in — NaN out.</summary>
         public double Norm(double raw)
         {
             if (double.IsNaN(raw) || Empty) return double.NaN;
@@ -315,7 +318,7 @@ namespace AbletonManager.Nebula
             return t < 0 ? 0 : (t > 1 ? 1 : t);
         }
 
-        /// <summary>Значение на краю шкалы — для подписей у осей.</summary>
+        /// <summary>The value at the edge of the scale — for the axis labels.</summary>
         public double At(double t)
         {
             double v = Lo + (Hi - Lo) * t;
@@ -323,8 +326,8 @@ namespace AbletonManager.Nebula
         }
     }
 
-    /// <summary>Именованный градиент непрерывной величины — набор опорных цветов,
-    /// между которыми Palette.Sample идёт через LAB, а не напрямую по RGB.</summary>
+    /// <summary>A named gradient for a continuous value — a set of anchor colours between which
+    /// Palette.Sample travels through LAB rather than straight through RGB.</summary>
     public sealed class Gradient
     {
         public string Id = "";
@@ -334,13 +337,13 @@ namespace AbletonManager.Nebula
 
     public static class Palette
     {
-        // Пять градиентов на выбор. Опорные цвета — обычный sRGB (как их видno в любом
-        // редакторе), а смешивает их между собой уже Sample() через LAB: перегон через
-        // RGB напрямую между двумя насыщенными, но разными по светлоте цветами (скажем,
-        // тёмно-фиолетовым и жёлтым) даёт грязную серую просадку посередине — глаз видит
-        // готовую примесь, а не то, что было задумано. LAB устроен так, что светлота (L)
-        // меняется по прямой независимо от цветности, и середина остаётся чистым цветом,
-        // а не серой.
+        // Five gradients to choose from. The anchor colours are ordinary sRGB (as they look in
+        // any editor), and it is Sample() that mixes between them through LAB: going straight
+        // through RGB between two saturated colours of differing lightness (say, dark violet
+        // and yellow) gives a dirty grey sag in the middle — the eye sees an accidental blend
+        // rather than what was intended. LAB is built so that lightness (L) changes along a
+        // straight line independently of chroma, and the middle stays a clean colour instead of
+        // a grey one.
         public static readonly Gradient[] Gradients =
         {
             new Gradient { Id = "nebula", Title = "Nebula", Stops = new[]
@@ -389,10 +392,10 @@ namespace AbletonManager.Nebula
 
         // ---------------------------------------------------------------------- LAB
         //
-        // sRGB -> линейный свет -> XYZ (D65) -> CIELAB, и обратно. Формулы учебные
-        // (тот же путь, что в любом руководстве по цветовым моделям), нужны здесь
-        // только затем, чтобы смешивать между двумя опорными цветами по кратчайшей
-        // дороге для глаза, а не по кратчайшей дороге для чисел R,G,B.
+        // sRGB -> linear light -> XYZ (D65) -> CIELAB, and back. The formulas are textbook ones
+        // (the same path as in any guide to colour models) and are only here so that mixing
+        // between two anchor colours takes the shortest road for the eye rather than the
+        // shortest road for the numbers R, G and B.
 
         static double SrgbToLinear(double c)
         {
@@ -464,9 +467,9 @@ namespace AbletonManager.Nebula
         }
 
         /// <summary>
-        /// Цвет тональности. Оттенок идёт по кругу квинт, а не по хроматической
-        /// гамме: соседние по кругу тональности — родственные, и на облаке они
-        /// оказываются соседними по цвету. Мажор светлее и мягче, минор — глубже.
+        /// The colour of a key. The hue follows the circle of fifths rather than the chromatic
+        /// scale: keys adjacent on the circle are related, and in the cloud they end up
+        /// adjacent in colour. Major is lighter and softer, minor is deeper.
         /// </summary>
         public static Color Key(int root, int scaleIndex)
         {
@@ -477,8 +480,8 @@ namespace AbletonManager.Nebula
             return FromHsv(hue, minor ? 0.80f : 0.58f, minor ? 0.82f : 1.0f);
         }
 
-        /// <summary>Цвет класса: оттенки раскладываются золотым углом, чтобы соседние
-        /// номера не сливались.</summary>
+        /// <summary>A class colour: hues are laid out by the golden angle so neighbouring
+        /// numbers do not blend together.</summary>
         public static Color Class(int index)
         {
             if (index < 0) return Color.FromArgb(0x7E, 0x7E, 0x88);
@@ -509,10 +512,10 @@ namespace AbletonManager.Nebula
     }
 
     /// <summary>
-    /// Квадратный чекбокс рядом со строкой канала — та же отрисовка, что и у галочек
-    /// в RowListView, просто отдельным контролом: включает и выключает канал, не трогая
-    /// выбор величины в выпадающем списке рядом с ним, чтобы вернуть канал можно было,
-    /// не выбирая величину заново.
+    /// A square checkbox beside a channel row — the same drawing as the ticks in RowListView,
+    /// just as a separate control: it switches a channel on and off without touching the value
+    /// chosen in the dropdown next to it, so a channel can be brought back without picking its
+    /// value again.
     /// </summary>
     public sealed class ChannelSwitch : GlassControl
     {
@@ -567,11 +570,11 @@ namespace AbletonManager.Nebula
     }
 
     /// <summary>
-    /// Четыре пресета камеры в одной пилюле, каждый — маленький изометрический куб:
-    /// на «Angle» все три грани ровные (свободный угол), у «Front/Side/Top» одна грань
-    /// светится — та, что нормальна к оси, вдоль которой в этом виде смотрит камера.
-    /// Не радио-кнопка: клик применяет вид, но не запоминается подсветкой — стоит
-    /// потом покрутить мышью, и «Front» больше не будет правдой ни для одной иконки.
+    /// Four camera presets in one pill, each a small isometric cube: on "Angle" all three faces
+    /// are even (a free angle), while on "Front/Side/Top" one face glows — the one normal to
+    /// the axis the camera looks along in that view. Not a radio button: a click applies the
+    /// view but is not remembered by a highlight — spin the mouse afterwards and "Front" is no
+    /// longer true for any of the icons.
     /// </summary>
     public sealed class CameraPresetBar : GlassControl
     {
@@ -624,10 +627,9 @@ namespace AbletonManager.Nebula
         }
 
         /// <summary>
-        /// Изометрический куб из трёх ромбов, сходящихся в одной точке — школьная
-        /// проекция, но она моментально читается как «куб», а не абстрактный
-        /// шестиугольник. Ромбы делят правильный шестиугольник линиями к его центру
-        /// через одну вершину.
+        /// An isometric cube of three rhombi meeting at one point — a schoolbook projection,
+        /// but it reads instantly as "a cube" rather than as an abstract hexagon. The rhombi
+        /// divide a regular hexagon with lines to its centre through every other vertex.
         /// </summary>
         static void DrawCube(Graphics g, RectangleF box, CameraPreset kind, bool hot)
         {
@@ -643,9 +645,9 @@ namespace AbletonManager.Nebula
             PointF v4 = new PointF(cx - s * 0.866f, cy + s * 0.5f);
             PointF v5 = new PointF(cx - s * 0.866f, cy - s * 0.5f);
 
-            PointF[] top = { v0, v1, o, v5 };     // смотрит вдоль Y — «Top»
-            PointF[] right = { v1, v2, v3, o };   // смотрит вдоль X — «Side»
-            PointF[] left = { o, v3, v4, v5 };    // смотрит вдоль Z — «Front»
+            PointF[] top = { v0, v1, o, v5 };     // looks along Y — "Top"
+            PointF[] right = { v1, v2, v3, o };   // looks along X — "Side"
+            PointF[] left = { o, v3, v4, v5 };    // looks along Z — "Front"
 
             int dimA = hot ? 70 : 46;
             Color dim = Color.FromArgb(dimA, 255, 255, 255);
@@ -655,7 +657,7 @@ namespace AbletonManager.Nebula
             Color topFill = kind == CameraPreset.Top ? lit : dim;
             Color rightFill = kind == CameraPreset.Side ? lit : dim;
             Color leftFill = kind == CameraPreset.Front ? lit : dim;
-            // Angle: ни одна грань не выделена — куб «просто куб», вид со свободного угла.
+            // Angle: no face is picked out — the cube is "just a cube", seen from a free angle.
 
             g.FillPolygon(Theme.GetBrush(topFill), top);
             g.FillPolygon(Theme.GetBrush(rightFill), right);

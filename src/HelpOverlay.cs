@@ -6,14 +6,15 @@ using System.Windows.Forms;
 namespace AbletonManager
 {
     /// <summary>
-    /// Справка поверх всего окна: что умеет программа, что показывают её окна и какими
-    /// клавишами это делается.
+    /// Help over the whole window: what the program can do, what its windows show, and which
+    /// keys do it.
     ///
-    /// Не отдельное окно, а контрол во всю клиентскую область главного — так справка
-    /// не теряется за окном, ездит вместе с ним и не заводит вторую кнопку на панели
-    /// задач. Затемнение сделано снимком: соседние контролы (список, панель деталей)
-    /// сквозь брата-контрола не просвечивают, WinForms так не умеет, поэтому окно
-    /// снимается в картинку ДО показа справки и рисуется под ней приглушённым.
+    /// Not a separate window but a control filling the main one's client area — that way the
+    /// help does not get lost behind the window, travels with it, and does not add a second
+    /// taskbar button. The dimming is done from a snapshot: neighbouring controls (the list,
+    /// the detail panel) do not show through a sibling control, WinForms cannot do that, so the
+    /// window is captured into a picture BEFORE the help is shown and drawn muted underneath
+    /// it.
     /// </summary>
     public sealed class HelpOverlay : Control
     {
@@ -38,11 +39,11 @@ namespace AbletonManager
 
         int Sc(int v) { return (int)Math.Round(v * (DeviceDpi / 96f)); }
 
-        // ------------------------------------------------------------------ показ
+        // ------------------------------------------------------------------ showing
 
         /// <summary>
-        /// Снять окно и раскрыться поверх него. Снимок берём до собственного показа —
-        /// иначе поймали бы в него сами себя.
+        /// Capture the window and open over it. The snapshot is taken before we show ourselves
+        /// — otherwise we would catch ourselves in it.
         /// </summary>
         public void Open(Form owner)
         {
@@ -67,7 +68,7 @@ namespace AbletonManager
                 owner.DrawToBitmap(b, r);
                 _shot = b;
             }
-            catch { /* не сняли — обойдёмся сплошной заливкой */ }
+            catch { /* no luck - we show the picture whole */ }
         }
 
         public void Close()
@@ -76,7 +77,7 @@ namespace AbletonManager
             if (_shot != null) { _shot.Dispose(); _shot = null; }
         }
 
-        /// <summary>Прокрутка с клавиатуры. true — клавиша наша.</summary>
+        /// <summary>Scrolling from the keyboard. true means the key was ours.</summary>
         public bool HandleKey(Keys k)
         {
             int step = 0;
@@ -124,8 +125,8 @@ namespace AbletonManager
         protected override void OnMouseDown(MouseEventArgs e)
         {
             if (e.Button != MouseButtons.Left) return;
-            // Клик по крестику или мимо карточки — закрыть. Внутри карточки клик ничего
-            // не делает: там текст, который читают, и случайно закрывать его обидно.
+            // A click on the cross or outside the card closes it. Inside the card a click does
+            // nothing: there is text there being read, and closing it by accident is a shame.
             if (_closeRect.Contains(e.Location) || !_card.Contains(e.Location))
             {
                 if (CloseRequested != null) CloseRequested();
@@ -134,23 +135,24 @@ namespace AbletonManager
             base.OnMouseDown(e);
         }
 
-        // --------------------------------------------------------------- отрисовка
+        // --------------------------------------------------------------- drawing
 
         protected override void OnPaintBackground(PaintEventArgs e) { }
 
-        // Карточка непрозрачная, и это не украшательство: колонки рисуются в отдельный
-        // буфер такого же цвета и переносятся сюда целиком (см. OnPaint). Иначе текст
-        // не обрезать — TextRenderer, которым нарисован весь интерфейс, Graphics.Clip
-        // не соблюдает, и строки вылезали за нижний край карточки.
+        // The card is opaque, and that is not decoration: the columns are drawn into a separate
+        // buffer of the same colour and transferred here whole (see OnPaint). Otherwise the
+        // text cannot be clipped — TextRenderer, which the entire interface is drawn with, does
+        // not honour Graphics.Clip, and the lines spilled past the bottom edge of the card.
         static readonly Color CardFill = Color.FromArgb(0xFF, 0x17, 0x17, 0x1A);
 
         protected override void OnPaint(PaintEventArgs e)
         {
             Graphics g = e.Graphics;
 
-            // Снимок окна под затемнением. Если окно успели растянуть, снимок остаётся
-            // прежнего размера — рисуем его как есть от левого верхнего угла, а остаток
-            // просто закрашиваем: справка всё равно затемнена, стык не читается.
+            // The snapshot of the window under the dimming. If the window was resized in the
+            // meantime, the snapshot keeps its old size — we draw it as is from the top-left
+            // corner and simply fill the remainder: the help is dimmed anyway and the seam does
+            // not read.
             g.Clear(Color.FromArgb(0xFF, 0x0B, 0x0B, 0x0D));
             if (_shot != null) g.DrawImageUnscaled(_shot, 0, 0);
             using (SolidBrush dim = new SolidBrush(Color.FromArgb(0xBE, 0x07, 0x07, 0x09)))
@@ -169,7 +171,7 @@ namespace AbletonManager
             int top = _card.Top + pad;
             int innerW = _card.Width - pad * 2;
 
-            // Шапка живёт вне прокрутки — заголовок должен быть виден всегда.
+            // The header lives outside the scroll — the title has to stay visible at all times.
             int titleH;
             using (Font big = Theme.UISemibold(21f))
             {
@@ -179,7 +181,7 @@ namespace AbletonManager
                 Chrome.DrawText(g, title, big,
                                 new Rectangle(x, top, titleSize.Width + Sc(4), titleH), Theme.Text, Line1);
 
-                // Подпись прибита к базовой линии заголовка, а не к его верху.
+                // The subtitle is pinned to the heading's baseline rather than to its top.
                 int subH = LineH(Theme.FLabel);
                 Chrome.DrawText(g, "Keyboard Shortcuts", Theme.FLabel,
                                 new Rectangle(x + titleSize.Width + Sc(12), top + titleH - subH - Sc(2),
@@ -219,8 +221,9 @@ namespace AbletonManager
         }
 
         /// <summary>
-        /// Три колонки в буфер и одной картинкой на место — так строка, не влезшая в
-        /// видимую часть, обрезается ровно по краю, а не вылезает за карточку.
+        /// Three columns into a buffer and one picture into place — that way a line that does
+        /// not fit the visible part is clipped exactly at the edge instead of spilling past the
+        /// card.
         /// </summary>
         void PaintColumns(Graphics g, int x, int listTop, int innerW)
         {
@@ -241,15 +244,16 @@ namespace AbletonManager
                         if (h > _contentH) _contentH = h;
                     }
 
-                    // Строку, разрезанную краем, гасим градиентом — так видно, что текст
-                    // продолжается, а не что его кто-то откусил.
+                    // A line cut by the edge is faded with a gradient — that way it reads as
+                    // text continuing rather than as text somebody bit off.
                     if (_contentH - _scroll > _viewH) Fade(bg, innerW, _viewH - Sc(34), false);
                     if (_scroll > 0) Fade(bg, innerW, 0, true);
                 }
                 g.DrawImageUnscaled(buf, x, listTop);
             }
 
-            // Прокрутили дальше конца (окно растянули, текста стало меньше) — подтянуть.
+            // Scrolled past the end (the window was resized, there is less text) — pull it
+            // back.
             int max = Math.Max(0, _contentH - _viewH);
             if (_scroll > max) { _scroll = max; Invalidate(); }
         }
@@ -275,8 +279,9 @@ namespace AbletonManager
         }
 
         /// <summary>
-        /// Карточка по центру, но не во всё окно: вокруг должна остаться видимая полоса
-        /// затемнённого приложения — иначе это уже не оверлей, а вторая страница.
+        /// The card is centred but does not fill the window: a visible band of the dimmed
+        /// application has to remain around it — otherwise this is no longer an overlay but a
+        /// second page.
         /// </summary>
         void LayoutCard()
         {
@@ -286,14 +291,14 @@ namespace AbletonManager
         }
 
         /// <summary>
-        /// Раскладывает колонку сверху вниз и возвращает её высоту. Меряет и рисует
-        /// одним кодом (draw=false — только счёт), иначе высота прокрутки и картинка
-        /// разъезжаются при первой же правке текста.
+        /// Lays a column out from top to bottom and returns its height. It measures and draws
+        /// with the same code (draw=false counts only), or the scroll height and the picture
+        /// drift apart at the very first edit of the text.
         /// </summary>
         int Flow(Graphics g, List<Entry> items, int x, int top, int w, bool draw)
         {
-            // По колпачку на клавишу — самое длинное сочетание шире, чем прежняя треть
-            // колонки, и наезжало на описание справа.
+            // One cap per key — the longest combination is wider than the old third of a column
+            // and ran into the description on the right.
             int keyW = Math.Min(Sc(150), w * 2 / 5);
             int keyGap = Sc(12);
             int textX = x + keyW + keyGap;
@@ -355,9 +360,9 @@ namespace AbletonManager
         }
 
         /// <summary>
-        /// Сочетание — по колпачку на клавишу: «Shift Enter» это две клавиши, и на одной
-        /// общей подложке они читались как одна длинная. Разделители («/» между
-        /// вариантами) остаются просто текстом между колпачками.
+        /// A combination gets one cap per key: "Shift Enter" is two keys, and on one shared
+        /// plate they read as a single long one. Separators ("/" between alternatives) stay as
+        /// plain text between the caps.
         /// </summary>
         void DrawCaps(Graphics g, string combo, int x, int y)
         {
@@ -383,10 +388,10 @@ namespace AbletonManager
         }
 
         /// <summary>
-        /// Высота строки с переносами. Мерить обязательно той же Graphics, которой
-        /// строку потом рисуют: у буфера колонок включён ClearTypeGridFit, у экранного
-        /// DC — нет, и самые длинные подписи мерились в две строки, а рисовались в одну.
-        /// Место под несуществующую вторую строку так и оставалось дырой в столбце.
+        /// The height of a line with wrapping. It has to be measured with the same Graphics the
+        /// line is later drawn with: the column buffer has ClearTypeGridFit on while the screen
+        /// DC does not, and the longest captions measured as two lines but drew as one. The
+        /// room for a second line that never existed stayed a hole in the column.
         /// </summary>
         static int Wrap(Graphics g, string text, Font f, int w)
         {
@@ -394,16 +399,17 @@ namespace AbletonManager
         }
 
         /// <summary>
-        /// Высота строки этим шрифтом — с запасом на выносные элементы. Фиксированные
-        /// высоты тут не годятся: Chrome.Left центрирует текст по прямоугольнику, и на
-        /// коротком у «g», «y», «p» срезало хвосты, а у заголовков — заодно и верхушки.
+        /// The height of a line in this font — with room to spare for descenders. Fixed heights
+        /// will not do here: Chrome.Left centres text in a rectangle, and in a short one the
+        /// tails of "g", "y" and "p" were shaved off, and on headings the tops as well.
         /// </summary>
         static int LineH(Font f)
         {
             return TextRenderer.MeasureText("Ayg", f).Height;
         }
 
-        /// <summary>Однострочный текст: не переносим и не режем по краям прямоугольника.</summary>
+        /// <summary>Single-line text: no wrapping and no clipping at the rectangle's
+        /// edges.</summary>
         const TextFormatFlags Line1 = TextFormatFlags.Left | TextFormatFlags.VerticalCenter
                                     | TextFormatFlags.NoPrefix | TextFormatFlags.SingleLine
                                     | TextFormatFlags.NoClipping;
@@ -414,7 +420,7 @@ namespace AbletonManager
             base.Dispose(disposing);
         }
 
-        // ---------------------------------------------------------------- содержимое
+        // ---------------------------------------------------------------- content
 
         enum Kind { Section, Key, Term, Note }
 

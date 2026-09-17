@@ -5,34 +5,36 @@ using System.Runtime.InteropServices;
 namespace AbletonManager
 {
     /// <summary>
-    /// Обход дерева папок в поисках сетов.
+    /// Walking the folder tree in search of sets.
     ///
-    /// Почему не Directory.GetFiles, как было раньше: в .NET Framework путь длиннее 260
-    /// символов — это исключение, и падает на нём вся папка целиком вместе со всем, что
-    /// под ней. В библиотеке из паков и пресетов таких мест хватает (замерено на D:\Music:
-    /// 14 папок), и раньше они молча выпадали из сканирования — вместе со всеми сетами
-    /// внутри. Снаружи это выглядело как «часть проектов программа не видит», причём без
-    /// единого следа в интерфейсе. FindFirstFile с префиксом \\?\ ограничение снимает.
+    /// Why not Directory.GetFiles, as it used to be: in .NET Framework a path longer than 260
+    /// characters is an exception, and it takes down the whole folder along with everything
+    /// beneath it. In a library of packs and presets there are plenty of such places (measured
+    /// on D:\Music: 14 folders), and they used to drop out of the scan silently — together with
+    /// every set inside. From outside that looked like "the program does not see some of the
+    /// projects", with not a trace of it in the interface. FindFirstFile with the \\?\ prefix
+    /// lifts the limit.
     ///
-    /// Заодно это один проход вместо двух (GetFiles + GetDirectories) и без сборки
-    /// массива строк на каждую папку — а папок в корне вроде D:\Music двадцать тысяч.
+    /// It is also one pass instead of two (GetFiles + GetDirectories) and without building an
+    /// array of strings per folder — and under a root like D:\Music there are twenty thousand
+    /// folders.
     /// </summary>
     internal static class FolderScan
     {
         public sealed class Result
         {
-            public int Dirs;         // просмотрено папок
-            public int Files;        // найдено файлов
-            public int Unreadable;   // папок, которые не открылись
-            public bool RootFailed;  // не открылась сама папка, с которой начинали
+            public int Dirs;         // folders visited
+            public int Files;        // files found
+            public int Unreadable;   // folders that would not open
+            public bool RootFailed;  // the starting folder itself would not open
         }
 
-        /// <summary>Вернуть true, чтобы прекратить обход.</summary>
+        /// <summary>Return true to stop the walk.</summary>
         public delegate bool CancelCheck();
 
         /// <summary>
-        /// Все файлы с указанным расширением в дереве. Папки Backup пропускаются по
-        /// флагу — их сеты Live плодит сама, и в каталоге они не нужны.
+        /// Every file with the given extension in the tree. Backup folders are skipped by a
+        /// flag — Live breeds those sets itself, and the catalog has no use for them.
         /// </summary>
         public static Result Find(string root, string extension, bool includeBackups,
                                   Action<string> onFile, CancelCheck cancel)
@@ -42,8 +44,8 @@ namespace AbletonManager
             try { root = System.IO.Path.GetFullPath(root); }
             catch { res.RootFailed = true; return res; }
 
-            // Стек, а не рекурсия: у дерева бывает неожиданная глубина, а падать с
-            // переполнением стека посреди сканирования нечем оправдать.
+            // A stack rather than recursion: a tree can be unexpectedly deep, and there is no
+            // excusing a stack overflow in the middle of a scan.
             Stack<string> todo = new Stack<string>();
             todo.Push(root);
             bool atRoot = true;
@@ -75,8 +77,9 @@ namespace AbletonManager
 
                         if ((fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0)
                         {
-                            // Симлинки и junction'ы не разворачиваем: по ним обход уходит
-                            // либо в петлю, либо второй раз в те же самые папки.
+                            // Symlinks and junctions are not followed: through them the walk
+                            // goes either into a loop or a second time into the very same
+                            // folders.
                             if ((fd.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) != 0) continue;
                             if (!includeBackups &&
                                 string.Equals(name, "Backup", StringComparison.OrdinalIgnoreCase)) continue;
@@ -84,10 +87,10 @@ namespace AbletonManager
                         }
                         else if (name.EndsWith(extension, StringComparison.OrdinalIgnoreCase))
                         {
-                            // Пробная копия помощника по восстановлению — это .als в папке
-                            // проекта, и без этой строчки он приехал бы в каталог рядом с
-                            // настоящим сетом. Живёт такой файл секунды, но попасть на
-                            // сканирование успевает.
+                            // A probe copy from the rescue helper is an .als inside a project
+                            // folder, and without this line it would turn up in the catalog
+                            // next to the real set. Such a file lives for seconds, but that is
+                            // enough to be caught by a scan.
                             if (RescueProbe.IsProbe(name)) continue;
 
                             res.Files++;
@@ -101,41 +104,43 @@ namespace AbletonManager
             return res;
         }
 
-        /// <summary>Сколько весит папка со всем, что в ней лежит.</summary>
+        /// <summary>How much a folder weighs with everything inside it.</summary>
         public struct Weight
         {
             public long Bytes;
             public int Files;
 
             /// <summary>
-            /// Когда проект сохраняли. Live при каждом сохранении кладёт копию старого
-            /// файла в Backup и пишет в её имя момент сохранения:
-            /// «angelcore [2026-05-22 012035].als». Другой истории работы на диске нет —
-            /// сам .als помнит только последний раз.
+            /// When a project was saved. On every save Live puts a copy of the old file into
+            /// Backup and writes the moment of saving into its name: "angelcore [2026-05-22
+            /// 012035].als". There is no other history of the work on disk — the .als itself
+            /// remembers only the last time.
             ///
-            /// Берём именно скобку, а не время файла: время у копии — это момент
-            /// ПРЕДЫДУЩЕГО сохранения, копируется-то содержимое, которое было до.
-            /// Проверено: «try1 riddik [2026-08-28 140615].als» лежит с временем 14:00.
+            /// We take the bracket rather than the file time: a copy's time is the moment of
+            /// the PREVIOUS save, since what gets copied is the content from before. Verified:
+            /// "try1 riddik [2026-08-28 140615].als" sits with a time of 14:00.
             ///
-            /// null, а не пустой список: папок без Backup большинство, и заводить на
-            /// каждую по объекту незачем.
+            /// null rather than an empty list: most folders have no Backup, and there is no
+            /// reason to make an object for each.
             /// </summary>
             public List<Save> Saves;
         }
 
-        /// <summary>Одно сохранение: когда и какого сета — имя копия несёт в себе же.</summary>
+        /// <summary>One save: when, and of which set — the copy carries the name within
+        /// itself.</summary>
         public struct Save
         {
             public DateTime When;
-            public string Set;      // «angelcore» из «angelcore [2026-05-22 012035].als»
+            public string Set;      // "angelcore" out of "angelcore [2026-05-22 012035].als"
         }
 
         /// <summary>
-        /// Вес папки целиком. Считаем всё подряд, включая Samples и Backup: вопрос
-        /// «сколько занимает проект» — это про место на диске, а оно занято и ими.
+        /// The weight of the whole folder. We count everything, Samples and Backup included:
+        /// the question "how much does the project take" is about space on disk, and they take
+        /// it too.
         ///
-        /// Размер берём прямо из записи каталога, которую и так вернул FindNextFile, —
-        /// открывать каждый файл ради длины не нужно.
+        /// The size comes straight from the directory entry FindNextFile returned anyway —
+        /// there is no need to open each file for its length.
         /// </summary>
         public static Weight Weigh(string root, CancelCheck cancel)
         {
@@ -152,7 +157,8 @@ namespace AbletonManager
                 if (cancel != null && cancel()) break;
                 string dir = todo.Pop();
 
-                // Раз на папку, а не раз на файл: внутри Backup их бывают сотни.
+                // Once per folder rather than once per file: inside Backup there can be
+                // hundreds of them.
                 bool backups = dir.EndsWith(@"\Backup", StringComparison.OrdinalIgnoreCase);
 
                 WIN32_FIND_DATA fd;
@@ -191,9 +197,10 @@ namespace AbletonManager
         }
 
         /// <summary>
-        /// Момент сохранения из имени копии: «что угодно [2026-05-22 012035].als».
-        /// Разбираем по позициям, а не ParseExact, — вызовов тысячи, а формат Live
-        /// пишет сама, и он не зависит ни от языка системы, ни от её настроек даты.
+        /// The moment of a save from a copy's name: "anything [2026-05-22 012035].als". We
+        /// parse by position rather than with ParseExact — there are thousands of calls, and
+        /// the format is written by Live itself and depends neither on the system language nor
+        /// on its date settings.
         /// </summary>
         internal static bool TryBackupStamp(string name, out Save save)
         {
@@ -201,7 +208,8 @@ namespace AbletonManager
             if (name == null || !name.EndsWith("].als", StringComparison.OrdinalIgnoreCase)) return false;
 
             int i = name.LastIndexOf('[');
-            // «[» + «2026-05-22 012035» (17) + «]» + «.als» — ровно 23 символа с конца.
+            // "[" + "2026-05-22 012035" (17) + "]" + ".als" — exactly 23 characters from the
+            // end.
             if (i < 0 || name.Length - i != 23) return false;
             if (name[i + 5] != '-' || name[i + 8] != '-' || name[i + 11] != ' ') return false;
 
@@ -212,7 +220,7 @@ namespace AbletonManager
 
             if (mo < 1 || mo > 12 || d < 1 || d > 31 || h > 23 || mi > 59 || se > 59) return false;
             try { save.When = new DateTime(y, mo, d, h, mi, se, DateTimeKind.Local); }
-            catch { return false; }        // 31 февраля из чужого имени файла
+            catch { return false; }        // the 31st of February out of someone else's file name
 
             save.Set = name.Substring(0, i).TrimEnd();
             return true;
@@ -236,16 +244,16 @@ namespace AbletonManager
         }
 
         /// <summary>
-        /// Путь в той форме, в которой его понимает FindFirstFile без ограничения на
-        /// длину. Префикс \\?\ отключает нормализацию пути, поэтому годится только
-        /// полный путь с обычными слешами — GetFullPath выше именно такой и делает.
+        /// The path in the form FindFirstFile understands without a length limit. The \\?\
+        /// prefix disables path normalisation, so only a full path with ordinary backslashes
+        /// will do — which is exactly what GetFullPath above produces.
         /// </summary>
         static string SearchPattern(string dir)
         {
             string p = dir;
             if (!p.StartsWith(@"\\?\", StringComparison.Ordinal))
                 p = p.StartsWith(@"\\", StringComparison.Ordinal)
-                  ? @"\\?\UNC\" + p.Substring(2)      // сетевая папка \\server\share
+                  ? @"\\?\UNC\" + p.Substring(2)      // a network path \\server\share
                   : @"\\?\" + p;
             if (p.Length > 0 && p[p.Length - 1] != '\\') p += "\\";
             return p + "*";
@@ -257,8 +265,8 @@ namespace AbletonManager
         const int FILE_ATTRIBUTE_REPARSE_POINT = 0x400;
         static readonly IntPtr InvalidHandle = new IntPtr(-1);
 
-        // Все поля по 4 байта: с FILETIME как long структура на x64 разъезжается по
-        // выравниванию, и имя файла читается из мусора.
+        // Every field is 4 bytes: with FILETIME as a long the structure drifts out of alignment
+        // on x64 and the file name is read out of garbage.
         [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
         struct WIN32_FIND_DATA
         {

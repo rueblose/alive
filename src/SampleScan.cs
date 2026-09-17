@@ -5,38 +5,39 @@ using System.IO;
 namespace AbletonManager
 {
     /// <summary>
-    /// Откуда взялся медиафайл, на который ссылается сет. Категории — те же четыре, что
-    /// в диалоге «Collect All and Save» самой Live, плюс «уже в проекте»: про эти Live
-    /// не спрашивает, они и так на месте.
+    /// Where a media file a set refers to came from. The categories are the same four "Collect
+    /// All and Save" has in Live, plus "already in the project": Live does not ask about those,
+    /// they are in place as it is.
     /// </summary>
     public enum SampleOrigin
     {
-        InProject,     // внутри папки самого сета — при сборке копируется всегда
-        OtherProject,  // внутри чужой папки «* Project»
+        InProject,     // inside the set's own folder — always copied when collecting
+        OtherProject,  // inside somebody else's "* Project" folder
         UserLibrary,   // Documents\Ableton\User Library
-        FactoryPack,   // установленный пак, Core Library или Builtin
-        Elsewhere,     // просто где-то на диске
-        Missing        // не нашли
+        FactoryPack,   // an installed pack, the Core Library or Builtin
+        Elsewhere,     // simply somewhere on disk
+        Missing        // not found
     }
 
     /// <summary>
-    /// Один медиафайл, нужный сету, — со всеми ссылками, которые на него ведут.
+    /// One media file a set needs — together with every reference leading to it.
     ///
-    /// Именно файл, а не ссылка: один сет ссылается на свою папку Samples сотнями
-    /// клипов, и на реальной библиотеке 28 631 ссылка сводится примерно к 1100 разным
-    /// файлам. Копировать и показывать надо файлы, а номера ссылок нужны потом
-    /// патчеру — переписать придётся каждую.
+    /// A file, not a reference: one set points at its own Samples folder with hundreds of
+    /// clips, and on a real library 28,631 references boil down to roughly 1,100 distinct
+    /// files. What has to be copied and shown are files, while the reference numbers are needed
+    /// later by the patcher — every one of them has to be rewritten.
     /// </summary>
     public sealed class SampleDep
     {
-        public FileRefInfo Ref;            // одна из ссылок — из неё берутся путь и имя пака
-        public ResolvedRef Resolved;       // где нашёлся
+        public FileRefInfo Ref;            // one of the references — the path and the pack name come from it
+        public ResolvedRef Resolved;       // where it was found
         public SampleOrigin Origin;
-        public string PackName = "";       // заполнено у FactoryPack
-        public long Size;                  // с диска; 0, если не нашли или не смогли посчитать
-        public bool IsDevice;              // .amxd (MxPatchRef), а не сэмпл
+        public string PackName = "";       // filled in for FactoryPack
+        public long Size;                  // from disk; 0 if it was not found or could not be counted
+        public bool IsDevice;              // .amxd (MxPatchRef) rather than a sample
 
-        /// <summary>Номера FileRef в порядке документа — по ним адресует AlsSamplePatch.</summary>
+        /// <summary>FileRef numbers in document order — AlsSamplePatch addresses by
+        /// them.</summary>
         public readonly List<int> RefIndexes = new List<int>();
 
         public string Path
@@ -55,25 +56,25 @@ namespace AbletonManager
     }
 
     /// <summary>
-    /// Какие медиафайлы нужны сету и откуда они. Ничего не читает с диска сверх того,
-    /// что уже прочитал AlsFile, и ничего не пишет.
+    /// Which media files a set needs and where they come from. It reads nothing from disk
+    /// beyond what AlsFile has already read, and writes nothing.
     /// </summary>
     public static class SampleScan
     {
         /// <summary>
-        /// setDir — папка самого .als, а не папка проекта. Так же считает ProjectIndex.Build,
-        /// и расходиться этим двум нельзя: иначе «в проекте» тут и «потеряно» в каталоге
-        /// говорили бы о разных вещах.
+        /// setDir is the .als folder itself, not the project folder. ProjectIndex.Build counts
+        /// it the same way, and these two must not diverge: otherwise "in the project" here and
+        /// "lost" in the catalog would be talking about different things.
         /// </summary>
         public static List<SampleDep> Of(AlsInfo info, string setDir, LiveEnvironment env)
         {
             List<SampleDep> list = new List<SampleDep>();
             if (info == null) return list;
 
-            // Два уровня свёртки. Сначала по самой ссылке: одинаковые ссылки разрешаются
-            // одинаково, и звать RefResolver 28 тысяч раз незачем. Потом по найденному
-            // пути: разные ссылки (одна через пак, другая абсолютным путём) приводят к
-            // одному файлу, а копировать его надо один раз.
+            // Two levels of folding. First by the reference itself: identical references
+            // resolve identically, and there is no point calling RefResolver 28 thousand times.
+            // Then by the path found: different references (one through a pack, another by
+            // absolute path) lead to one file, and it has to be copied once.
             Dictionary<string, SampleDep> byRaw = new Dictionary<string, SampleDep>(StringComparer.OrdinalIgnoreCase);
             Dictionary<string, SampleDep> byFile = new Dictionary<string, SampleDep>(StringComparer.OrdinalIgnoreCase);
 
@@ -96,7 +97,7 @@ namespace AbletonManager
                 ResolvedRef rr = RefResolver.Resolve(fr, setDir, env);
                 if (rr.Status == RefStatus.Empty)
                 {
-                    byRaw[raw] = null;      // пустышка — помним, чтобы не разрешать снова
+                    byRaw[raw] = null;      // a blank — remembered so it is not resolved again
                     continue;
                 }
 
@@ -128,8 +129,9 @@ namespace AbletonManager
         }
 
         /// <summary>
-        /// Порядок проверок значим. «В проекте» идёт первым: проект, лежащий внутри
-        /// User Library, — это всё равно свой проект, и его сэмплы не «из библиотеки».
+        /// The order of the checks matters. "In the project" comes first: a project lying
+        /// inside the User Library is still one's own project, and its samples are not "from
+        /// the library".
         /// </summary>
         static SampleOrigin Classify(ResolvedRef rr, FileRefInfo fr, string setDir,
                                      LiveEnvironment env, out string packName)
@@ -167,7 +169,8 @@ namespace AbletonManager
             return SampleOrigin.Elsewhere;
         }
 
-        /// <summary>Лежит ли путь внутри корня. Сравнение по полным путям, иначе «…\Samples2» сошёлся бы за «…\Samples».</summary>
+        /// <summary>Whether a path lies inside a root. Compared as full paths, or "…\Samples2"
+        /// would pass for "…\Samples".</summary>
         static bool Under(string path, string root)
         {
             if (string.IsNullOrEmpty(path) || string.IsNullOrEmpty(root)) return false;
@@ -180,7 +183,8 @@ namespace AbletonManager
             catch { return false; }
         }
 
-        /// <summary>Тем же правилом, что SetEntry.ProjectDir: не более четырёх уровней вверх.</summary>
+        /// <summary>By the same rule as SetEntry.ProjectDir: no more than four levels
+        /// up.</summary>
         static bool InSomeProject(string path)
         {
             try
@@ -197,9 +201,10 @@ namespace AbletonManager
         }
 
         /// <summary>
-        /// .adg и .amxd бывают папками (см. RefResolver.Probe) — их размер это сумма
-        /// файлов внутри, а не 0. 0 у найденной (Origin != Missing) зависимости иначе
-        /// неотличим от «не нашли», что противоречит комментарию у SampleDep.Size.
+        /// .adg and .amxd are sometimes folders (see RefResolver.Probe) — their size is the sum
+        /// of the files inside, not 0. A 0 on a dependency that was found (Origin != Missing)
+        /// would otherwise be indistinguishable from "not found", which contradicts the comment
+        /// on SampleDep.Size.
         /// </summary>
         static long SizeOf(string path)
         {
@@ -215,21 +220,22 @@ namespace AbletonManager
         }
 
         /// <summary>
-        /// Рекурсивная сумма размеров файлов в папке. Обход вручную, а не через
-        /// Directory.GetFiles(path, "*", SearchOption.AllDirectories): тот бросает на
-        /// первой недоступной подпапке и не отдаёт то, что уже насчитал. Здесь же
-        /// недоступная подпапка обрывает счёт только для себя — берём максимум того,
-        /// что смогли посчитать.
+        /// The recursive sum of file sizes in a folder. Walked by hand rather than through
+        /// Directory.GetFiles(path, "*", SearchOption.AllDirectories): that one throws on the
+        /// first inaccessible subfolder and gives back nothing of what it had already counted.
+        /// Here an inaccessible subfolder only cuts the count short for itself — we take the
+        /// most of what could be counted.
         /// </summary>
         static long DirSize(string dir) { return DirSize(dir, 0); }
 
         /// <summary>
-        /// Предел глубины — тем же числом, что RenderIndex.Walk. Без него junction-цикл
-        /// в файловой системе (а бандлы .adg/.amxd — обычные папки, никто не мешает
-        /// смонтировать внутрь себя) раздувает сумму: обход не отличает повторный визит
-        /// в ту же папку от новой, только глубину. Крах это не ловит — на реальном цикле
-        /// его обрывает PathTooLongException внутри try выше, — но без предела число
-        /// успевает завыситься в разы, пока путь не дорастёт до этой длины.
+        /// The depth limit — the same number RenderIndex.Walk uses. Without it a junction loop
+        /// in the file system (and .adg/.amxd bundles are ordinary folders, nothing stops one
+        /// being mounted inside itself) inflates the sum: the walk cannot tell a repeat visit
+        /// to the same folder from a new one, only the depth. It does not catch the crash — on
+        /// a real loop that is cut short by PathTooLongException inside the try above — but
+        /// without the limit the number manages to overshoot several times over before the path
+        /// grows to that length.
         /// </summary>
         static long DirSize(string dir, int depth)
         {
