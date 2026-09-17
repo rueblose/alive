@@ -18,16 +18,16 @@ namespace AbletonManager
         Star, StarFill, Plus,
         NextSet, PrevSet, NextTrack, PrevTrack, OpenPlaylist, ViewList,
         Note, Tag, Nebula, Keyboard, Calendar, HiddenBtnsOpen, HiddenBtnsClose,
-        // Грани кубика идут подряд: MainForm берёт случайную как Dice1 + n.
+        // Die faces run consecutively: MainForm picks a random one as Dice1 + n.
         Dice1, Dice2, Dice3, Dice4, Dice5, Dice6, Dice = Dice1
     }
 
     public static class Icons
     {
-        // Перья значков: цвет и толщина повторяются кадр за кадром (звёздочка и play в
-        // каждой строке таблицы — это десятки Pen на кадр), а Pen — объект GDI+, и
-        // создание его не бесплатно. Набор сочетаний невелик и конечен, поэтому просто
-        // держим готовые. Рисуют значки только из потока интерфейса.
+        // Icon pens: colour and thickness repeat frame after frame (the star and play glyph in
+        // every table row add up to dozens of Pens per frame), and a Pen is a GDI+ object that
+        // is not free to create. The set of combinations is small and finite, so we simply keep
+        // the ready ones. Icons are only ever drawn from the UI thread.
         static readonly Dictionary<long, Pen> _penCache = new Dictionary<long, Pen>();
 
         static Pen GetPen(Color color, float stroke)
@@ -36,9 +36,10 @@ namespace AbletonManager
             Pen p;
             if (!_penCache.TryGetValue(key, out p))
             {
-                // Плавные подсветки дают промежуточные оттенки, и набор хоть и конечен,
-                // но не крошечный. Потолок ставим на всякий случай; Dispose тут не зовём —
-                // перо этого же кадра ещё может быть в работе, а брошенное освободит сборщик.
+                // Smooth highlights produce in-between shades, and while the set is finite it
+                // is not tiny. The cap is there just in case; we do not call Dispose here — a
+                // pen from this very frame may still be in use, and the garbage collector will
+                // free whatever we drop.
                 if (_penCache.Count > 256) _penCache.Clear();
 
                 p = new Pen(color, stroke);
@@ -106,10 +107,11 @@ namespace AbletonManager
                     break;
 
                 case Glyph.CloseFullscreen:
-                    // Тот же холст 17x17, что и в файле, но с поправкой масштаба: сам
-                    // Maximize нарисован на 14x14, и оба экспортированы по краям своей
-                    // фигуры, а не в общий холст. Без contentScale эта иконка — второе
-                    // состояние той же кнопки — выходила заметно тоньше первой.
+                    // The same 17x17 canvas as in the file, but with a scale correction:
+                    // Maximize itself is drawn on 14x14, and both were exported to the bounds
+                    // of their own shape rather than to a shared canvas. Without contentScale
+                    // this icon — the second state of the same button — came out noticeably
+                    // thinner than the first.
                     DrawSvg(g, p, null, r, 17, 17, () => {
                         g.DrawPath(p, GetSvgPath("M6 16V11H1M11 1V6H16"));
                     }, false, 17f / 14f);
@@ -126,8 +128,8 @@ namespace AbletonManager
                     g.DrawLine(p, x + w * 0.14f, cy, r.Right - w * 0.14f, cy);
                     break;
 
-                // Листок с текстом: рамка и три строки разной длины — последняя короче,
-                // иначе на мелком размере читается как просто заштрихованный квадрат.
+                // A sheet with text: a frame and three lines of differing length — the last one
+                // shorter, or at small sizes it reads as nothing but a hatched square.
                 case Glyph.Note:
                 {
                     RectangleF box = new RectangleF(x + w * 0.16f, y + h * 0.10f, w * 0.68f, h * 0.80f);
@@ -140,7 +142,8 @@ namespace AbletonManager
                     break;
                 }
 
-                // Ярлык-бирка остриём вправо, с дыркой под шнурок — рисунок из src/icons/tag.svg.
+                // A tag pointing right, with a hole for the string — drawn from
+                // src/icons/tag.svg.
                 case Glyph.Tag:
                     DrawSvg(g, p, b, r, 14, 10, () => {
                         g.DrawPath(p, GetSvgPath("M1 3C1 1.89543 1.89543 1 3 1H9C9.62951 1 10.2223 1.29639 10.6 1.8L12.1 3.8C12.6333 4.51111 12.6333 5.48889 12.1 6.2L10.6 8.2C10.2223 8.70361 9.62951 9 9 9H3C1.89543 9 1 8.10457 1 7V3Z"));
@@ -170,8 +173,8 @@ namespace AbletonManager
                         new PointF(cx + w * 0.26f, cy - h * 0.12f) });
                     break;
 
-                // Бургер: три линии симметричны по высоте, поэтому одно и то же рисуем
-                // и для открытого, и для закрытого попапа — переворачивать нечего.
+                // Burger: the three lines are symmetric about the middle, so the same thing is
+                // drawn for the open and the closed popup — there is nothing to flip.
                 case Glyph.HiddenBtnsOpen:
                 case Glyph.HiddenBtnsClose:
                     DrawSvg(g, p, null, r, 15, 12, () => {
@@ -200,8 +203,9 @@ namespace AbletonManager
                     break;
 
                 case Glyph.Play:
-                    // Оптическая компенсация: треугольник направлен вправо, поэтому его
-                    // визуальный центр масс смещён влево. Сдвигаем на 2.2f правее для идеального оптического баланса в круге.
+                    // Optical compensation: the triangle points right, so its visual centre of
+                    // mass sits to the left. Shift it 2.2f to the right for proper optical
+                    // balance inside the circle.
                     DrawSvg(g, p, b, r, 17, 19, () => {
                         g.FillPath(b, GetSvgPath("M15.5347 8.39118C16.192 8.77783 16.192 9.7284 15.5347 10.115L1.50702 18.3666C0.840386 18.7588 -3.56578e-07 18.2781 -3.22771e-07 17.5047L3.98605e-07 1.00153C4.32412e-07 0.228114 0.840387 -0.252541 1.50702 0.139596L15.5347 8.39118Z"));
                     }, false, 0.72f, 2.2f);
@@ -266,8 +270,8 @@ namespace AbletonManager
                     });
                     break;
 
-                // src/icons/New Icons/Dice.svg: гранёный квадрат и пять точек — «кинуть кость»
-                // для случайного выбора сета.
+                // src/icons/New Icons/Dice.svg: a faceted square and five pips — "roll the
+                // dice" for picking a set at random.
                 case Glyph.Dice1:
                 case Glyph.Dice2:
                 case Glyph.Dice3:
@@ -363,7 +367,8 @@ namespace AbletonManager
             }
         }
 
-        /// <summary>Точки грани в системе координат кубика 17x17 — прямо из dice_N.svg.</summary>
+        /// <summary>Pips of one face in the die's own 17x17 coordinates — straight out of
+        /// dice_N.svg.</summary>
         static PointF[] DiceDots(int face)
         {
             const float a = 5.5f, m = 8.5f, z = 11.5f;
@@ -398,8 +403,8 @@ namespace AbletonManager
             }
         }
 
-        // Громкость: залитый рупор плюс волны по уровню. Вьюбокс у всех трёх состояний
-        // один (16x13) — иначе рупор прыгал бы вбок, когда волны появляются и исчезают.
+        // Volume: a filled horn plus waves for the level. All three states share one viewBox
+        // (16x13) — otherwise the horn would jump sideways as the waves appear and disappear.
         static void Volume(Graphics g, Pen p, SolidBrush b, RectangleF r, int waves)
         {
             DrawSvg(g, p, b, r, 16, 13, () => {

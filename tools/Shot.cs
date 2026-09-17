@@ -9,12 +9,12 @@ using System.Threading;
 namespace AliveTools
 {
     /// <summary>
-    /// Запускает прототип, ждёт, пока он дочитает базу плагинов и разберёт сет, и
-    /// снимает его окно в PNG. Нужен ровно затем, чтобы окно можно было увидеть, не
-    /// сидя за машиной: собранный exe, который «компилируется без ошибок», ещё ничего
-    /// не говорит о том, что нарисовалось.
+    /// Starts the program, waits for it to finish reading the plugin database and parsing a
+    /// set, and captures its window to a PNG. It exists for exactly one reason: so a window can
+    /// be looked at without sitting at the machine. A built exe that "compiles without errors"
+    /// still says nothing about what got drawn.
     ///
-    /// Сборка: см. proto\test\build-test.cmd.
+    /// Build: see tools\build-rescue-test.cmd.
     /// </summary>
     internal static class Shot
     {
@@ -22,10 +22,10 @@ namespace AliveTools
         [DllImport("user32.dll")] static extern bool ShowWindow(IntPtr hWnd, int cmd);
         [DllImport("user32.dll")] static extern bool SetProcessDPIAware();
 
-        // Клик по элементу окна без настоящей мыши: WindowFromPoint находит тот дочерний
-        // control, что лежит под точкой, а сообщения уходят прямо ему. Дёргать
-        // SetCursorPos нельзя — курсор чужой, и клик достался бы тому окну, что сейчас
-        // сверху, а не тому, которое проверяем.
+        // Clicking an element of a window without a real mouse: WindowFromPoint finds the child
+        // control under the point, and the messages go straight to it. Touching SetCursorPos is
+        // not an option — the cursor belongs to somebody else, and the click would land on
+        // whichever window is on top rather than the one being checked.
         [DllImport("user32.dll")] static extern IntPtr WindowFromPoint(POINT p);
         [DllImport("user32.dll")] static extern bool ClientToScreen(IntPtr hWnd, ref POINT p);
         [DllImport("user32.dll")] static extern bool ScreenToClient(IntPtr hWnd, ref POINT p);
@@ -43,10 +43,10 @@ namespace AliveTools
         const uint WM_LBUTTONDOWN = 0x0201, WM_LBUTTONUP = 0x0202, WM_MOUSEMOVE = 0x0200;
 
         /// <summary>
-        /// Окно рисует себя само в переданный контекст. Через CopyFromScreen снимать
-        /// нельзя: вывести чужое окно на передний план фоновому процессу Windows не
-        /// даёт, и в кадр попадает то, что лежало сверху. Флаг 2 —
-        /// PW_RENDERFULLCONTENT, без него окна с аппаратной композицией выходят пустыми.
+        /// The window draws itself into the given context. Capturing through CopyFromScreen
+        /// will not do: Windows does not let a background process bring someone else's window
+        /// to the front, and whatever was on top ends up in the frame instead. Flag 2 is
+        /// PW_RENDERFULLCONTENT; without it windows with hardware composition come out blank.
         /// </summary>
         [DllImport("user32.dll")] static extern bool PrintWindow(IntPtr hWnd, IntPtr hdc, uint flags);
 
@@ -54,9 +54,9 @@ namespace AliveTools
         struct RECT { public int Left, Top, Right, Bottom; }
 
         /// <summary>
-        /// Модальный диалог — отдельное верхнеуровневое окно, в кадр родителя он не
-        /// попадает. Узнаём его по тому же признаку, по которому его видит человек:
-        /// пока диалог открыт, окно-владелец выключено, а он сам включён.
+        /// A modal dialog is a separate top-level window and does not land in the parent's
+        /// frame. We recognise it by the same sign a person sees it by: while the dialog is
+        /// open, the owner window is disabled and the dialog itself is enabled.
         /// </summary>
         static IntPtr ModalOf(Process p, IntPtr owner)
         {
@@ -73,7 +73,7 @@ namespace AliveTools
             return found;
         }
 
-        /// <summary>Щелчок по точке в клиентских координатах окна.</summary>
+        /// <summary>A click at a point in the window's client coordinates.</summary>
         static void Click(IntPtr window, int x, int y)
         {
             POINT screen = new POINT(x, y);
@@ -86,9 +86,9 @@ namespace AliveTools
             ScreenToClient(target, ref local);
             IntPtr lp = (IntPtr)((local.Y << 16) | (local.X & 0xFFFF));
 
-            // Пауза между нажатием и отпусканием обязательна: WinForms считает щелчком
-            // пару сообщений, разнесённую во времени, а слипшиеся в одну очередь
-            // down+up часть контролов обрабатывает как «мышь дёрнули», без Click.
+            // The pause between press and release is mandatory: WinForms counts a click as a
+            // pair of messages spread out in time, while a down+up stuck together in one queue
+            // is handled by some controls as "the mouse was jerked", with no Click.
             PostMessage(target, WM_MOUSEMOVE, IntPtr.Zero, lp);
             Thread.Sleep(60);
             PostMessage(target, WM_LBUTTONDOWN, (IntPtr)1, lp);
@@ -116,7 +116,8 @@ namespace AliveTools
 
             for (int i = 2; i < args.Length; i++)
             {
-                // --click X,Y — щёлкнуть по точке в клиентских координатах окна перед съёмкой
+                // --click X,Y — click a point in the window's client coordinates before
+                // capturing
                 if (args[i] == "--click" && i + 1 < args.Length)
                 {
                     string[] xy = args[++i].Split(',');
@@ -144,8 +145,8 @@ namespace AliveTools
                 }
                 if (hwnd == IntPtr.Zero) { Console.WriteLine("no window"); return 1; }
 
-                // База плагинов и разбор сета читаются в фоне — снимок до этого показал
-                // бы пустые панели и «reading...».
+                // The plugin database and the set are read in the background — a shot taken
+                // before that would show empty panels and "reading...".
                 Thread.Sleep(6000);
 
                 ShowWindow(hwnd, 5);
@@ -154,7 +155,7 @@ namespace AliveTools
                 foreach (Point c in clicks)
                 {
                     Click(hwnd, c.X, c.Y);
-                    Thread.Sleep(900);      // окно успевает перестроить список
+                    Thread.Sleep(900);      // the window gets time to rebuild the list
                 }
 
                 if (clicks.Count > 0)

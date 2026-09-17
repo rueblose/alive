@@ -5,16 +5,17 @@ using System.Text;
 
 namespace AbletonManager
 {
-    /// <summary>Один звуковой файл рядом с проектом — кандидат в «послушать».</summary>
+    /// <summary>One audio file next to the project — a candidate for "let me hear
+    /// it".</summary>
     public sealed class RenderFile
     {
         public string Path = "";
-        public string Name = "";        // имя файла без расширения
-        public string Folder = "";      // папка относительно корня проекта, "" — сам корень
+        public string Name = "";        // file name without the extension
+        public string Folder = "";      // folder relative to the project root, "" is the root itself
         public DateTime Modified;
         public long Size;
-        public bool Pinned;             // назначен главным превью вручную
-        public int Score;               // насколько похож на рендер; см. RenderScan.Find
+        public bool Pinned;             // pinned as the main preview by hand
+        public int Score;               // how much it looks like a render; see RenderScan.Find
 
         public string Ext
         {
@@ -23,30 +24,31 @@ namespace AbletonManager
     }
 
     /// <summary>
-    /// Ищет рендеры проекта. Считать рендером любой .wav в папке нельзя: в «Samples»
-    /// лежат записанные и замороженные куски, их там сотни, и самый свежий из них
-    /// почти наверняка не то, что человек хочет услышать. Поэтому Samples (и Backup,
-    /// и служебные папки Live) выкидываем совсем, а из остального выстраиваем порядок
-    /// по правдоподобности: закреплённое вручную, потом папки вроде Render/Bounce,
-    /// потом корень проекта, потом всё прочее; внутри каждой ступени — свежие сверху.
+    /// Finds a project's renders. Treating every .wav in the folder as a render will not do: in
+    /// "Samples" lie recorded and frozen pieces, hundreds of them, and the freshest is almost
+    /// certainly not what the person wants to hear. So Samples (along with Backup and Live's
+    /// own housekeeping folders) is dropped entirely, and the rest is ordered by plausibility:
+    /// pinned by hand, then folders like Render/Bounce, then the project root, then everything
+    /// else; within each step, newest first.
     /// </summary>
     public static class RenderScan
     {
         static readonly string[] Exts =
             { ".wav", ".mp3", ".aif", ".aiff", ".flac", ".m4a", ".ogg", ".wma" };
 
-        // Папки, куда обычно кладут готовый материал.
+        // Folders where finished material usually goes.
         static readonly string[] RenderDirs =
             { "render", "renders", "rendered", "bounce", "bounces", "export", "exports",
               "mixdown", "mixdowns", "master", "masters", "mixes", "out", "output", "preview" };
 
-        // Папки, где рендеров не бывает по определению.
+        // Folders where renders never live by definition.
         static readonly string[] SkipDirs =
             { "samples", "backup", "ableton project info", "freeze", "frozen", "cache" };
 
         const int MaxFiles = 600;
 
-        /// <summary>Корень проекта: ближайшая вверх папка «* Project», иначе папка самого .als.</summary>
+        /// <summary>The project root: the nearest "* Project" folder above, otherwise the .als
+        /// folder itself.</summary>
         public static string ProjectRoot(SetEntry set)
         {
             try
@@ -76,10 +78,10 @@ namespace AbletonManager
                 if (pinned.Length > 0 && string.Equals(f.Path, pinned, StringComparison.OrdinalIgnoreCase))
                 { f.Pinned = true; f.Score += 10000; }
 
-            // «Последний рендер» — это именно последний по времени, поэтому дата решает
-            // всё, кроме закрепления вручную. Раньше очередь строилась по «похожести»
-            // (папка, совпадение с именем сета), и порядок выглядел случайным: свежий
-            // файл оказывался ниже старого только потому, что тот назывался как сет.
+            // "The latest render" means latest in time, so the date decides everything except
+            // manual pinning. The queue used to be built on "similarity" (the folder, a match
+            // with the set's name), and the order looked random: a fresh file ended up below an
+            // old one only because the old one was named like the set.
             list.Sort(delegate (RenderFile a, RenderFile b)
             {
                 if (a.Pinned != b.Pinned) return a.Pinned ? -1 : 1;
@@ -133,7 +135,7 @@ namespace AbletonManager
 
         static int FolderScore(string rel)
         {
-            if (rel.Length == 0) return 60;                 // прямо в корне проекта
+            if (rel.Length == 0) return 60;                 // right in the project root
             string[] parts = rel.Split('\\');
             foreach (string p in parts)
                 if (Array.IndexOf(RenderDirs, p.ToLowerInvariant()) >= 0) return 100;
@@ -142,9 +144,9 @@ namespace AbletonManager
     }
 
     /// <summary>
-    /// Закреплённые превью: какой файл считать главным для проекта. Живут отдельным
-    /// файлом, а не в settings.cfg — их столько же, сколько проектов, и настройкам
-    /// незачем распухать до тысячи строк.
+    /// Pinned previews: which file counts as the main one for a project. They live in their own
+    /// file rather than settings.cfg — there are as many of them as there are projects, and the
+    /// settings have no business swelling to a thousand lines.
     /// </summary>
     public static class PreviewPins
     {

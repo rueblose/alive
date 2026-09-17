@@ -4,10 +4,10 @@ using System.Runtime.InteropServices;
 namespace AbletonManager
 {
     /// <summary>
-    /// Media Foundation вручную, без библиотеки типов. Порядок методов в интерфейсах
-    /// строго вертикальный: слот в vtable считается по объявлению, поэтому заглушки
-    /// Slot* обязаны стоять на своих местах — лишний или пропущенный метод означает
-    /// вызов не по тому адресу. Заглушки не вызываются никогда.
+    /// Media Foundation by hand, without a type library. The order of methods in the interfaces
+    /// is strictly vertical: a vtable slot is counted from the declaration, so the Slot* stubs
+    /// have to stay exactly where they are — one extra or missing method means calling the
+    /// wrong address. The stubs are never called.
     /// </summary>
     static class Mf
     {
@@ -43,15 +43,14 @@ namespace AbletonManager
         }
 
         /// <summary>
-        /// Открывает файл и просит отдавать его как 32-битный float PCM. Просить именно
-        /// PCM с исходной битностью оказалось ловушкой: 24-битный источник (частый
-        /// случай и для WAV, и особенно для FLAC) MF отдаёт с тем же атрибутом «bits=24»,
-        /// но реальные сэмплы упакованы иначе, чем 3 плотных байта на канал — при
-        /// самостоятельном вычислении шага кадра это на каждом семпле уводит чтение не
-        /// туда, и получается тот самый прерывистый шум. Float32 — единственный формат,
-        /// который MF отдаёт стабильно и без вариаций упаковки вне зависимости от
-        /// исходного файла, поэтому конвертация в него происходит всегда, а не только
-        /// для сжатых форматов.
+        /// Opens a file and asks for it as 32-bit float PCM. Asking for PCM at the source bit
+        /// depth turned out to be a trap: a 24-bit source (common for WAV and especially for
+        /// FLAC) comes back from MF with the same "bits=24" attribute, but the actual samples
+        /// are packed differently from three tight bytes per channel — computing the frame
+        /// stride yourself then walks the read off course on every sample, and out comes
+        /// exactly that stuttering noise. Float32 is the one format MF returns consistently and
+        /// with no packing variants whatever the source file is, which is why the conversion to
+        /// it always happens, not only for compressed formats.
         /// </summary>
         public static bool OpenPcm(string path, out IMFSourceReader reader,
                                    out int channels, out int bits, out int rate, out long durationMs)
@@ -87,7 +86,8 @@ namespace AbletonManager
             finally { Release(actual); Release(want); }
         }
 
-        /// <summary>Длительность в 100-наносекундных тиках; 0, если источник её не знает.</summary>
+        /// <summary>Duration in 100-nanosecond ticks; 0 if the source does not know
+        /// it.</summary>
         public static long Duration100Ns(IMFSourceReader reader)
         {
             IntPtr pv = Marshal.AllocCoTaskMem(24);
@@ -103,7 +103,8 @@ namespace AbletonManager
             finally { Marshal.FreeCoTaskMem(pv); }
         }
 
-        /// <summary>Перемотка источника. PROPVARIANT с VT_I8 собираем руками — ради одного поля.</summary>
+        /// <summary>Seeks the source. The PROPVARIANT with VT_I8 is assembled by hand — for the
+        /// sake of one field.</summary>
         public static void SetPosition(IMFSourceReader reader, long ms)
         {
             IntPtr pv = Marshal.AllocCoTaskMem(24);
@@ -111,7 +112,7 @@ namespace AbletonManager
             {
                 for (int i = 0; i < 24; i++) Marshal.WriteByte(pv, i, 0);
                 Marshal.WriteInt16(pv, 0, 20);            // VT_I8
-                Marshal.WriteInt64(pv, 8, ms * 10000L);   // в 100-нс тиках
+                Marshal.WriteInt64(pv, 8, ms * 10000L);   // in 100 ns ticks
                 reader.SetCurrentPosition(ref TimeFormat_Null, pv);
             }
             catch { }
@@ -157,7 +158,7 @@ namespace AbletonManager
      InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
     interface IMFSample
     {
-        // 30 методов IMFAttributes, затем восемь собственных — и только потом нужный.
+        // The 30 IMFAttributes methods, then eight of its own — and only then the one we need.
         [PreserveSig] int Slot01(); [PreserveSig] int Slot02(); [PreserveSig] int Slot03();
         [PreserveSig] int Slot04(); [PreserveSig] int Slot05(); [PreserveSig] int Slot06();
         [PreserveSig] int Slot07(); [PreserveSig] int Slot08(); [PreserveSig] int Slot09();

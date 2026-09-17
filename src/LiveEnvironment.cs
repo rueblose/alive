@@ -7,10 +7,10 @@ using Microsoft.Win32;
 namespace AbletonManager
 {
     /// <summary>
-    /// Где на ЭТОЙ машине лежат корни, от которых Live отсчитывает ссылки.
-    /// В самих сетах абсолютные пути часто устаревшие: они указывают на прошлую версию
-    /// Live, на другой диск или вообще в чужой профиль, если проект приехал из
-    /// коллаборации. Поэтому единственный надёжный источник — локальная конфигурация.
+    /// Where THIS machine keeps the roots Live measures its references from. Absolute paths
+    /// inside the sets are often stale: they point at a previous Live version, at another
+    /// drive, or into somebody else's profile entirely if the project came from a
+    /// collaboration. So the only reliable source is the local configuration.
     /// </summary>
     public sealed class LiveEnvironment
     {
@@ -19,7 +19,7 @@ namespace AbletonManager
         public string CoreLibrary = "";
         public string InstallDir = "";
 
-        /// <summary>Имя пака -> папка пака, из Library.cfg.</summary>
+        /// <summary>Pack name -> pack folder, from Library.cfg.</summary>
         public readonly Dictionary<string, string> Packs =
             new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 
@@ -46,18 +46,18 @@ namespace AbletonManager
         }
 
         /// <summary>
-        /// Путь к exe самой Live — тот, что запускается двойным щелчком по .als. Берём
-        /// его из файловой ассоциации, а не угадываем по InstallDir: так это ровно та
-        /// команда, которой Windows сама открыла бы сет, и она переживает любые
-        /// изменения структуры папок между версиями и редакциями (Suite/Standard/Intro).
+        /// The path to Live's own exe — the one a double click on an .als starts. We take it
+        /// from the file association rather than guessing from InstallDir: that way it is
+        /// exactly the command Windows itself would open the set with, and it survives any
+        /// folder-structure change between versions and editions (Suite/Standard/Intro).
         /// </summary>
         public static string FindExecutable()
         {
             string exe = FromAssociation();
             if (exe.Length > 0 && File.Exists(exe)) return exe;
 
-            // Ассоциации нет (Live ставили, но .als открывают чем-то другим) — ищем
-            // сам исполняемый файл рядом с найденной установкой.
+            // No association (Live is installed, but .als files open with something else) —
+            // look for the executable itself next to the installation we found.
             string install = FindInstall();
             if (install.Length == 0) return "";
             string program = Path.Combine(install, "Program");
@@ -88,8 +88,8 @@ namespace AbletonManager
             }
         }
 
-        /// <summary>«"C:\...\Live.exe" "%1"» → «C:\...\Live.exe» — берёт только путь,
-        /// в кавычках или без, и отбрасывает аргумент подстановки файла.</summary>
+        /// <summary>'"C:\...\Live.exe" "%1"' → 'C:\...\Live.exe' — takes only the path, quoted
+        /// or not, and drops the file substitution argument.</summary>
         static string ParseCommand(string cmd)
         {
             if (string.IsNullOrEmpty(cmd)) return "";
@@ -104,10 +104,10 @@ namespace AbletonManager
         }
 
         /// <summary>
-        /// Папка установки самой свежей Live. ProgramData спрашиваем у Windows, а не
-        /// пишем «C:\ProgramData» строкой: система стоит не у всех на C:, и на чужой
-        /// машине такой путь молча не находился — вместе с ним пропадали Core Library,
-        /// паки и кнопка «новый проект».
+        /// The installation folder of the newest Live. We ask Windows for ProgramData rather
+        /// than writing "C:\ProgramData" as a string: not everyone has the system on C:, and on
+        /// someone else's machine such a path silently failed to resolve — taking the Core
+        /// Library, the packs and the "new project" button down with it.
         /// </summary>
         public static string FindInstallDir() { return FindInstall(); }
 
@@ -137,7 +137,8 @@ namespace AbletonManager
             return v * 1000 + part;
         }
 
-        /// <summary>Library.cfg лежит в папке настроек каждой установленной версии Live.</summary>
+        /// <summary>Library.cfg lives in the settings folder of every installed Live
+        /// version.</summary>
         static IEnumerable<string> LibraryConfigs()
         {
             string root = Path.Combine(
@@ -182,7 +183,7 @@ namespace AbletonManager
                     }
                 }
             }
-            catch { /* конфиг битый — обойдёмся тем, что нашли по умолчанию */ }
+            catch { /* broken config - we make do with what the defaults found */ }
         }
     }
 }

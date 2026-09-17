@@ -6,12 +6,12 @@ using System.Windows.Forms;
 namespace AbletonManager
 {
     /// <summary>
-    /// Теги и заметка одного проекта.
+    /// One project's tags and note.
     ///
-    /// Стекло здесь выключено (UseGlass): заметка многострочная, а значит это настоящий
-    /// нативный TextBox, и на акриловом окне он подмешивает к себе то, что физически за
-    /// окном (замерено, см. Glass.ApplyBackdrop). Остальные диалоги стекло сохраняют —
-    /// там поля рисуются своими руками и нативных дочерних окон нет.
+    /// Glass is off here (UseGlass): the note is multi-line, which makes it a real native
+    /// TextBox, and on an acrylic window it mixes in whatever is physically behind the window
+    /// (measured, see Glass.ApplyBackdrop). The other dialogs keep their glass — there the
+    /// fields are drawn by hand and there are no native child windows.
     /// </summary>
     public sealed class NotesDialog : GlassDialog
     {
@@ -29,14 +29,14 @@ namespace AbletonManager
         {
             _dir = set.ProjectDir;
             Caption = set.Name;
-            // Выше прежнего: поле тегов и ряд подсказок под ним растут вниз, а заметке
-            // всё равно должно остаться на что смотреть.
+            // Taller than before: the tag field and the row of suggestions under it grow
+            // downwards, and the note still has to be left something to look at.
             ClientSize = new Size(Sc(560), Sc(480));
 
             _tags.Cue = "type a tag, then comma";
             _tags.SetTags(ProjectMeta.TagsOf(_dir));
-            // Список тегов поменялся — поле могло стать выше или ниже, а ряд под ним
-            // потерять или вернуть пилюлю: пересобираем всё окно.
+            // The tag list changed — the field may have grown or shrunk, and the row below may
+            // have lost or regained a pill: rebuild the whole window.
             _tags.Changed += delegate { RefreshSuggestions(); Relayout(); };
             Controls.Add(_tags);
 
@@ -49,9 +49,9 @@ namespace AbletonManager
             RefreshSuggestions();
 
             _note.Multiline = true;
-            // Без полосы прокрутки: нативную не покрасить, и светлый жёлоб Windows на
-            // тёмном окне — единственное пятно, которое видно раньше самого текста.
-            // Длинная заметка всё равно прокручивается за кареткой при наборе.
+            // No scrollbar: the native one cannot be painted, and a light Windows trough on a
+            // dark window is the one spot the eye catches before the text itself. A long note
+            // still scrolls along with the caret while typing.
             _note.ScrollBars = ScrollBars.None;
             _note.WordWrap = true;
             _note.BorderStyle = BorderStyle.None;
@@ -73,21 +73,22 @@ namespace AbletonManager
             _save.Click += delegate { Commit(); };
             Controls.Add(_save);
 
-            // Открыли окно — можно сразу набирать тег, как было с прежним полем.
+            // Window opened — a tag can be typed right away, as it was with the old field.
             Shown += delegate { _tags.Box.Focus(); };
         }
 
         void Commit()
         {
-            // Набрал слово и сразу нажал Save — тег должен сохраниться, а не пропасть
-            // вместе с недописанной запятой.
+            // A word typed and Save pressed immediately — the tag has to be kept, not lost
+            // together with the comma that was never typed.
             _tags.CommitPending();
             ProjectMeta.Set(_dir, _tags.Tags, _note.Text);
             DialogResult = DialogResult.OK;
             Close();
         }
 
-        /// <summary>Под полем — те теги, что уже где-то стоят и ещё не выбраны здесь.</summary>
+        /// <summary>Under the field — the tags already used somewhere and not yet picked
+        /// here.</summary>
         void RefreshSuggestions()
         {
             List<string> rest = new List<string>();
@@ -103,7 +104,7 @@ namespace AbletonManager
 
         protected override void OnKeyDown(KeyEventArgs e)
         {
-            // Ctrl+Enter — сохранить: в многострочном поле обычный Enter это перенос строки.
+            // Ctrl+Enter saves: in a multi-line field a plain Enter is a line break.
             if (e.Control && e.KeyCode == Keys.Enter) { Commit(); e.Handled = true; return; }
             base.OnKeyDown(e);
         }
@@ -126,8 +127,8 @@ namespace AbletonManager
             _labelTags = new Rectangle(x, y, w, Sc(20));
             y += Sc(30);
 
-            // Поле растёт вниз по числу пилюль, ряд подсказок под ним — тоже; заметка
-            // забирает то, что осталось.
+            // The field grows downwards with the number of pills, and so does the suggestion
+            // row under it; the note takes whatever is left.
             _tags.SetBounds(x, y, w, Sc(Theme.ControlH));
             _tags.Height = _tags.Relayout();
             y += _tags.Height + Sc(10);
@@ -143,7 +144,8 @@ namespace AbletonManager
 
             int bottom = Card.Bottom - pad - _save.Height - Sc(16);
             _noteBox = new Rectangle(x, y, w, Math.Max(Sc(80), bottom - y));
-            // Сам TextBox чуть внутри нарисованной рамки — иначе текст липнет к краю.
+            // The TextBox itself sits slightly inside the drawn frame — otherwise the text
+            // clings to the edge.
             _note.SetBounds(_noteBox.X + Sc(10), _noteBox.Y + Sc(8),
                             _noteBox.Width - Sc(20), _noteBox.Height - Sc(16));
 
@@ -167,8 +169,8 @@ namespace AbletonManager
             Chrome.DrawText(g, "Notes", Theme.FLabel, _labelNote, Theme.TextDim,
                             Chrome.Left | TextFormatFlags.NoClipping);
 
-            // Подложка под нативным полем: сам TextBox рисует только текст на своём фоне,
-            // скруглить себя он не умеет.
+            // A backing plate under the native field: the TextBox only draws text on its own
+            // background, it cannot round itself off.
             if (_noteBox.Width > 0) Theme.FillRound(g, _noteBox, Sc(10), Theme.Sunken);
 
             Chrome.DrawText(g, "Ctrl+Enter to save", Theme.FBadge,

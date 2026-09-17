@@ -8,24 +8,25 @@ namespace AbletonManager
 {
     public sealed class RenderOptions
     {
-        public bool ShowNames;        // колонка с именами дорожек слева
-        public bool ShowRuler;        // линейка тактов сверху
-        public bool ShowClipNames;    // имена клипов внутри блоков
+        public bool ShowNames;        // the track name column on the left
+        public bool ShowRuler;        // the bar ruler along the top
+        public bool ShowClipNames;    // clip names inside the blocks
         public int MinLane = 2;
         public int MaxLane = 26;
         public float Dpi = 1f;
     }
 
     /// <summary>
-    /// Рисует аранжировку так же, как её видно в Live: дорожки строками сверху вниз,
-    /// время слева направо, клип — прямоугольник своего цвета. У midi-клипа тело
-    /// приглушено, а ноты рисуются поверх — иначе на превью не отличить пустой клип
-    /// от плотного.
+    /// Draws the arrangement the way it looks in Live: tracks as rows from top to bottom, time
+    /// from left to right, a clip as a rectangle in its own colour. A midi clip's body is muted
+    /// and the notes are drawn over it — otherwise an empty clip is indistinguishable from a
+    /// dense one in the preview.
     /// </summary>
     public static class ArrangementRender
     {
-        // Ноты рисуем не бесконечно: у больших сетов их десятки тысяч, а глазу хватает
-        // и части — иначе превью открывается заметно дольше, чем нужно.
+        // Notes are not drawn without limit: large sets have tens of thousands of them, and the
+        // eye is satisfied with a portion — otherwise the preview takes noticeably longer to
+        // open than it needs to.
         const int MaxNotesDrawn = 60000;
         const int MaxLoopRepeats = 512;
 
@@ -38,22 +39,22 @@ namespace AbletonManager
 
             int n = a.Tracks.Count;
             int gap = area.Height / n >= 8 ? Px(o, 2) : 1;
-            // Замерено TextRenderer.MeasureText: цифре на FBadge нужно 19px высоты —
-            // прежние 15 (и даже 20 с вычетом под сдвиг) были меньше этого впритык,
-            // отсюда и обрезанные верхушки цифр.
+            // Measured with TextRenderer.MeasureText: a digit in FBadge needs 19px of height —
+            // the old 15 (and even 20 less the offset) were just under that, hence the clipped
+            // tops of the digits.
             int rulerH = o.ShowRuler ? Px(o, 24) : 0;
 
             int laneH = (area.Height - rulerH - gap * (n - 1)) / n;
             if (laneH > Px(o, o.MaxLane)) laneH = Px(o, o.MaxLane);
             if (laneH < Px(o, o.MinLane)) laneH = Math.Max(1, Px(o, o.MinLane));
 
-            // Колонка с именами нужна, только если строки достаточно высокие, чтобы имя
-            // в них поместилось: иначе она просто съедала бы пятую часть ширины.
+            // The name column is only worth having when the rows are tall enough to hold a
+            // name: otherwise it would simply eat a fifth of the width.
             int nameW = 0;
             if (o.ShowNames && area.Width > Px(o, 420) && laneH >= Px(o, 9))
                 nameW = Math.Min(Px(o, 170), area.Width / 5);
 
-            // Немного дорожек — блок ставим по центру, а не прижимаем к верху.
+            // Few tracks — centre the block rather than pushing it to the top.
             int totalH = n * laneH + gap * (n - 1);
             int top = area.Y + rulerH + Math.Max(0, (area.Height - rulerH - totalH) / 2);
 
@@ -74,8 +75,9 @@ namespace AbletonManager
 
                 if (nameW > 0) DrawName(g, new Rectangle(area.X, y, nameW - Px(o, 8), laneH), t, laneH, o);
 
-                // У группы своих клипов нет — показываем её цветом только полоску слева,
-                // чтобы структура была видна, но пустая строка не выглядела сбоем.
+                // A group has no clips of its own — we show only a strip on the left in its
+                // colour, so the structure is visible without the empty row looking like a
+                // failure.
                 if (t.IsGroup && t.Clips.Count == 0)
                 {
                     if (t.Color >= 0)
@@ -111,7 +113,7 @@ namespace AbletonManager
             }
         }
 
-        // ------------------------------------------------------------------- ноты
+        // ------------------------------------------------------------------- notes
 
         static int DrawNotes(Graphics g, RectangleF rect, Rectangle plot, ClipBlock c,
                              Color col, double pxPerBeat, int alpha)
@@ -162,14 +164,14 @@ namespace AbletonManager
             return boxes.Count;
         }
 
-        // ------------------------------------------------------------ сетка и имена
+        // ------------------------------------------------------------ grid and names
 
         static void GridAndRuler(Graphics g, Rectangle area, Rectangle plot, RenderOptions o,
                                  double end, double pxPerBeat, int rulerH)
         {
-            // Линии по тактам, но не гуще, чем раз в 56 экранных точек.
+            // Lines on the bar, but no denser than one per 56 screen points.
             double minStep = Px(o, 56) / Math.Max(0.0001, pxPerBeat);
-            double step = 16;                                   // 4 такта
+            double step = 16;                                   // 4 bars
             while (step < minStep) step *= 2;
 
             using (Pen p = new Pen(Color.FromArgb(0x12, 0xFF, 0xFF, 0xFF)))
@@ -182,9 +184,9 @@ namespace AbletonManager
             if (rulerH <= 0) return;
             int rTop = area.Y + Px(o, 2);
             int rHeight = Math.Max(1, rulerH - Px(o, 2));
-            // NoClipping — подстраховка: если на конкретном шрифте/DPI цифра всё же
-            // окажется на пиксель выше расчёта, пусть вылезет за рамку в пустой фон,
-            // а не срежется по границе прямоугольника.
+            // NoClipping is a safeguard: if on a particular font or DPI a digit still comes out
+            // a pixel taller than calculated, let it spill into the empty background rather
+            // than be cut off at the rectangle's edge.
             TextFormatFlags rulerFlags = Chrome.Left | TextFormatFlags.NoClipping;
             for (double beat = 0; beat < end; beat += step)
             {
@@ -197,8 +199,8 @@ namespace AbletonManager
         static void DrawName(Graphics g, Rectangle r, TrackLane t, int laneH, RenderOptions o)
         {
             if (laneH < Px(o, 9) || r.Width <= 0) return;
-            // Строка бывает ровно в высоту шрифта, поэтому подписи даём чуть больше
-            // места, чем сама дорожка: иначе у букв срезаются нижние выносные элементы.
+            // A row can be exactly the height of the font, so captions get slightly more room
+            // than the track itself: otherwise the descenders of the letters are shaved off.
             int indent = t.Indent * Px(o, 8);
             Rectangle box = new Rectangle(r.X + indent, r.Y - Px(o, 2),
                                           Math.Max(0, r.Width - indent), laneH + Px(o, 4));
@@ -206,7 +208,7 @@ namespace AbletonManager
             Chrome.DrawText(g, t.Name, Theme.FBadge, box, c, Chrome.Left);
         }
 
-        // ---------------------------------------------------------------- утилиты
+        // ---------------------------------------------------------------- utilities
 
         static int Px(RenderOptions o, int v) { return (int)Math.Round(v * o.Dpi); }
 
@@ -224,7 +226,8 @@ namespace AbletonManager
                 (int)(a.B + (b.B - a.B) * t));
         }
 
-        /// <summary>Готовая картинка — превью в панели деталей перерисовывается на каждый кадр.</summary>
+        /// <summary>A finished picture — the preview in the detail panel is redrawn on every
+        /// frame.</summary>
         public static Bitmap ToBitmap(Arrangement a, int width, int height, RenderOptions o)
         {
             if (width <= 0 || height <= 0) return null;

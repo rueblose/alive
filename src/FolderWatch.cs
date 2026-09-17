@@ -7,14 +7,14 @@ using System.Windows.Forms;
 namespace AbletonManager
 {
     /// <summary>
-    /// Присматривает за корнями каталога и сообщает, когда там что-то изменилось, —
-    /// чтобы новый сет появлялся в списке сам, без F5.
+    /// Watches the catalog roots and reports when something there has changed — so that a new
+    /// set appears in the list on its own, without F5.
     ///
-    /// Событие всегда с задержкой: одно сохранение из Live — это не одно изменение на
-    /// диске, а пачка (временный файл, переименование, обновление папки), и сканировать
-    /// по каждому значило бы гонять полный обход дерева по нескольку раз подряд.
-    /// Отсчёт начинается заново от каждого нового события, поэтому во время экспорта или
-    /// записи, когда диск пишется непрерывно, пересканирование просто ждёт тишины.
+    /// The event always comes with a delay: one save from Live is not one change on disk but a
+    /// burst of them (a temporary file, a rename, a folder update), and scanning on each would
+    /// mean walking the whole tree several times in a row. The countdown restarts from every
+    /// new event, so during an export or a recording, when the disk is written to continuously,
+    /// the rescan simply waits for quiet.
     /// </summary>
     public sealed class FolderWatch : IDisposable
     {
@@ -22,7 +22,7 @@ namespace AbletonManager
         readonly Timer _settle = new Timer();
         readonly ISynchronizeInvoke _sync;
 
-        /// <summary>Уже в потоке интерфейса — за это отвечает SynchronizingObject.</summary>
+        /// <summary>Already on the UI thread — SynchronizingObject sees to that.</summary>
         public event Action Changed;
 
         public FolderWatch(ISynchronizeInvoke sync)
@@ -37,9 +37,9 @@ namespace AbletonManager
         }
 
         /// <summary>
-        /// Переставить наблюдение на новый набор корней. Выключенные из сканирования
-        /// пропускаем: их содержимое каталог всё равно не показывает, и будить его
-        /// оттуда незачем.
+        /// Point the watch at a new set of roots. Roots excluded from scanning are skipped: the
+        /// catalog does not show their contents anyway, and there is no reason to be woken from
+        /// there.
         /// </summary>
         public void Watch(IEnumerable<string> roots, IEnumerable<string> disabled)
         {
@@ -56,17 +56,17 @@ namespace AbletonManager
                 {
                     if (!Directory.Exists(root)) continue;
 
-                    // Два наблюдателя на корень вместо одного на всё подряд.
+                    // Two watchers per root instead of one for everything.
                     //
-                    // Первый — только .als, зато вместе с изменением содержимого: сет
-                    // пересохранили, у него другой темп и другие плагины, и каталог
-                    // должен это увидеть.
+                    // The first — .als only, but including content changes: a set was re-saved,
+                    // it has a different tempo and different plugins, and the catalog has to
+                    // see that.
                     //
-                    // Второй — появление и исчезновение чего угодно: новая папка проекта,
-                    // удалённый проект, свежий рендер рядом с сетом (от него зависит
-                    // кнопка прослушивания). Изменение СОДЕРЖИМОГО здесь не слушаем —
-                    // иначе каждый записанный сэмпл дёргал бы отсчёт, и во время работы
-                    // в Live обновление не наступало бы вовсе.
+                    // The second — anything appearing or disappearing: a new project folder, a
+                    // deleted project, a fresh render next to a set (the listen button depends
+                    // on it). CONTENT changes are not watched here — otherwise every recorded
+                    // sample would reset the countdown, and while working in Live the refresh
+                    // would never come at all.
                     Add(root, "*.als", NotifyFilters.FileName | NotifyFilters.LastWrite | NotifyFilters.Size);
                     Add(root, "*", NotifyFilters.FileName | NotifyFilters.DirectoryName);
                 }
@@ -79,24 +79,24 @@ namespace AbletonManager
             FileSystemWatcher w = new FileSystemWatcher(root, filter);
             w.IncludeSubdirectories = true;
             w.NotifyFilter = notify;
-            // Обработчики приходят в поток интерфейса сами — иначе таймер WinForms,
-            // который они трогают, заводился бы из потока пула и не тикал бы вовсе.
+            // The handlers arrive on the UI thread by themselves — otherwise the WinForms timer
+            // they touch would be started from a pool thread and would not tick at all.
             w.SynchronizingObject = _sync;
             w.Changed += OnAny;
             w.Created += OnAny;
             w.Deleted += OnAny;
             w.Renamed += OnAny;
-            // Переполнение внутреннего буфера — это «событий было столько, что часть
-            // потерялась», то есть тем более повод пересканировать.
+            // An internal buffer overflow means "there were so many events that some were
+            // lost", which is all the more reason to rescan.
             w.Error += delegate { Bump(); };
             w.EnableRaisingEvents = true;
             _watchers.Add(w);
         }
 
         /// <summary>
-        /// Пробы помощника по восстановлению не будят каталог: он их всё равно не
-        /// показывает (см. FolderScan.Find), а во время расследования они появляются и
-        /// исчезают на каждой пробе — и каждый раз запускали бы полное пересканирование.
+        /// The rescue helper's probes do not wake the catalog: it does not show them anyway
+        /// (see FolderScan.Find), and during an investigation they appear and disappear on
+        /// every probe — each time triggering a full rescan.
         /// </summary>
         void OnAny(object sender, FileSystemEventArgs e)
         {

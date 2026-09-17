@@ -6,16 +6,16 @@ using System.Text;
 namespace AbletonManager
 {
     /// <summary>
-    /// Теги и заметки, которые пишет сам пользователь. Отдельный файл notes.cfg рядом с
-    /// настройками — это данные о проектах, а не настройка программы.
+    /// Tags and notes written by the user. A separate notes.cfg next to the settings — this is
+    /// data about projects, not a program setting.
     ///
-    /// Ключ — папка проекта, а не путь к .als. У проекта рядом лежит десяток версий, и
-    /// теги, привязанные к файлу, пришлось бы проставлять каждой заново; к тому же
-    /// «final2.als» появляется уже после того, как проект отметили, и метка на него бы
-    /// не перешла. Папка же у всех версий одна.
+    /// The key is the project folder, not the path to the .als. A project has a dozen versions
+    /// lying next to each other, and tags bound to a file would have to be re-applied to each
+    /// one; besides, "final2.als" appears only after the project has been marked, and the label
+    /// would not carry over to it. The folder, meanwhile, is the same for every version.
     ///
-    /// Теги намеренно без всякого словаря: ни жанров, ни статусов, ни оценок заранее не
-    /// заведено — что человек напишет, то и будет.
+    /// Tags deliberately come with no vocabulary: no genres, no statuses, no ratings set up in
+    /// advance — whatever the person writes is what it is.
     /// </summary>
     public static class ProjectMeta
     {
@@ -32,10 +32,10 @@ namespace AbletonManager
 
         static string FilePath { get { return Path.Combine(Settings.Dir, "notes.cfg"); } }
 
-        /// <summary>Поднялся ли состав тегов — окну пора пересобрать список.</summary>
+        /// <summary>Has the tag set grown — time for the window to rebuild its list.</summary>
         public static event Action Changed;
 
-        // ------------------------------------------------------------------ чтение
+        // ------------------------------------------------------------------ reading
 
         static void Load()
         {
@@ -54,8 +54,8 @@ namespace AbletonManager
                     string key = line.Substring(0, eq);
                     string rest = line.Substring(eq + 1);
 
-                    // Путь и значение разделены табуляцией: в путях её не бывает, а вот
-                    // равенства и запятые попадаются сплошь и рядом.
+                    // The path and the value are separated by a tab: paths never contain one,
+                    // while equals signs and commas turn up all the time.
                     int tab = rest.IndexOf('\t');
                     if (tab < 0) continue;
                     string dir = rest.Substring(0, tab);
@@ -113,7 +113,7 @@ namespace AbletonManager
             catch { }
         }
 
-        // Заметка многострочная, а файл построчный — переносы уезжают в «\n».
+        // The note is multi-line and the file is line-based — breaks go out as "\n".
         static string Escape(string s)
         {
             return s.Replace("\\", "\\\\").Replace("\r\n", "\n").Replace("\r", "\n").Replace("\n", "\\n");
@@ -127,12 +127,12 @@ namespace AbletonManager
                 if (s[i] != '\\' || i + 1 >= s.Length) { sb.Append(s[i]); continue; }
                 char next = s[++i];
                 if (next == 'n') sb.Append("\r\n");
-                else sb.Append(next);          // «\\» и всё прочее — как есть
+                else sb.Append(next);          // "\\" and everything else — as is
             }
             return sb.ToString();
         }
 
-        // ------------------------------------------------------------------ доступ
+        // ------------------------------------------------------------------- access
 
         public static List<string> TagsOf(string dir)
         {
@@ -177,7 +177,7 @@ namespace AbletonManager
             if (Changed != null) Changed();
         }
 
-        /// <summary>Разбирает строку «drum, vocal, beat» в теги.</summary>
+        /// <summary>Parses the string "drum, vocal, beat" into tags.</summary>
         public static List<string> ParseTags(string text)
         {
             List<string> result = new List<string>();
@@ -198,8 +198,8 @@ namespace AbletonManager
         }
 
         /// <summary>
-        /// Все теги, которые уже где-то проставлены, по алфавиту. Нужны, чтобы второй
-        /// раз тот же тег можно было выбрать из списка, а не вспоминать, как он писался.
+        /// Every tag already used somewhere, alphabetically. Needed so that the second time the
+        /// same tag can be picked from a list instead of recalling how it was spelled.
         /// </summary>
         public static List<string> AllTags()
         {

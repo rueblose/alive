@@ -6,9 +6,9 @@ using System.Windows.Forms;
 namespace AbletonManager
 {
     /// <summary>
-    /// Поле-«теги»: выбранные значения лежат чипами, клик по пустому месту открывает
-    /// список остальных, клик по чипу убирает его. Нужно там, где выбирают не одно
-    /// значение из списка, а сразу несколько — например, полдюжины тональностей.
+    /// A "tags" field: the chosen values sit as chips, a click on empty space opens the list of
+    /// the rest, a click on a chip removes it. Needed where one picks not a single value from a
+    /// list but several at once — half a dozen keys, for instance.
     /// </summary>
     public class TagField : GlassControl
     {
@@ -27,8 +27,8 @@ namespace AbletonManager
         public TagField()
         {
             Cursor = Cursors.Hand;
-            // На FLabel текст в узкой пилюле обрезался — шрифтом на размер меньше
-            // он гарантированно влезает вместе с крестиком.
+            // On FLabel the text was clipped inside a narrow pill — one font size down it is
+            // guaranteed to fit together with the cross.
             Font = Theme.FBadge;
             Height = 34;
         }
@@ -56,9 +56,9 @@ namespace AbletonManager
         int Pad { get { return Sc(6); } }
         int Gap { get { return Sc(5); } }
 
-        // Отступ текста от края пилюли и отдельная зона под крестик справа — если
-        // и то и другое не заложить в ширину чипа заранее, длинные подписи вроде
-        // «Super Locrian» упираются в крестик и обрезаются по EndEllipsis.
+        // A text inset from the pill's edge and a separate zone for the cross on the right —
+        // unless both are built into the chip width up front, long captions like "Super
+        // Locrian" run into the cross and get cut off by EndEllipsis.
         int ChipPadX { get { return Sc(10); } }
         int ChipCrossZone { get { return Sc(16); } }
 
@@ -66,15 +66,17 @@ namespace AbletonManager
             TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter |
             TextFormatFlags.SingleLine | TextFormatFlags.NoPrefix | TextFormatFlags.EndEllipsis;
 
-        /// <summary>Раскладывает чипы по ширине и возвращает высоту, которая для этого нужна.</summary>
+        /// <summary>Lays the chips out across the width and returns the height needed for
+        /// that.</summary>
         public int Relayout()
         {
             _chips.Clear();
-            int x = Pad, y = Pad, right = Width - Pad - Sc(20);   // справа место под шеврон
+            int x = Pad, y = Pad, right = Width - Pad - Sc(20);   // room for the chevron on the right
             for (int k = 0; k < Selected.Count; k++)
             {
-                // Мерим тем же шрифтом и с тем же NoPrefix, которым потом рисуем — иначе
-                // ширина и фактический рендер расходятся на пару пикселей и текст режется.
+                // We measure with the same font and the same NoPrefix we later draw with —
+                // otherwise the width and the actual rendering differ by a couple of pixels and
+                // the text gets clipped.
                 int textW = TextRenderer.MeasureText(Label(Selected[k]), Font,
                     new Size(short.MaxValue, ChipH), TextFormatFlags.NoPrefix | TextFormatFlags.SingleLine).Width;
                 int w = textW + ChipPadX * 2 + ChipCrossZone;
@@ -88,7 +90,7 @@ namespace AbletonManager
 
         protected override void OnResize(EventArgs e) { Relayout(); base.OnResize(e); }
 
-        // ------------------------------------------------------------------- мышь
+        // ------------------------------------------------------------------- mouse
 
         int ChipAt(Point p)
         {
@@ -163,7 +165,7 @@ namespace AbletonManager
             if (Changed != null) Changed(this, EventArgs.Empty);
         }
 
-        // -------------------------------------------------------------- отрисовка
+        // ------------------------------------------------------------------ drawing
 
         protected override void OnPaint(PaintEventArgs e)
         {
@@ -186,13 +188,14 @@ namespace AbletonManager
                 bool hot = i == _hotChip;
                 Theme.FillRound(g, c, c.Height / 2f, hot ? Theme.Red : Theme.Light);
 
-                // Текст центрируем в зоне без крестика: не липнет к левому краю и не
-                // заходит на крестик у правого.
+                // Centre the text in the zone without the cross: it neither clings to the left
+                // edge nor runs into the cross on the right.
                 Rectangle tr = new Rectangle(c.X + ChipPadX, c.Y, c.Width - ChipPadX - ChipCrossZone, c.Height);
                 Chrome.DrawText(g, Label(Selected[i]), Font, tr,
                                hot ? Color.White : Theme.OnLight, PillText);
 
-                // Крестик у правого края чипа: клик по чипу его же и убирает.
+                // The cross sits at the chip's right edge: a click on the chip removes that
+                // same chip.
                 float cx = c.Right - Sc(10), cy = c.Y + c.Height / 2f, s = Sc(3);
                 using (Pen p = new Pen(hot ? Color.White : Theme.OnLight, 1.4f))
                 {

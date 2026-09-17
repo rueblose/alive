@@ -5,7 +5,8 @@ using System.Windows.Forms;
 
 namespace AbletonManager
 {
-    /// <summary>Безрамочное окно диалога — тот же фон и та же шапка, что у главного окна.</summary>
+    /// <summary>A borderless dialog window — the same background and the same header as the
+    /// main window.</summary>
     public class GlassDialog : Form, IAnimatable
     {
         protected readonly IconButton CloseBtn = new IconButton();
@@ -13,10 +14,10 @@ namespace AbletonManager
         protected string Caption = "";
 
         /// <summary>
-        /// Переопределяется в false у диалогов с полями ввода: настоящее стекло у
-        /// окна ломает их дочерние TextBox непредсказуемым подмесом реального фона
-        /// (замерено, см. Glass.ApplyChrome). Окно остаётся тёмным и со скруглёнными
-        /// углами — просто не полупрозрачным.
+        /// Overridden to false on dialogs with input fields: real glass on a window breaks
+        /// their child TextBoxes with an unpredictable blend of the actual background
+        /// (measured, see Glass.ApplyChrome). The window stays dark and round-cornered — just
+        /// not translucent.
         /// </summary>
         public virtual bool UseGlass { get { return true; } }
 
@@ -44,25 +45,26 @@ namespace AbletonManager
             get { CreateParams cp = base.CreateParams; cp.ClassStyle |= 0x00020000; return cp; }
         }
 
-        /// <summary>Стекло — сразу по хендлу, до первого кадра, чтобы не мигало.</summary>
+        /// <summary>Glass goes on straight through the handle, before the first frame, so
+        /// nothing flickers.</summary>
         protected override void OnHandleCreated(EventArgs e)
         {
             base.OnHandleCreated(e);
             if (UseGlass) Glass.Apply(this); else Glass.ApplyChrome(this);
         }
 
-        /// <summary>И ещё раз по показу: заданный до появления окна backdrop DWM иногда
-        /// не подхватывает, пока визуал окна не пересоздадут.</summary>
+        /// <summary>And once more on show: a backdrop set before the window appears is
+        /// sometimes not picked up by DWM until the window's visual is recreated.</summary>
         protected override void OnVisibleChanged(EventArgs e)
         {
             base.OnVisibleChanged(e);
             if (Visible) { if (UseGlass) Glass.Apply(this); else Glass.ApplyChrome(this); }
         }
 
-        // Появление окна: 160 мс подъёма на Sc(10) с затуханием прозрачности. Раньше
-        // диалог возникал мгновенно — единственное место, где интерфейс дёргался.
-        // Масштабирования нет намеренно: менять Size — значит пересчитывать раскладку
-        // детей на каждом кадре, а это уже не анимация, а мельтешение.
+        // The window appears over 160 ms, rising by Sc(10) as the transparency fades out. The
+        // dialog used to pop into existence — the one place where the interface jerked. There
+        // is deliberately no scaling: changing Size means recomputing the children's layout on
+        // every frame, and that is not animation but flicker.
         System.Windows.Forms.Timer _enter;
         int _enterStart, _enterTop;
 
@@ -117,15 +119,16 @@ namespace AbletonManager
 
         protected override void OnPaintBackground(PaintEventArgs e) { }
 
-        // ------------------------------------------------------------------ подсветка
+        // ------------------------------------------------------------------ highlight
 
         float _flash;
 
         /// <summary>
-        /// Мигнуть обводкой: «окно здесь, оно и не даёт нажать дальше». Ответ на клик
-        /// мимо модального окна вместо системного звука — см. Chrome.SwallowBlockedClick.
-        /// Пока кнопку держат, сообщение приходит десятками; заново разгораться на
-        /// каждое не нужно, поэтому перезапускаем, только когда подсветка уже угасла.
+        /// Flash the outline: "the window is here, and it is what stops you clicking further".
+        /// The answer to a click outside a modal window instead of the system beep — see
+        /// Chrome.SwallowBlockedClick. While the button is held the message arrives dozens of
+        /// times; flaring up again on each is not wanted, so we restart only once the highlight
+        /// has already faded.
         /// </summary>
         public void Flash()
         {
@@ -137,8 +140,9 @@ namespace AbletonManager
         public bool OnAnimTick()
         {
             if (IsDisposed) return false;
-            // ~0.4 c до полного угасания: короче — глаз не успевает поймать, длиннее —
-            // подсветка начинает выглядеть состоянием окна, а не ответом на клик.
+            // ~0.4 s to full fade: shorter and the eye does not catch it, longer and the
+            // highlight starts to look like a state of the window rather than an answer to a
+            // click.
             _flash -= 0.04f;
             if (_flash < 0.02f) _flash = 0f;
             Invalidate();
@@ -153,8 +157,9 @@ namespace AbletonManager
 
             if (_flash > 0f)
             {
-                // Радиус тот же, которым DWM скругляет окно, иначе обводка отходит от
-                // угла. Толщина в два пикселя: однопиксельная на скруглении почти не видна.
+                // The radius is the one DWM rounds the window with, or the outline pulls away
+                // from the corner. Thickness of two pixels: a single-pixel one is barely
+                // visible on a curve.
                 float w = Sc(2);
                 using (GraphicsPath path = Theme.Round(
                            new RectangleF(w / 2f, w / 2f, ClientSize.Width - w, ClientSize.Height - w), Sc(8)))
@@ -162,8 +167,9 @@ namespace AbletonManager
                     g.DrawPath(pen, path);
             }
 
-            // NoClipping — подстраховка от обрезанных верхушек букв, если на конкретном
-            // шрифте/DPI строке чуть тесно: пусть вылезет в пустой фон вокруг, не срежется.
+            // NoClipping guards against clipped letter tops if a line is slightly tight on a
+            // particular font or DPI: let it spill into the empty background around rather than
+            // be cut off.
             Chrome.DrawText(g, Caption, Theme.FTitle,
                            new Rectangle(Card.Left + Sc(Theme.Pad), Card.Top + Sc(24),
                                          Card.Width - Sc(90), Sc(28)),
@@ -174,8 +180,8 @@ namespace AbletonManager
 
         protected override void WndProc(ref Message m)
         {
-            // Диалог бывает владельцем другого диалога (Rescue поверх Forks) — тогда
-            // системный звук ловится здесь ровно так же, как у главного окна.
+            // A dialog can be the owner of another dialog — in that case the system beep is
+            // caught here exactly as it is on the main window.
             if (Chrome.SwallowBlockedClick(ref m)) return;
 
             base.WndProc(ref m);
@@ -189,9 +195,9 @@ namespace AbletonManager
         {
             if (e.KeyCode == Keys.Escape) { Close(); e.Handled = true; }
 
-            // Ctrl+Q закрывает программу целиком и отсюда тоже. Модальный диалог крутит
-            // собственный цикл сообщений, до главного окна его клавиши не доходят вовсе,
-            // и без этого выйти из программы с открытым диалогом было нельзя.
+            // Ctrl+Q closes the whole program from here too. A modal dialog runs its own
+            // message loop and its keys never reach the main window at all, and without this
+            // there was no way out of the program with a dialog open.
             else if (e.Control && e.KeyCode == Keys.Q)
             {
                 e.Handled = e.SuppressKeyPress = true;

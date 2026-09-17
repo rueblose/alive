@@ -6,25 +6,25 @@ using System.Windows.Forms;
 namespace AbletonManager
 {
     /// <summary>
-    /// Читает аранжировку в фоне и держит несколько последних в памяти. Разбор сета —
-    /// от 100 мс до секунды, поэтому в потоке интерфейса его делать нельзя: при листании
-    /// списка стрелками окно бы застывало на каждой строке.
+    /// Reads an arrangement in the background and keeps the last few in memory. Parsing a set
+    /// takes from 100 ms to a second, so it must not happen on the UI thread: stepping through
+    /// the list with the arrow keys would freeze the window on every row.
     /// </summary>
     public sealed class ArrangementLoader
     {
         /// <summary>
-        /// Сколько разобранных аранжировок держим. Одна — около 0,4 МБ (замерено на
-        /// реальной библиотеке), так что прежние 250 — это до сотни мегабайт памяти
-        /// впустую: одновременно смотрят одну аранжировку в панели подробностей и одну
-        /// на весь экран, а плитки главной живут своим кешем готовых картинок.
+        /// How many parsed arrangements we keep. One is about 0.4 MB (measured on a real
+        /// library), so the previous 250 meant up to a hundred megabytes of memory for nothing:
+        /// at any moment one arrangement is on screen in the detail panel and one full screen,
+        /// while the home tiles live off their own cache of finished pictures.
         /// </summary>
         const int CacheSize = 12;
 
         /// <summary>
-        /// Сколько сетов разбираем одновременно. Разбор чисто процессорный (распаковка
-        /// плюс XML), и на одном потоке два десятка плиток главной заполнялись больше
-        /// трёх секунд. Больше трёх потоков брать не стоит: приоритет у них ниже
-        /// обычного, но это всё равно фон, а не то, ради чего запускали программу.
+        /// How many sets we parse at once. Parsing is pure CPU (decompression plus XML), and on
+        /// a single thread two dozen home tiles took over three seconds to fill. More than
+        /// three threads is not worth taking: their priority is below normal, but this is still
+        /// background work, not the reason the program was started.
         /// </summary>
         const int MaxWorkers = 3;
 
@@ -33,12 +33,12 @@ namespace AbletonManager
         readonly Dictionary<string, Arrangement> _cache = new Dictionary<string, Arrangement>();
         readonly List<string> _order = new List<string>();
 
-        // Что ждёт разбора и что разбирается прямо сейчас.
+        // What is waiting to be parsed and what is being parsed right now.
         readonly List<string> _pending = new List<string>();
         readonly HashSet<string> _working = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         int _busy;
 
-        /// <summary>Приходит в потоке интерфейса.</summary>
+        /// <summary>Arrives on the UI thread.</summary>
         public event Action<Arrangement> Ready;
 
         public ArrangementLoader(Control ui) { _ui = ui; }
@@ -54,13 +54,13 @@ namespace AbletonManager
         }
 
         /// <summary>
-        /// Запрашивает разбор. В работу очередь уходит с конца: самый свежий запрос —
-        /// первым. Это то же правило, что и раньше («последний вытесняет предыдущий»),
-        /// просто теперь предыдущие не выбрасываются, а ждут своей очереди — иначе
-        /// плитки главной, которых два десятка, приходилось бы просить строго по одной.
+        /// Requests a parse. The queue is served from the end: the freshest request goes first.
+        /// This is the same rule as before ("the last one displaces the previous"), except the
+        /// previous ones are no longer thrown away but wait their turn — otherwise the two
+        /// dozen home tiles would have to be asked for strictly one at a time.
         ///
-        /// Ответ приходит событием Ready всем подписчикам сразу, поэтому повторно
-        /// просить то, что уже разбирается, незачем.
+        /// The answer arrives through the Ready event to every subscriber at once, so there is
+        /// no point asking again for something already being parsed.
         /// </summary>
         public void Request(string path)
         {
@@ -119,8 +119,8 @@ namespace AbletonManager
                 }
                 finally
                 {
-                    // Снимаем отметку в любом случае: иначе сорвавшийся разбор навсегда
-                    // заблокировал бы повторный запрос этого сета.
+                    // Clear the mark whatever happens: a parse that fell over would otherwise
+                    // block any further request for that set forever.
                     lock (_lock) _working.Remove(path);
                 }
             }
