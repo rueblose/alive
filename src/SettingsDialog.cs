@@ -9,17 +9,17 @@ using System.Windows.Forms;
 namespace AbletonManager
 {
     /// <summary>
-    /// Настройки программы. Раньше по имени программы в шапке открывались только
-    /// горячие клавиши, а единственная настройка пряталась в меню правой кнопки —
-    /// найти её там мог только тот, кто и так знал, что она есть.
+    /// The program's settings. The program name in the header used to open the hotkeys and
+    /// nothing else, while the single setting hid in a right-click menu — findable only by
+    /// someone who already knew it was there.
     ///
-    /// Сюда попадает то, что относится к программе целиком: как выглядит окно и откуда
-    /// брать список плагинов. Настройки самого каталога сюда не переезжают — они уже
-    /// живут там, где на них смотрят: группировка и колонки в меню шапки таблицы,
-    /// закреплённые в звёздочке, папки в «Folders…».
+    /// What lands here is what concerns the program as a whole: how the window looks and where
+    /// the plugin list comes from. Catalog settings do not move here — they already live where
+    /// they are looked at: grouping and columns in the table header menu, pinning in the star,
+    /// folders in "Folders…".
     ///
-    /// Раскладка строк одна на всё окно: подпись слева, контрол справа — как в самой
-    /// Live в Preferences, чтобы читалось по вертикали одной колонкой значений.
+    /// The row layout is one for the whole window: caption on the left, control on the right —
+    /// as in Live's own Preferences, so it reads vertically as a single column of values.
     /// </summary>
     public sealed class SettingsDialog : GlassDialog
     {
@@ -40,18 +40,19 @@ namespace AbletonManager
         readonly GlassButton _openCache = new GlassButton();
         readonly GlassButton _restart = new GlassButton();
 
-        /// <summary>Тумблер прозрачности трогали — предлагаем перезапуск. Раньше об
-        /// этом спрашивал системный MessageBox: чужой стиль поверх стеклянного окна, да
-        /// ещё и обязательный ответ на случайное нажатие.</summary>
+        /// <summary>The transparency toggle was touched — we offer a restart. This used to be
+        /// asked by a system MessageBox: a foreign style over a glass window, and a mandatory
+        /// answer to an accidental click on top of that.</summary>
         bool _restartPending;
 
-        /// <summary>Пересобрать каталог: настройки плагинов поменялись.</summary>
+        /// <summary>Rebuild the catalog: the plugin settings changed.</summary>
         public bool RescanWanted;
 
 
         readonly List<string> _installs = new List<string>();
 
-        /// <summary>Прокручиваемая середина окна — всё, что ниже заголовка.</summary>
+        /// <summary>The scrollable middle of the window — everything below the
+        /// heading.</summary>
         readonly Body _body;
 
         public SettingsDialog(Settings s)
@@ -86,11 +87,11 @@ namespace AbletonManager
             };
             _body.Controls.Add(_source);
 
-            // «All installs» первым пунктом: список плагинов складывается из всех сразу,
-            // и это правильное умолчание — см. PluginInventory.Load. Список пунктов тут
-            // provisорный (PluginInventory.Installs() не разбирает содержимое — см. её
-            // комментарий); настоящий, посчитанный полным разбором, подставляет
-            // RefreshInstallsAsync ниже, как только досчитает.
+            // "All installs" as the first item: the plugin list is assembled from all of them
+            // at once, and that is the right default — see PluginInventory.Load. The item list
+            // here is provisional (PluginInventory.Installs() does not parse the contents — see
+            // its comment); the real one, counted by a full parse, is substituted by
+            // RefreshInstallsAsync below as soon as it finishes.
             _installs.Add("All installs");
             _installs.AddRange(PluginInventory.Installs());
             int at = _installs.IndexOf(_s.PluginSource);
@@ -143,8 +144,8 @@ namespace AbletonManager
             };
             _body.Controls.Add(_openCache);
 
-            // Одна ширина на все кнопки правого столбца: три разные ширины давали
-            // три разных левых края в одной колонке, и правый столбец рассыпался.
+            // One width for every button in the right column: three different widths gave three
+            // different left edges in one column, and the right column fell apart.
             GlassButton[] rightButtons = new GlassButton[] { _openCache, _rescan, _restart };
             int buttonW = Sc(128);
             foreach (GlassButton b in rightButtons) buttonW = Math.Max(buttonW, b.Width);
@@ -163,7 +164,7 @@ namespace AbletonManager
         }
 
         /// <summary>
-        /// Переключатель в стиле Apple: чисто геометрический (акцентное ложе + гладкая белая ручка).
+        /// An Apple-style switch: purely geometric (an accent bed plus a smooth white knob).
         /// </summary>
         void State(PillToggle t)
         {
@@ -186,34 +187,35 @@ namespace AbletonManager
         }
 
         /// <summary>
-        /// Прозрачность окна переключается только через перезапуск, и это не лень:
-        /// часть цветов темы — static readonly и считаются один раз по Glass.Enabled
-        /// (см. MainForm.ToggleGlass, откуда это и переехало).
+        /// Window transparency is only switched through a restart, and that is not laziness:
+        /// some of the theme's colours are static readonly and are computed once off
+        /// Glass.Enabled (see MainForm.ToggleGlass, which this moved from).
         /// </summary>
         void ToggleCompat()
         {
             _s.DisableGlass = _compat.Checked;
             _s.Save();
 
-            // Предложение перезапуститься живёт строкой в этом же окне: случайно
-            // щёлкнутый тумблер не должен требовать ответа в чужом диалоге. Строка
-            // видна, только пока настройка разошлась с текущим сеансом (DisableGlass
-            // и Glass.Enabled противоположной полярности, поэтому сравнение на ==):
-            // вернул тумблер на место — перезапускаться не за чем, строка ушла.
+            // The offer to restart lives as a line in this same window: an accidentally clicked
+            // toggle must not demand an answer in a foreign dialog. The line is visible only
+            // while the setting disagrees with the current session (DisableGlass and
+            // Glass.Enabled are of opposite polarity, hence the == comparison): put the toggle
+            // back and there is nothing to restart for, and the line goes.
             _restartPending = Glass.Supported() && _s.DisableGlass == Glass.Enabled;
             Relayout();
         }
 
-        // ------------------------------------------------------------------ состояние
+        // ------------------------------------------------------------------ state
 
         string _inventory = "";
         int _job;
 
         /// <summary>
-        /// Сколько плагинов сейчас видно и откуда. Читается в фоне: разбор базы Live —
-        /// это мегабайт текста, а обход папок и вовсе ходит на диск. Пока считается,
-        /// человек успевает щёлкнуть ещё раз, поэтому ответы старых заходов
-        /// отбрасываются по номеру — иначе на экране осело бы число от прошлых настроек.
+        /// How many plugins are visible right now and where from. Read in the background:
+        /// parsing Live's database means a megabyte of text, and walking the folders goes to
+        /// the disk outright. While it counts, a person manages to click again, so answers from
+        /// older passes are discarded by number — otherwise a number from the previous settings
+        /// would settle on the screen.
         /// </summary>
         void DescribeInventoryAsync()
         {
@@ -225,8 +227,9 @@ namespace AbletonManager
             System.Threading.ThreadPool.QueueUserWorkItem(delegate
             {
                 PluginInventory inv = PluginInventory.Load(snapshot);
-                // Установок Live на машине бывает полтора десятка, и списком они в
-                // строку не влезают — важно не какие именно, а сколько их сложилось.
+                // There can be a dozen and a half Live installs on a machine, and they do not
+                // fit into a line as a list — what matters is not which ones but how many added
+                // up.
                 string where = inv.Sources.Count == 1
                     ? inv.Sources[0]
                     : inv.Sources.Count > 1
@@ -250,22 +253,22 @@ namespace AbletonManager
             });
         }
 
-        // ------------------------------------------------------------------ установки
+        // ------------------------------------------------------------------ installs
 
         int _installJob;
 
         /// <summary>
-        /// Точный список установок с хотя бы одним плагином — тем же полным разбором,
-        /// которым Load считает и строку статуса (PluginInventory.Sources). Провизорный
-        /// PluginInventory.Installs() один раз уже наврал: предложил Live 12.0.10
-        /// из-за строки «found: Serum» в накопительном журнале сканера, а файла Serum
-        /// на диске давно нет — LoadFrom эту запись сам же и выбрасывает при разборе.
-        /// Отсюда следующий баг — выбор такой установки молча укорачивает список
-        /// плагинов, о чём в дропдауне ничего не видно.
+        /// The exact list of installs with at least one plugin — by the same full parse Load
+        /// uses for the status line (PluginInventory.Sources). The provisional
+        /// PluginInventory.Installs() has already lied once: it offered Live 12.0.10 on the
+        /// strength of a "found: Serum" line in the scanner's cumulative log, while the Serum
+        /// file has long been gone from the disk — LoadFrom throws that entry out itself while
+        /// parsing. Hence the next bug: choosing such an install silently shortens the plugin
+        /// list, with nothing about it visible in the dropdown.
         ///
-        /// Считается всегда по умолчанию (Settings свежий, не текущий _s): дропдаун
-        /// должен отвечать «что вообще есть на машине», а не зависеть от того, что
-        /// сейчас выбрано в фильтре.
+        /// It is always counted with the defaults (a fresh Settings, not the current _s): the
+        /// dropdown has to answer "what is there on this machine at all" rather than depend on
+        /// what is selected in the filter right now.
         /// </summary>
         void RefreshInstallsAsync()
         {
@@ -302,8 +305,8 @@ namespace AbletonManager
             int at = _installs.IndexOf(current);
             if (at <= 0 && _s.PluginSource.Length > 0)
             {
-                // Выбранная установка не даёт ни одного настоящего плагина (или её уже
-                // нет в списке) — забываем её, а не оставляем каталог молча коротким.
+                // The selected install yields not a single real plugin (or is gone from the
+                // list) — we forget it rather than leave the catalog silently short.
                 _s.PluginSource = "";
                 RescanWanted = true;
                 DescribeInventoryAsync();
@@ -312,7 +315,7 @@ namespace AbletonManager
             Invalidate();
         }
 
-        // ------------------------------------------------------------------ раскладка
+        // ------------------------------------------------------------------ layout
 
         bool Folders { get { return _source.SelectedIndex == 1; } }
 
@@ -344,8 +347,9 @@ namespace AbletonManager
         }
 
         /// <summary>
-        /// Разложить строки внутри панели: подпись слева, контрол справа. Координаты
-        /// панельные, сдвинутые на прокрутку; возвращает полную высоту содержимого.
+        /// Lay the rows out inside the panel: caption on the left, control on the right. The
+        /// coordinates are the panel's, shifted by the scroll; it returns the full height of
+        /// the content.
         /// </summary>
         internal int BuildRows(int scroll)
         {
@@ -372,12 +376,13 @@ namespace AbletonManager
                  "Disable transparency (Win10 Compatible)",
                  "Turns off glass effect if window dragging lags. Applies after restart.");
 
-            // Кнопка без подписи: строка выше уже сказала, что перезапуск нужен, а
-            // повторять это ещё и заголовком с пояснением — три раза об одном.
+            // A button with no caption: the line above has already said a restart is needed,
+            // and repeating it as a heading with an explanation makes three statements of one
+            // thing.
             _restart.Visible = _restartPending;
             if (_restartPending)
             {
-                y -= Sc(12);   // прижать к строке тумблера — это одно целое
+                y -= Sc(12);   // pushed against the toggle row — they are one whole
                 Line(x, ref y, w, h, _restart, "", "");
             }
 
@@ -389,8 +394,9 @@ namespace AbletonManager
                  ? "Direct folder scan (VST2 / VST3 files)."
                  : "Uses internal database from installed Live versions.");
 
-            // Дочерние строки источника: о чём вообще спрашивать, решает строка выше,
-            // поэтому они с отступом и на общем рельсе — как версии под сетом в списке.
+            // The source's child rows: what there is to ask about at all is decided by the row
+            // above, so they are indented and on a shared rail — like versions under a set in
+            // the list.
             int cx = x + Sc(20);
             int cw = Math.Max(0, w - Sc(20));
             int railTop = y;
@@ -432,14 +438,14 @@ namespace AbletonManager
         bool _sizing;
 
         /// <summary>
-        /// Высота окна под полный список у источника «Live's database» — он же
-        /// умолчание. Окно её и держит: переключение источника меняет число строк
-        /// втрое, и прыгающая от этого рамка читается как другое окно, а не как
-        /// другое содержимое. Что не влезло — прокручивается внутри панели.
+        /// The window height fits the full list of the "Live's database" source — which is also
+        /// the default. The window holds to it: switching the source changes the number of rows
+        /// threefold, and a frame jumping about from that reads as a different window rather
+        /// than as different content. Whatever does not fit scrolls inside the panel.
         /// </summary>
         int WindowH { get { return Sc(760); } }
 
-        /// <summary>Подогнать высоту окна под содержимое, но не выше WindowH.</summary>
+        /// <summary>Fit the window height to the content, but no taller than WindowH.</summary>
         void FitHeight(int need)
         {
             if (_sizing) return;
@@ -454,7 +460,7 @@ namespace AbletonManager
 
         Rectangle _statusRect;
 
-        /// <summary>Рельс слева от дочерних строк источника плагинов.</summary>
+        /// <summary>The rail to the left of the plugin source's child rows.</summary>
         Rectangle _rail;
 
         int DetailHeight(string text, int width)
@@ -486,7 +492,8 @@ namespace AbletonManager
             y += Sc(8);
         }
 
-        /// <summary>Строка настройки: подпись слева, контрол прижат к правому краю.</summary>
+        /// <summary>A settings row: caption on the left, control pushed to the right
+        /// edge.</summary>
         void Line(int x, ref int y, int w, int h, Control c, string title, string detail)
         {
             int ch = (c is Segmented || (c is PillToggle && ((PillToggle)c).IsSwitch)) ? c.Height : h;
@@ -508,7 +515,8 @@ namespace AbletonManager
             y += Sc(20);
         }
 
-        /// <summary>Строки рисует панель — она же их и обрезает по своему краю.</summary>
+        /// <summary>The rows are drawn by the panel — which also clips them at its own
+        /// edge.</summary>
         internal void PaintRows(Graphics g)
         {
             const TextFormatFlags leftFlags = TextFormatFlags.Left | TextFormatFlags.VerticalCenter |
@@ -547,7 +555,7 @@ namespace AbletonManager
             Chrome.DrawText(g, _inventory, Theme.FSmall, _statusRect, Theme.TextDim, leftFlags);
         }
 
-        /// <summary>Колесо над заголовком или кнопкой закрытия — тоже прокрутка.</summary>
+        /// <summary>The wheel over the heading or the close button scrolls too.</summary>
         protected override void OnMouseWheel(MouseEventArgs e)
         {
             if (_body != null) _body.Scroll(e.Delta);
@@ -555,10 +563,10 @@ namespace AbletonManager
         }
 
         /// <summary>
-        /// Прокручиваемая середина окна. Настоящий дочерний контрол, а не сдвиг
-        /// координат: он сам обрезает уехавшие за край кнопки (подписи пишет
-        /// TextRenderer, а он никакого Clip не слушает — см. RowListView), и колесо
-        /// над любой из них приходит сюда же.
+        /// The scrollable middle of the window. A real child control rather than a coordinate
+        /// shift: it clips buttons that have moved past the edge itself (the captions are
+        /// written by TextRenderer, which honours no Clip — see RowListView), and the wheel
+        /// over any of them arrives here as well.
         /// </summary>
         sealed class Body : GlassControl
         {
@@ -578,7 +586,7 @@ namespace AbletonManager
 
             int MaxScroll { get { return Math.Max(0, _contentH - Height); } }
 
-            /// <summary>Пересобрать строки под текущую прокрутку и размер.</summary>
+            /// <summary>Rebuild the rows for the current scroll position and size.</summary>
             public void Rebuild()
             {
                 if (_building) return;
@@ -586,15 +594,15 @@ namespace AbletonManager
                 try
                 {
                     _contentH = _d.BuildRows(_scroll);
-                    // Содержимое укоротилось (сменили источник) — прокрутка повисла бы
-                    // за концом списка, и снизу зияла пустота.
+                    // The content got shorter (the source was switched) — the scroll would hang
+                    // past the end of the list, leaving emptiness gaping below.
                     if (_scroll > MaxScroll) { _scroll = MaxScroll; _contentH = _d.BuildRows(_scroll); }
                 }
                 finally { _building = false; }
                 Invalidate();
             }
 
-            /// <summary>Прокрутить на щелчок колеса.</summary>
+            /// <summary>Scroll by one wheel notch.</summary>
             public void Scroll(int delta)
             {
                 if (delta == 0 || MaxScroll <= 0) return;

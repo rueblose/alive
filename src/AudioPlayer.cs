@@ -7,12 +7,12 @@ using System.Threading;
 namespace AbletonManager
 {
     /// <summary>
-    /// Проигрывание файла: Media Foundation декодирует в PCM, waveOut его выводит.
-    /// Напрашивавшийся MCI (mciSendString) пришлось выбросить — на реальной библиотеке
-    /// он открывал 4 файла из 26: спотыкался о дефисы и скобки в именах, о теги в mp3
-    /// и просто не находил драйвер. Media Foundation берёт те же файлы все до одного,
-    /// а раз декодированный поток и так у нас в руках, выводить его дальше проще всего
-    /// самой простой из звуковых подсистем.
+    /// Playing a file: Media Foundation decodes it into PCM, waveOut sends it out. The obvious
+    /// MCI (mciSendString) had to be thrown out — on a real library it opened 4 files out of
+    /// 26: it stumbled over hyphens and brackets in names, over tags in mp3s, and simply failed
+    /// to find a driver. Media Foundation takes those same files every one, and since the
+    /// decoded stream is in our hands anyway, the easiest way to send it out further is the
+    /// simplest of the audio subsystems.
     /// </summary>
     public sealed class AudioPlayer : IDisposable
     {
@@ -33,8 +33,8 @@ namespace AbletonManager
         [StructLayout(LayoutKind.Sequential, Pack = 2)]
         sealed class WaveFormat
         {
-            // WAVE_FORMAT_IEEE_FLOAT: Mf.OpenPcm всегда отдаёт декодированный поток
-            // как float32 — см. комментарий там про упаковку 24-битных источников.
+            // WAVE_FORMAT_IEEE_FLOAT: Mf.OpenPcm always returns the decoded stream as float32 —
+            // see the comment there about the packing of 24-bit sources.
             public short FormatTag = 3;
             public short Channels;
             public int SamplesPerSec;
@@ -69,36 +69,36 @@ namespace AbletonManager
         const int WhdrDone = 0x00000001;
         const int TimeSamples = 0x0002;
 
-        // Восемь буферов по 16 КБ — около 0,7 с запаса при 44,1 кГц стерео. Меньше —
-        // рискуем щелчками на загруженной машине, больше — перемотка ощущается вялой.
+        // Eight buffers of 16 KB — about 0.7 s of headroom at 44.1 kHz stereo. Less and we risk
+        // clicks on a loaded machine; more and seeking feels sluggish.
         const int Buffers = 8;
         const int BufferBytes = 16384;
 
-        // ------------------------------------------------------------- состояние
+        // ------------------------------------------------------------------ state
 
         /// <summary>
-        /// Одно проигрывание: свой поток, своё устройство waveOut, свои буферы, свои
-        /// флаги. Всё железо живёт ЗДЕСЬ, а не полями самого AudioPlayer, и это не
-        /// аккуратизм ради аккуратизма.
+        /// One playback: its own thread, its own waveOut device, its own buffers, its own
+        /// flags. All the hardware lives HERE rather than in fields of AudioPlayer itself, and
+        /// that is not tidiness for tidiness' sake.
         ///
-        /// Раньше поля устройства были общими на весь плеер, а Close() при не успевшем
-        /// закончиться потоке звал Thread.Abort. Оба исхода плохи: Abort мог оборвать
-        /// поток прямо в finally — и устройство осталось бы открытым до конца работы
-        /// программы; а не звать его было нельзя, потому что следующий трек тут же
-        /// полез бы выделять буферы в те же самые поля, из которых предыдущий поток
-        /// ещё не доосвобождался (это уже порча памяти, а не утечка).
+        /// The device fields used to be shared across the whole player, and Close(), with the
+        /// thread not yet finished, called Thread.Abort. Both outcomes are bad: Abort could cut
+        /// the thread off right inside a finally — and the device would stay open until the
+        /// program ended; while not calling it was impossible, because the next track would
+        /// immediately start allocating buffers into the very fields the previous thread had
+        /// not finished releasing (that is memory corruption, not a leak).
         ///
-        /// С отдельным комплектом на каждое проигрывание выбор исчезает: застрявший
-        /// поток спокойно доубирает СВОЁ, ни с кем ничего не деля, а новый трек играет,
-        /// не дожидаясь его.
+        /// With a separate kit per playback the choice disappears: a stuck thread calmly
+        /// finishes tidying ITS OWN, sharing nothing with anyone, and a new track plays without
+        /// waiting for it.
         /// </summary>
         sealed class Run
         {
             public readonly string Path;
             public readonly Thread Thread;
 
-            // Gate защищает Hwo от гонки «интерфейс спрашивает позицию ровно в тот
-            // момент, когда поток закрывает устройство».
+            // Gate protects Hwo from the race where "the interface asks for the position at the
+            // very moment the thread is closing the device".
             public readonly object Gate = new object();
 
             public volatile bool Stop, Paused, Eof, Done, OpenOk, Opening;
@@ -114,10 +114,10 @@ namespace AbletonManager
             public int Rate, Channels, Bits, FrameSize;
             public long SeekBaseFrames, DecodedFrames;
             public int LengthMs;
-            public volatile int KnownMs;   // сколько уже точно есть, когда длина неизвестна заранее
+            public volatile int KnownMs;   // how much there certainly is already, when the length is not known in advance
 
-            // Декодер отдаёт куски произвольной длины, а устройству нужен ровно буфер,
-            // поэтому остаток от предыдущего чтения переносим в следующий.
+            // The decoder returns chunks of arbitrary length while the device needs exactly a
+            // buffer, so what is left over from the previous read is carried into the next.
             public byte[] Pending = new byte[1 << 16];
             public int PendingOff, PendingLen;
 
@@ -129,8 +129,8 @@ namespace AbletonManager
                 Opening = true;
                 Thread = new Thread(pump);
                 Thread.IsBackground = true;
-                // COM-объекты Media Foundation не любят переезжать между апартаментами,
-                // а поток вывода всё равно нужен свой.
+                // Media Foundation's COM objects do not like moving between apartments, and the
+                // output thread has to be our own anyway.
                 Thread.SetApartmentState(ApartmentState.MTA);
             }
         }
@@ -140,10 +140,10 @@ namespace AbletonManager
 
         public string Path = "";
 
-        /// <summary>Почему не заиграло. Пусто, пока всё в порядке.</summary>
+        /// <summary>Why it did not start playing. Empty while all is well.</summary>
         public string Error { get { Run r = _run; return r != null ? r.Error : ""; } }
 
-        /// <summary>Длительность в миллисекундах; 0, пока она вообще неизвестна.</summary>
+        /// <summary>Duration in milliseconds; 0 while it is not known at all.</summary>
         public int Length
         {
             get
@@ -156,21 +156,23 @@ namespace AbletonManager
 
         public bool IsOpen { get { Run r = _run; return r != null && r.OpenOk; } }
 
-        /// <summary>Файл ещё открывается. Пока так, транспорт трогать бессмысленно.</summary>
+        /// <summary>The file is still opening. While it is, touching the transport is
+        /// pointless.</summary>
         public bool IsOpening { get { Run r = _run; return r != null && r.Opening; } }
 
         /// <summary>
-        /// Не заиграло — причина в <see cref="Error"/>. Смотрим именно на текст ошибки,
-        /// а не на «не открыт и уже не открывается»: доигравший до конца трек тоже
-        /// в конце концов перестаёт быть открытым, и по такому признаку успешное
-        /// проигрывание было бы объявлено неудачей.
+        /// It did not start playing — the reason is in <see cref="Error"/>. We look at the
+        /// error text rather than at "not open and no longer opening": a track that has played
+        /// to the end also stops being open eventually, and by such a sign a successful
+        /// playback would be declared a failure.
         /// </summary>
         public bool OpenFailed
         {
             get { Run r = _run; return r != null && !r.Opening && r.Error.Length > 0; }
         }
 
-        /// <summary>Трек доиграл до конца сам — сигнал плейлисту переходить дальше.</summary>
+        /// <summary>The track reached its end by itself — a signal for the playlist to move
+        /// on.</summary>
         public bool Finished { get { Run r = _run; return r != null && r.Done; } }
 
         public bool IsPlaying
@@ -205,17 +207,17 @@ namespace AbletonManager
             }
         }
 
-        // ---------------------------------------------------------------- открыть
+        // ------------------------------------------------------------------ opening
 
         /// <summary>
-        /// Начинает проигрывание. НЕ ЖДЁТ, пока файл откроется: раньше здесь стоял
-        /// _opened.WaitOne(8000), и весь интерфейс замирал ровно на столько, сколько
-        /// системный декодер возился с файлом — на медленном или сетевом диске это
-        /// секунды намертво замершего окна по одному нажатию play.
+        /// Starts playback. It does NOT WAIT for the file to open: there used to be an
+        /// _opened.WaitOne(8000) here, and the whole interface froze for exactly as long as the
+        /// system decoder fussed with the file — on a slow or network drive that is seconds of
+        /// a dead-frozen window from one press of play.
         ///
-        /// Чем всё кончилось, спрашивают потом: IsOpening / IsOpen / OpenFailed.
-        /// Плеер и так опрашивает состояние своим таймером, так что отдельный
-        /// механизм оповещения не нужен.
+        /// How it ended is asked afterwards: IsOpening / IsOpen / OpenFailed. The player polls
+        /// the state with its own timer anyway, so a separate notification mechanism is not
+        /// needed.
         /// </summary>
         public void Open(string path, bool autoStart)
         {
@@ -228,7 +230,7 @@ namespace AbletonManager
             if (string.IsNullOrEmpty(path) || !File.Exists(path))
             {
                 r.Error = "File is gone";
-                r.Opening = false;          // поток не запускаем — открывать нечего
+                r.Opening = false;          // the thread is not started — there is nothing to open
                 return;
             }
             r.Thread.Start(r);
@@ -242,16 +244,16 @@ namespace AbletonManager
         }
 
         /// <summary>
-        /// Просим проигрывание закончиться. Thread.Abort тут больше нет — см. комментарий
-        /// у Run. Не уложился в срок (обычно это застрявшее чтение с сетевого диска) —
-        /// отпускаем: поток фоновый, Stop у него стоит, и, освободившись, он закроет своё
-        /// устройство и освободит свои буферы. Делить ему с новым проигрыванием нечего.
+        /// Ask the playback to finish. Thread.Abort is gone from here — see the comment on Run.
+        /// Missed the deadline (usually a read stuck on a network drive) — we let go: the
+        /// thread is a background one, Stop is set on it, and once free it will close its
+        /// device and release its buffers. It has nothing to share with a new playback.
         ///
-        /// Ждём коротко и только ради одного: чтобы старый трек успел замолчать раньше,
-        /// чем зазвучит новый (здоровый поток видит Stop не позже чем через 20 мс, так
-        /// что этого с запасом хватает). Прежние две секунды тут были бы прямым
-        /// возвратом к тому, от чего уходили, — Close() зовётся из Open(), и весь
-        /// выигрыш от неблокирующего открытия съедался бы ожиданием предыдущего.
+        /// We wait briefly and for one reason only: so the old track falls silent before the
+        /// new one sounds (a healthy thread sees Stop within 20 ms at most, so this is plenty).
+        /// The former two seconds here would be a straight return to what we were getting away
+        /// from — Close() is called from Open(), and the whole gain from non-blocking opening
+        /// would be eaten by waiting for the previous one.
         /// </summary>
         static void StopRun(Run r)
         {
@@ -261,16 +263,16 @@ namespace AbletonManager
             try { r.Thread.Join(300); } catch { }
         }
 
-        // -------------------------------------------------------------- транспорт
+        // ------------------------------------------------------------------ transport
 
         public void Play()
         {
             Run r = _run;
             if (r == null) return;
             if (r.Done) r.SeekRequest = 0;
-            // Снимаем паузу даже пока идёт открытие: поток, дойдя до готовности,
-            // сам увидит Paused=false и начнёт играть. Иначе нажатие play в первую
-            // секунду после выбора трека молча пропадало бы.
+            // We lift the pause even while opening is under way: the thread, on reaching
+            // readiness, will see Paused=false itself and start playing. Otherwise a press of
+            // play in the first second after picking a track would vanish silently.
             r.Paused = false;
         }
 
@@ -288,7 +290,7 @@ namespace AbletonManager
             r.SeekRequest = ms;
         }
 
-        // ------------------------------------------------------- поток вывода
+        // ------------------------------------------------------- the output thread
 
         void Pump(object arg)
         {
@@ -307,9 +309,9 @@ namespace AbletonManager
                 if (!Mf.OpenPcm(r.Path, out reader, out r.Channels, out r.Bits, out r.Rate, out durationMs))
                 { r.Error = "No decoder for this file"; return; }
 
-                // Часть WAV (одиночные сэмплы, файлы без индекса) длительности не
-                // сообщает — тогда берём её прямо из заголовка. Если и там пусто,
-                // длина дорастёт по мере декодирования: ниже в ReadPcm.
+                // Some WAVs (single samples, files with no index) do not report a duration — we
+                // then take it straight from the header. If that is empty too, the length grows
+                // as decoding proceeds: below, in ReadPcm.
                 r.LengthMs = (int)durationMs;
                 if (r.LengthMs <= 0) r.LengthMs = WaveReader.RiffDurationMs(r.Path);
 
@@ -331,7 +333,7 @@ namespace AbletonManager
 
                 AllocBuffers(r);
                 ApplyVolume(r);
-                waveOutPause(hwo);           // ждём команды Play, а не стартуем сами
+                waveOutPause(hwo);           // we wait for the Play command rather than starting by ourselves
 
                 r.OpenOk = true;
                 r.Opening = false;
@@ -373,8 +375,8 @@ namespace AbletonManager
             finally
             {
                 r.OpenOk = false;
-                // Сперва прячем хендл от читателей (Position спрашивает позицию 25 раз
-                // в секунду), и только потом закрываем устройство.
+                // First we hide the handle from readers (Position asks for the position 25
+                // times a second), and only then close the device.
                 IntPtr h;
                 lock (r.Gate) { h = r.Hwo; r.Hwo = IntPtr.Zero; }
                 if (h != IntPtr.Zero)
@@ -389,13 +391,13 @@ namespace AbletonManager
                 }
                 Mf.Release(reader);
                 if (mfStarted) { try { Mf.MFShutdown(); } catch { } }
-                r.Opening = false;   // на случай падения до готовности — иначе ждали бы вечно
+                r.Opening = false;   // in case of a crash before readiness — otherwise we would wait forever
             }
         }
 
         static void DoSeek(Run r, IMFSourceReader reader, int ms)
         {
-            waveOutReset(r.Hwo);                // сбрасывает очередь и обнуляет позицию
+            waveOutReset(r.Hwo);                // drops the queue and zeroes the position
             for (int i = 0; i < Buffers; i++) r.Queued[i] = false;
             r.PendingLen = r.PendingOff = 0;
             Mf.SetPosition(reader, ms);
@@ -405,7 +407,7 @@ namespace AbletonManager
             r.Done = false;
         }
 
-        // ---------------------------------------------------------- буферы waveOut
+        // ------------------------------------------------------- waveOut buffers
 
         static void AllocBuffers(Run r)
         {
@@ -471,9 +473,9 @@ namespace AbletonManager
 
         static long PlayedFrames(Run r)
         {
-            // Под Gate, потому что зовут это из потока интерфейса, а поток вывода в это
-            // же время может закрывать устройство: без замка легко спросить позицию у
-            // уже закрытого хендла.
+            // Under Gate, because this is called from the UI thread while the output thread may
+            // be closing the device at the same moment: without the lock it is easy to ask an
+            // already-closed handle for the position.
             lock (r.Gate)
             {
                 if (r.Hwo == IntPtr.Zero) return 0;
@@ -495,7 +497,7 @@ namespace AbletonManager
             }
         }
 
-        // ------------------------------------------------------------ чтение PCM
+        // ------------------------------------------------------------ reading PCM
 
         static int ReadPcm(Run r, IMFSourceReader reader, byte[] dst)
         {
@@ -535,11 +537,11 @@ namespace AbletonManager
                 finally { Mf.Release(buffer); Mf.Release(sample); }
             }
 
-            // Отдаём только целые кадры — половина кадра сдвинула бы каналы местами.
+            // We hand over whole frames only — half a frame would swap the channels round.
             if (r.FrameSize > 0) written -= written % r.FrameSize;
 
-            // Длина неизвестна ни из метаданных, ни из заголовка — считаем её по факту,
-            // чтобы полоса прогресса хотя бы к концу трека стала правдой.
+            // The length is known neither from the metadata nor from the header — we count it
+            // as we go, so that the progress bar becomes true by the end of the track at least.
             if (r.LengthMs <= 0 && r.FrameSize > 0 && r.Rate > 0)
             {
                 r.DecodedFrames += written / r.FrameSize;
@@ -552,7 +554,8 @@ namespace AbletonManager
         public void Dispose() { Close(); }
     }
 
-    /// <summary>Огибающая: минимум и максимум сигнала в каждом столбце картинки.</summary>
+    /// <summary>The envelope: the minimum and maximum of the signal in each column of the
+    /// picture.</summary>
     public sealed class Waveform
     {
         public float[] Min = new float[0];
@@ -562,8 +565,8 @@ namespace AbletonManager
     }
 
     /// <summary>
-    /// Огибающая. WAV разбираем сами — это просто и не поднимает COM ради каждого
-    /// трека; всё остальное (и WAV, который нам не дался) уходит в системный декодер.
+    /// The envelope. We parse WAV ourselves — it is simple and does not raise COM for every
+    /// track; everything else (and any WAV we could not manage) goes to the system decoder.
     /// </summary>
     public static class WaveReader
     {
@@ -579,9 +582,10 @@ namespace AbletonManager
         }
 
         /// <summary>
-        /// Длительность WAV прямо из заголовка. Нужна потому, что Media Foundation
-        /// у части файлов (одиночные сэмплы, записи без индекса) длину не сообщает,
-        /// а без неё нечем показать ни время, ни положение на волне.
+        /// A WAV's duration straight from the header. Needed because Media Foundation does not
+        /// report the length for some files (single samples, recordings with no index), and
+        /// without it there is nothing to show either the time or the position on the waveform
+        /// with.
         /// </summary>
         public static int RiffDurationMs(string path)
         {
@@ -660,7 +664,7 @@ namespace AbletonManager
                                 r.ReadInt16();             // cbSize
                                 r.ReadInt16();             // valid bits
                                 r.ReadInt32();             // channel mask
-                                format = r.ReadInt16();    // настоящий формат из GUID
+                                format = r.ReadInt16();    // the real format out of the GUID
                             }
                         }
                         else if (id == "data")
@@ -675,7 +679,7 @@ namespace AbletonManager
                     }
 
                     if (channels <= 0 || bits <= 0 || dataLen <= 0) return w;
-                    if (format != 1 && format != 3) return w;      // сжатый — пусть его берёт MF
+                    if (format != 1 && format != 3) return w;      // compressed — let MF take it
 
                     int bytesPerSample = bits / 8;
                     int frameSize = bytesPerSample * channels;
@@ -723,8 +727,8 @@ namespace AbletonManager
             catch { return w; }
         }
 
-        /// <summary>Идентификатор чанка — строго четыре байта, а не четыре символа:
-        /// BinaryReader.ReadChars в UTF-8 на мусорном чанке съел бы больше.</summary>
+        /// <summary>A chunk identifier — strictly four bytes rather than four characters:
+        /// BinaryReader.ReadChars in UTF-8 would eat more on a junk chunk.</summary>
         static string Tag(BinaryReader r)
         {
             byte[] b = r.ReadBytes(4);

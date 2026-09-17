@@ -7,18 +7,19 @@ using System.Text;
 
 namespace AbletonManager
 {
-    /// <summary>Один сторонний плагин сета как цель для отключения — вместе со всеми своими копиями.</summary>
+    /// <summary>One third-party plugin of a set as a target for disabling — together with all
+    /// its copies.</summary>
     public sealed class AlsPluginSlot
     {
         public string Uid = "";
         public string Name = "";
         public PluginKind Kind;
-        public int Count = 1;          // сколько раз стоит в сете
+        public int Count = 1;          // how many times it occurs in the set
 
         /// <summary>
-        /// Разработчик — только когда он и правда разработчик. У VST2 на этом месте
-        /// оказывается папка, в которой лежит .dll («Eff», «Gen»), и показывать её как
-        /// вендора значит врать (см. AlsFile.ParseBrowserPath).
+        /// The developer — only when it really is the developer. For VST2 this slot holds the
+        /// folder the .dll lies in ("Eff", "Gen"), and showing that as a vendor is a lie (see
+        /// AlsFile.ParseBrowserPath).
         /// </summary>
         public string Vendor = "";
 
@@ -31,55 +32,57 @@ namespace AbletonManager
     }
 
     /// <summary>
-    /// Копия сета, в которой Live не узнаёт выбранные плагины.
+    /// A copy of a set in which Live does not recognise the chosen plugins.
     ///
-    /// Плагин в .als опознаётся идентификатором, а не именем и не файлом:
+    /// A plugin in an .als is identified by an identifier, not by a name and not by a file:
     ///
     ///     &lt;Vst3PluginInfo&gt;…&lt;Uid&gt;&lt;Fields.0 Value="-1412567295" /&gt;…&lt;/Uid&gt;
     ///     &lt;VstPluginInfo&gt;&lt;Path Value="…\Serum_x64.dll" /&gt;&lt;UniqueId Value="1483109208" /&gt;
     ///
-    /// Подменяем ровно эти значения — и Live честно скажет «плагин не найден», покажет
-    /// на его месте заглушку с прежним именем и загрузит сет дальше. Ничего не удаляем:
-    /// узел устройства, его место в цепочке, автоматизация, идентификаторы и даже блоб
-    /// сохранённого пресета остаются на месте байт в байт. Это принципиально — вырезать
-    /// плагин из .als значит трогать DeviceChain, automation и ID разом, и такая правка
-    /// ломает сет надёжнее, чем сам сломанный плагин.
+    /// We substitute exactly those values — and Live honestly says "plugin not found", shows a
+    /// placeholder with the former name in its place, and loads the rest of the set. Nothing is
+    /// deleted: the device node, its place in the chain, the automation, the identifiers and
+    /// even the saved preset blob all stay byte for byte. That is a matter of principle —
+    /// cutting a plugin out of an .als means touching DeviceChain, automation and IDs at once,
+    /// and such an edit breaks a set more reliably than the broken plugin itself.
     ///
-    /// Правка точечная: меняются только эти Value, всё остальное копируется байт в байт.
-    /// Оригинал не трогается никогда — пишем в отдельный файл, который зовущая сторона
-    /// потом удалит.
+    /// The edit is surgical: only those Values change, everything else is copied byte for byte.
+    /// The original is never touched — we write into a separate file that the caller deletes
+    /// afterwards.
     ///
-    /// Идём потоком, строка за строкой, и держим в памяти только текущий узел устройства.
-    /// Поднимать распакованный XML целиком нельзя: у сета на этой машине он разворачивается
-    /// в 177 МБ, то есть 350 МБ строкой .NET, и со сборкой результата это под гигабайт на
-    /// одну правку. Узел же — 0.2 МБ в худшем случае, а строки в .als короче 230 байт.
+    /// We go as a stream, line by line, holding only the current device node in memory. Pulling
+    /// the decompressed XML up whole is out of the question: on this machine one set unpacks to
+    /// 177 MB, which is 350 MB as a .NET string, and with the result assembled on top that is
+    /// close to a gigabyte for one edit. A node, meanwhile, is 0.2 MB at worst, and lines in an
+    /// .als are shorter than 230 bytes.
     /// </summary>
     public static class AlsPatch
     {
         /// <summary>
-        /// Метка вместо Fields.0 у VST3: «Aliv» в ASCII. Совпасть с настоящим плагином
-        /// не может — она заменяет только старшее слово, а остальные три поля остаются
-        /// прежними, так что два отключённых плагина не схлопываются в один и тот же
-        /// несуществующий идентификатор.
+        /// The marker put in place of Fields.0 for VST3: "Aliv" in ASCII. It cannot collide
+        /// with a real plugin — it replaces only the high word while the other three fields
+        /// stay as they were, so two disabled plugins do not collapse into one and the same
+        /// non-existent identifier.
         /// </summary>
         const int Vst3Marker = 0x416C6976;
 
-        /// <summary>То же для VST2: идентификатор там одно число, поэтому портим его xor-ом.</summary>
+        /// <summary>The same for VST2: the identifier there is a single number, so we spoil it
+        /// with an xor.</summary>
         const int Vst2Marker = 0x416C6976;
 
         /// <summary>
-        /// Чем дописывается путь к .dll у VST2. Одного сломанного UniqueId мало: Live
-        /// умеет поднять VST2 и по файлу, и тогда плагин загрузился бы как ни в чём не
-        /// бывало — то есть проба не проверила бы ничего.
+        /// What gets appended to a VST2's .dll path. A broken UniqueId alone is not enough:
+        /// Live can also raise a VST2 by its file, and the plugin would then load as if nothing
+        /// had happened — meaning the probe would have checked nothing.
         /// </summary>
         const string DisabledSuffix = ".alive-disabled";
 
-        // ------------------------------------------------------------------ цели
+        // ------------------------------------------------------------------ targets
 
         /// <summary>
-        /// Сторонние плагины сета, которые можно отключить, — по одному на идентификатор.
-        /// Без идентификатора плагин не адресуется (так бывает у Audio Unit: на Windows
-        /// их всё равно не поднять), такие сюда не попадают.
+        /// The set's third-party plugins that can be disabled — one per identifier. Without an
+        /// identifier a plugin cannot be addressed (which happens with Audio Units: they cannot
+        /// be raised on Windows anyway), and those do not get in here.
         /// </summary>
         public static List<AlsPluginSlot> Targets(AlsInfo info)
         {
@@ -111,7 +114,8 @@ namespace AbletonManager
             return list;
         }
 
-        /// <summary>Сколько плагинов сета отключить нельзя — не по чему опознать.</summary>
+        /// <summary>How many of the set's plugins cannot be disabled — nothing to identify them
+        /// by.</summary>
         public static int Unaddressable(AlsInfo info)
         {
             if (info == null) return 0;
@@ -121,15 +125,16 @@ namespace AbletonManager
             return n;
         }
 
-        // ------------------------------------------------------------------ правка
+        // ------------------------------------------------------------------ patching
 
         /// <summary>
-        /// Пишет в dst копию src, где перечисленные плагины обезличены. Возвращает,
-        /// сколько узлов устройств тронуто — ноль означает, что ни один из заказанных
-        /// плагинов в файле не нашёлся, и запускать такую пробу бессмысленно.
+        /// Writes a copy of src into dst with the listed plugins anonymised. Returns how many
+        /// device nodes were touched — zero means none of the requested plugins was found in
+        /// the file, and running such a probe is pointless.
         ///
-        /// inv нужен только чтобы подменённый идентификатор случайно не совпал с другим
-        /// установленным плагином: Live тогда молча подставила бы чужое устройство.
+        /// inv is needed only so that a substituted identifier does not accidentally coincide
+        /// with another installed plugin: Live would then silently put a foreign device in its
+        /// place.
         /// </summary>
         public static int Neutralize(string src, string dst, ICollection<string> uids, PluginInventory inv)
         {
@@ -142,9 +147,9 @@ namespace AbletonManager
             using (FileStream fin = new FileStream(src, FileMode.Open, FileAccess.Read,
                                                    FileShare.ReadWrite, 64 * 1024))
             using (GZipStream gin = new GZipStream(fin, CompressionMode.Decompress))
-            // detectEncodingFromByteOrderMarks: false — иначе BOM был бы съеден на чтении
-            // и не записан обратно, а копия должна отличаться от оригинала ровно теми
-            // значениями, которые мы меняем, и ничем больше.
+            // detectEncodingFromByteOrderMarks: false — otherwise the BOM would be eaten on
+            // reading and not written back, and the copy must differ from the original by
+            // exactly the values we change and by nothing else.
             using (StreamReader rin = new StreamReader(gin, new UTF8Encoding(false), false, 64 * 1024))
 
             using (FileStream fout = new FileStream(dst, FileMode.Create, FileAccess.Write,
@@ -171,10 +176,11 @@ namespace AbletonManager
                     }
                     else node.Append(line);
 
-                    // Закрывающий тег ищем в текущей строке, а не во всём накопленном:
-                    // иначе на каждую строку узла пересобиралась бы вся его строка целиком.
-                    // Работает и когда узел уместился в одну строку, и когда он растянут
-                    // на тысячи, — а разорванным между строками тег не бывает.
+                    // The closing tag is looked for in the current line rather than in
+                    // everything accumulated: otherwise the whole node string would be rebuilt
+                    // for every one of its lines. It works both when a node fits on one line
+                    // and when it stretches over thousands — and a tag is never torn between
+                    // lines.
                     if (line.IndexOf(closeTag, StringComparison.Ordinal) < 0) continue;
 
                     string text = node.ToString();
@@ -189,7 +195,7 @@ namespace AbletonManager
                     else wout.Write(text);
                 }
 
-                // Файл оборвался посреди узла — пишем как есть, чтобы не потерять хвост.
+                // The file ended mid-node — write it as is so the tail is not lost.
                 if (node != null) wout.Write(node.ToString());
             }
 
@@ -197,37 +203,37 @@ namespace AbletonManager
             return patched;
         }
 
-        // -------------------------------------------------------- поиск узлов устройств
+        // -------------------------------------------------- finding device nodes
 
         static readonly string[] OpenTags = { "<Vst3PluginInfo", "<VstPluginInfo" };
         static readonly string[] CloseTags = { "</Vst3PluginInfo>", "</VstPluginInfo>" };
 
         /// <summary>
-        /// Открывает ли строка узел описания плагина: 0 — VST3, 1 — VST2, иначе -1.
+        /// Whether a line opens a plugin description node: 0 — VST3, 1 — VST2, otherwise -1.
         ///
-        /// Простым поиском подстроки, а не разбором XML: файл машинный, эти узлы не
-        /// вкладываются друг в друга, зато пересборка документа через XmlWriter
-        /// переписала бы и те байты, которых правка не касается, — а вся затея в том,
-        /// чтобы менять только идентификаторы. Внутрь блобов ProcessorState и Buffer
-        /// поиск не попадёт: там только шестнадцатеричные цифры, скобок в них нет.
+        /// By plain substring search rather than by parsing XML: the file is machine-written,
+        /// these nodes do not nest inside each other, while rebuilding the document through
+        /// XmlWriter would rewrite bytes the edit does not touch — and the whole point is to
+        /// change the identifiers only. The search cannot stray inside the ProcessorState and
+        /// Buffer blobs: those hold nothing but hexadecimal digits, with no brackets in them.
         /// </summary>
         static int Opens(string line)
         {
-            // Порядок важен: «&lt;Vst3PluginInfo» тоже содержит «PluginInfo», но не
-            // «&lt;VstPluginInfo» — а вот проверять VST2 первым было бы всё равно неверно
-            // на строке, где стоят оба (в разметке Live такого нет, но цена нулевая).
+            // The order matters: "&lt;Vst3PluginInfo" also contains "PluginInfo" but not
+            // "&lt;VstPluginInfo" — and checking VST2 first would be wrong anyway on a line
+            // holding both (Live's markup has no such line, but the cost is zero).
             for (int i = 0; i < OpenTags.Length; i++)
                 if (line.IndexOf(OpenTags[i], StringComparison.Ordinal) >= 0) return i;
             return -1;
         }
 
         /// <summary>
-        /// Строка вместе с её концом строки. StreamReader.ReadLine концы съедает, и
-        /// пришлось бы угадывать, что там было: в .als это «\r\n», в других файлах Live
-        /// (журнал) — одиночный «\n», а копия обязана совпадать с оригиналом байт в байт
-        /// везде, кроме подменённых значений.
+        /// A line together with its line ending. StreamReader.ReadLine eats the endings, and we
+        /// would have to guess what was there: in an .als it is "\r\n", in other Live files
+        /// (the log) a lone "\n", and a copy has to match the original byte for byte everywhere
+        /// except the substituted values.
         ///
-        /// Внутренний, а не приватный: тем же чтением пользуется AlsSamplePatch.
+        /// Internal rather than private: AlsSamplePatch uses the same reading.
         /// </summary>
         internal sealed class LineReader
         {
@@ -267,12 +273,13 @@ namespace AbletonManager
             }
         }
 
-        // ------------------------------------------------------------ опознание плагина
+        // ------------------------------------------------------- identifying a plugin
 
         /// <summary>
-        /// Идентификатор из узла — в том же виде, что и у AlsFile и у базы самой Live.
-        /// Считает его тот же PluginRef.FinishUid, чтобы формула жила в одном месте:
-        /// разъехавшись, эти два разбора отключали бы не тот плагин, который показали.
+        /// The identifier out of a node — in the same shape AlsFile and Live's own database
+        /// use. It is computed by the same PluginRef.FinishUid so the formula lives in one
+        /// place: were the two parsers to drift apart, they would disable a plugin other than
+        /// the one that was shown.
         /// </summary>
         static string UidOf(string node, PluginKind kind)
         {
@@ -287,9 +294,9 @@ namespace AbletonManager
                 return r.Uid;
             }
 
-            // У VST3 блоков <Uid> в узле два — свой у пресета и свой у устройства, и
-            // значения в них одинаковые. Берём последний: это тот, что лежит прямо в
-            // Vst3PluginInfo, ровно как его читает AlsFile.
+            // A VST3 node holds two <Uid> blocks — one for the preset and one for the device,
+            // with equal values. We take the last: that is the one sitting directly in
+            // Vst3PluginInfo, exactly as AlsFile reads it.
             int last = node.LastIndexOf("<Uid>", StringComparison.Ordinal);
             if (last < 0) return "";
             int close = node.IndexOf("</Uid>", last, StringComparison.Ordinal);
@@ -309,7 +316,7 @@ namespace AbletonManager
             return v3.Uid;
         }
 
-        // ------------------------------------------------------------------ подмена
+        // ------------------------------------------------------------- substitution
 
         static string Rewrite(string node, PluginKind kind, string uid, PluginInventory inv)
         {
@@ -330,9 +337,9 @@ namespace AbletonManager
         }
 
         /// <summary>
-        /// Метка, которая ни на что установленное не похожа. Проверка не паранойя:
-        /// совпади подменённый идентификатор с другим плагином — Live не сказала бы
-        /// «не найден», а подставила бы чужое устройство, и проба показала бы неправду.
+        /// A marker that resembles nothing installed. The check is not paranoia: should a
+        /// substituted identifier coincide with another plugin, Live would not say "not found"
+        /// but put a foreign device in its place, and the probe would show an untruth.
         /// </summary>
         static int FreeVst3Marker(string node, PluginInventory inv)
         {
@@ -371,7 +378,8 @@ namespace AbletonManager
             return unchecked(original ^ Vst2Marker);
         }
 
-        /// <summary>Дописать «.alive-disabled» ко всем путям узла — файла с таким именем нет.</summary>
+        /// <summary>Append ".alive-disabled" to every path in the node — no file by that name
+        /// exists.</summary>
         static string SuffixPaths(string node)
         {
             const string tag = "<Path Value=\"";
@@ -392,7 +400,8 @@ namespace AbletonManager
             return sb.ToString();
         }
 
-        /// <summary>Заменить значение атрибута во всех вхождениях тега внутри узла.</summary>
+        /// <summary>Replace an attribute value in every occurrence of a tag inside the
+        /// node.</summary>
         static string ReplaceAll(string node, string tag, string value)
         {
             StringBuilder sb = new StringBuilder(node.Length + 32);

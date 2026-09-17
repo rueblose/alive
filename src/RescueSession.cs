@@ -7,29 +7,31 @@ using System.Text;
 
 namespace AbletonManager
 {
-    /// <summary>Чем кончилось всё расследование.</summary>
+    /// <summary>How the whole investigation ended.</summary>
     public enum RescueVerdict
     {
-        None,           // ещё ищем
-        NotPlugins,     // сет не открылся даже со всеми отключёнными — дело не в плагинах
-        Culprit,        // виноват ровно один, он в Culprit
-        Group,          // виноватых несколько; известен набор, отключение которого помогает
-        NoProbeYet      // проб ещё не было
+        None,           // still searching
+        NotPlugins,     // the set would not open even with everything disabled — it is not the plugins
+        Culprit,        // exactly one is guilty, and it is in Culprit
+        Group,          // several are guilty; the set whose disabling helps is known
+        NoProbeYet      // there have been no probes yet
     }
 
     /// <summary>
-    /// Пробные копии сета: имя, журнал и уборка.
+    /// Probe copies of a set: the name, the journal and the cleanup.
     ///
-    /// Проба кладётся РЯДОМ с оригиналом, а не во временную папку, и это не лень.
-    /// Относительные ссылки на сэмплы Live отсчитывает от папки, где лежит сам .als;
-    /// унеси копию в %TEMP% — и Live честно доложит, что потеряла все файлы проекта.
-    /// Такая проба проверяла бы не плагины, а собственную кривизну.
+    /// A probe is placed NEXT TO the original rather than in a temporary folder, and that is
+    /// not laziness. Live measures relative sample references from the folder the .als itself
+    /// lies in; carry the copy off to %TEMP% and Live will honestly report that it has lost
+    /// every file of the project. Such a probe would be checking not the plugins but our own
+    /// crookedness.
     /// </summary>
     public static class RescueProbe
     {
         public const string Suffix = ".alive-probe.als";
 
-        /// <summary>Список проб, лежащих на диске прямо сейчас, — чтобы убрать их после падения.</summary>
+        /// <summary>The list of probes lying on disk right now — so they can be removed after a
+        /// crash.</summary>
         static string JournalPath { get { return Path.Combine(Settings.Dir, "probes.txt"); } }
 
         public static bool IsProbe(string path)
@@ -44,10 +46,10 @@ namespace AbletonManager
         }
 
         /// <summary>
-        /// Убрать пробы, оставшиеся от прошлого запуска. Программа падает редко, но
-        /// проба — это .als в чужой папке проекта, и оставить его там насовсем нельзя:
-        /// человек однажды откроет его вместо своего сета и не поймёт, почему полсета
-        /// без плагинов. Зовётся на старте, до первого сканирования.
+        /// Remove probes left over from the previous run. The program crashes rarely, but a
+        /// probe is an .als inside somebody else's project folder, and it cannot be left there
+        /// for good: one day a person opens it instead of their own set and cannot work out why
+        /// half of it has no plugins. Called at startup, before the first scan.
         /// </summary>
         public static void CleanupStale()
         {
@@ -57,8 +59,8 @@ namespace AbletonManager
             int gone = 0;
             foreach (string p in listed)
             {
-                // Из журнала удаляем только то, что и правда проба: файл журнала лежит
-                // в открытом виде и однажды окажется поправлен руками.
+                // Only what really is a probe is removed from the journal: the journal file
+                // lies there in the open and will one day be edited by hand.
                 if (!IsProbe(p)) continue;
                 try { if (File.Exists(p)) { File.Delete(p); gone++; } }
                 catch (Exception ex) { Diag.Fail("rescue: cleanup " + p, ex); }
@@ -87,10 +89,10 @@ namespace AbletonManager
         }
 
         /// <summary>
-        /// Удалить пробу и вычеркнуть её из журнала. Тихо: убирать мусор — не повод для
-        /// окна с ошибкой. Из журнала вычёркиваем только то, что действительно исчезло:
-        /// файл могла держать открытым сама Live, и тогда убрать его сможет лишь
-        /// следующий запуск программы — по этой самой записи.
+        /// Delete a probe and strike it from the journal. Quietly: tidying litter is no reason
+        /// for an error window. We strike from the journal only what has really gone: Live
+        /// itself may have held the file open, and then only the program's next run can remove
+        /// it — on the strength of this very record.
         /// </summary>
         public static void Drop(string probe)
         {
@@ -128,20 +130,21 @@ namespace AbletonManager
     }
 
     /// <summary>
-    /// Расследование одного сета, который не открывается.
+    /// The investigation of one set that will not open.
     ///
-    /// Логика поиска держится на одном допущении: ломает ОДИН плагин. Тогда каждая проба
-    /// — это ответ на вопрос «лежит ли виновник внутри отключённого набора»:
+    /// The search logic rests on a single assumption: ONE plugin breaks it. Each probe is then
+    /// an answer to the question "is the culprit inside the disabled set?":
     ///
-    ///     открылось  → виновник среди отключённых  → подозреваемые ∩= отключённые
-    ///     не открылось → виновник не среди них     → подозреваемые −= отключённые
+    ///     opened     → the culprit is among the disabled → suspects ∩= disabled
+    ///     not opened → the culprit is not among them     → suspects −= disabled
     ///
-    /// Так работает любой набор, а не только ровная половина, — значит человек может
-    /// ткнуть галочки сам, и расследование это учтёт, а не собьётся.
+    /// Any set works that way, not just an even half — which means a person can tick the boxes
+    /// themselves, and the investigation will take that into account rather than lose its
+    /// footing.
     ///
-    /// Допущение проверяемое: если подозреваемых не осталось ни одного, виноват не один,
-    /// и вместо имени выдаётся набор Working — тот, отключение которого сет открывало.
-    /// Это всегда правда, даже когда красивого ответа нет.
+    /// The assumption is testable: if not a single suspect is left, more than one is guilty,
+    /// and instead of a name the Working set is given — the one whose disabling opened the set.
+    /// That is always true, even when there is no pretty answer.
     /// </summary>
     public sealed class RescueSession
     {
@@ -153,14 +156,15 @@ namespace AbletonManager
 
         readonly PluginInventory _inv;
 
-        /// <summary>Что журнал Live помнит о прошлых попытках открыть этот сет.</summary>
+        /// <summary>What Live's log remembers about previous attempts to open this
+        /// set.</summary>
         public LoadAttempt History;
         public AlsPluginSlot HistorySuspect;
 
-        /// <summary>Кто ещё может быть виновен.</summary>
+        /// <summary>Who else may be guilty.</summary>
         public readonly List<AlsPluginSlot> Suspects = new List<AlsPluginSlot>();
 
-        /// <summary>Наименьший известный набор, отключение которого сет открывало.</summary>
+        /// <summary>The smallest known set whose disabling opened the set.</summary>
         public List<AlsPluginSlot> Working;
 
         public RescueVerdict Verdict = RescueVerdict.NoProbeYet;
@@ -183,17 +187,18 @@ namespace AbletonManager
             Info = AlsFile.Read(set.Path);
             if (!string.IsNullOrEmpty(Info.Error))
             {
-                // Сам .als не читается — тут никакие плагины уже ни при чём, и об этом
-                // надо сказать прямо, а не гонять человека по пробам.
+                // The .als itself will not read — no plugin has anything to do with it here,
+                // and that has to be said outright rather than sending a person round the
+                // probes.
                 Error = Info.Error;
                 Targets = new List<AlsPluginSlot>();
                 return;
             }
 
-            // Дочитываем то, чего минимальный SetEntry мог не знать — например, у
-            // вызывающего был только путь к файлу, а не
-            // запись из каталога. Читать .als второй раз только за этим не стоит: у
-            // тяжёлых сетов один проход и так не бесплатен (см. AlsPatch).
+            // We read in what a minimal SetEntry may not have known — the caller, for instance,
+            // may have had only the path to the file rather than a record from the catalog.
+            // Reading the .als a second time just for that is not worth it: on heavy sets even
+            // one pass is not free (see AlsPatch).
             if (set.Creator.Length == 0) set.Creator = Info.Creator;
 
             Targets = AlsPatch.Targets(Info);
@@ -208,14 +213,16 @@ namespace AbletonManager
                                           || Verdict == RescueVerdict.NotPlugins
                                           || Verdict == RescueVerdict.Group; } }
 
-        /// <summary>Строки хода расследования — их же показывает окно и уносит отчёт.</summary>
+        /// <summary>The lines of the investigation's progress — the window shows them and the
+        /// report carries them off.</summary>
         public IList<string> Trail { get { return _log; } }
 
-        // ------------------------------------------------------------------ диагноз
+        // ------------------------------------------------------------------ diagnosis
 
         /// <summary>
-        /// Спросить журнал Live до всяких проб. Если сет уже роняли, Live записала, на
-        /// каком плагине оборвалась, — и первую пробу можно начинать сразу с него.
+        /// Ask Live's log before any probes. If the set has been crashed already, Live recorded
+        /// which plugin it broke off on — and the first probe can start with that one straight
+        /// away.
         /// </summary>
         void Diagnose()
         {
@@ -237,9 +244,9 @@ namespace AbletonManager
         }
 
         /// <summary>
-        /// Имя из журнала — в плагин сета. Сперва точно: и журнал, и .als берут имя из
-        /// одного и того же места, так что обычно оно совпадает буква в букву. Мягкое
-        /// сравнение — для случая «Serum_x64» против «Serum (64 Bit)».
+        /// A name from the log turned into a plugin of the set. Exactly first: both the log and
+        /// the .als take the name from the same place, so it usually matches letter for letter.
+        /// The lenient comparison is for the "Serum_x64" against "Serum (64 Bit)" case.
         /// </summary>
         public AlsPluginSlot Match(string name)
         {
@@ -254,19 +261,20 @@ namespace AbletonManager
             return null;
         }
 
-        // ------------------------------------------------------------------ что пробовать
+        // ------------------------------------------------------------- what to probe
 
         /// <summary>
-        /// Что предложить отключить в следующей пробе. Предложение, а не приказ: галочки
-        /// в окне человек правит сам, и Apply разберётся с любым набором.
+        /// What to suggest disabling in the next probe. A suggestion rather than an order: a
+        /// person edits the boxes in the window themselves, and Apply copes with any set.
         /// </summary>
         public List<AlsPluginSlot> Suggest()
         {
             List<AlsPluginSlot> pick = new List<AlsPluginSlot>();
             if (Targets.Count == 0) return pick;
 
-            // Первая проба: если журнал уже назвал подозреваемого — сразу его, одного.
-            // Угадали — расследование кончилось на первой же пробе, а не на пятой.
+            // The first probe: if the log has already named a suspect — that one alone, right
+            // away. Guessed right and the investigation ends on the very first probe rather
+            // than the fifth.
             if (Working == null)
             {
                 if (Round == 0 && HistorySuspect != null) { pick.Add(HistorySuspect); return pick; }
@@ -288,8 +296,8 @@ namespace AbletonManager
         }
 
         /// <summary>
-        /// Собрать пробную копию с отключёнными disable. Возвращает путь или бросает —
-        /// не записать пробу значит не начать, и молчать об этом нельзя.
+        /// Assemble a probe copy with disable switched off. Returns the path or throws —
+        /// failing to write a probe means failing to start, and that cannot be kept quiet.
         /// </summary>
         public string Prepare(List<AlsPluginSlot> disable)
         {
@@ -302,7 +310,7 @@ namespace AbletonManager
             foreach (AlsPluginSlot s in disable) uids.Add(s.Uid);
 
             string probe = RescueProbe.PathFor(Set);
-            RescueProbe.Remember(probe);            // сначала в журнал, потом на диск: упасть можно и между
+            RescueProbe.Remember(probe);            // the journal first, the disk second: a crash can happen in between
             int patched = AlsPatch.Neutralize(Set.Path, probe, uids, _inv);
             if (patched == 0)
             {
@@ -315,8 +323,9 @@ namespace AbletonManager
             ProbeStarted = DateTime.Now;
             Round++;
 
-            // Журналы Live читаем с текущего конца: что было до пробы, уже разобрано
-            // в Diagnose, и путать прошлые попытки с этой не нужно.
+            // Live's logs are read from their current end: whatever came before the probe has
+            // already been parsed in Diagnose, and there is no need to confuse earlier attempts
+            // with this one.
             _logs.Clear();
             foreach (LiveLogFile f in LiveLog.Files())
             {
@@ -328,7 +337,8 @@ namespace AbletonManager
             return probe;
         }
 
-        /// <summary>Открыть пробу в Live — тем же способом, каким её открыл бы двойной щелчок.</summary>
+        /// <summary>Open the probe in Live — the same way a double click would open
+        /// it.</summary>
         public void Launch()
         {
             if (ProbePath.Length == 0) throw new InvalidOperationException("No probe prepared.");
@@ -343,19 +353,20 @@ namespace AbletonManager
             ProbeDisabled = new List<AlsPluginSlot>();
         }
 
-        // ------------------------------------------------------------------ исход пробы
+        // ------------------------------------------------------- the outcome of a probe
 
         /// <summary>
-        /// Что журналы Live говорят о текущей пробе. null — Live её ещё не открывала.
-        /// Файлы перечитываются каждый раз заново: версия Live, которую человек запустит,
-        /// заранее не известна, а свежая установка могла и не иметь Log.txt до сих пор.
+        /// What Live's logs say about the current probe. null means Live has not opened it yet.
+        /// The files are re-read from scratch every time: which Live version a person will
+        /// start is not known in advance, and a fresh install may not have had a Log.txt until
+        /// now.
         /// </summary>
         public LoadAttempt Poll()
         {
             if (ProbePath.Length == 0) return null;
 
             foreach (LiveLogFile f in LiveLog.Files())
-                if (!_logs.ContainsKey(f.Path)) _logs[f.Path] = f;   // с нуля: файл появился только что
+                if (!_logs.ContainsKey(f.Path)) _logs[f.Path] = f;   // from scratch: the file has only just appeared
 
             LoadAttempt best = null;
             foreach (LiveLogFile f in _logs.Values)
@@ -369,7 +380,8 @@ namespace AbletonManager
             return best;
         }
 
-        /// <summary>Запущена ли Live прямо сейчас — по ней отличаем «ещё грузит» от «умерла».</summary>
+        /// <summary>Whether Live is running right now — that is how we tell "still loading"
+        /// from "died".</summary>
         public static bool LiveIsRunning()
         {
             Process[] all;
@@ -381,24 +393,26 @@ namespace AbletonManager
             {
                 try
                 {
-                    // Имя процесса — это имя exe: «Ableton Live 12 Suite». Сравниваем по
-                    // началу, потому что редакция и версия у всех разные.
+                    // The process name is the exe name: "Ableton Live 12 Suite". We compare by
+                    // the start, because the edition and the version differ for everyone.
                     if (!found && p.ProcessName.StartsWith("Ableton Live", StringComparison.OrdinalIgnoreCase))
                         found = true;
                 }
                 catch { }
-                // Каждый Process держит системный хендл, а спрашивают отсюда раз в секунду.
+                // Every Process holds a system handle, and this is asked once a second.
                 finally { p.Dispose(); }
             }
             return found;
         }
 
         /// <summary>
-        /// Учесть исход пробы и сузить круг. opened — сет открылся целиком.
+        /// Take the outcome of a probe into account and narrow the circle. opened — the set
+        /// opened in full.
         ///
-        /// Набор отключённого передаётся явно, а не берётся из ProbeDisabled: тогда ход
-        /// расследования можно прогнать без единого файла на диске и без Live — чем и
-        /// проверяется сходимость (см. tools\RescueTest.cs, команда simulate).
+        /// The disabled set is passed explicitly rather than taken from ProbeDisabled: the
+        /// course of the investigation can then be run through without a single file on disk
+        /// and without Live — which is how convergence is checked (see tools\RescueTest.cs, the
+        /// simulate command).
         /// </summary>
         public void Apply(List<AlsPluginSlot> off, bool opened, LoadAttempt attempt)
         {
@@ -417,9 +431,9 @@ namespace AbletonManager
                 if (attempt != null && attempt.Hung != null) where = " — stopped inside " + attempt.Hung.Name;
                 Note("  → did not open" + where);
 
-                // Журнал назвал плагин, на котором оборвалось: он и виновен, дальше
-                // делить пополам незачем. Берём подсказку только если этот плагин
-                // действительно был включён — иначе она про что-то другое.
+                // The log named the plugin it broke off on: that one is guilty, and there is no
+                // point halving further. We take the hint only if that plugin really was
+                // enabled — otherwise it is about something else.
                 AlsPluginSlot named = attempt != null && attempt.Hung != null
                                     ? Match(attempt.Hung.Name) : null;
                 if (named != null && !Contains(off, named) && Contains(Suspects, named))
@@ -435,7 +449,8 @@ namespace AbletonManager
 
         void Settle(bool opened, List<AlsPluginSlot> off)
         {
-            // Отключили всё, что можно, и всё равно не открылось — плагины ни при чём.
+            // Everything that could be was disabled and it still would not open — the plugins
+            // are not to blame.
             if (!opened && Working == null && off.Count == Targets.Count)
             {
                 Verdict = RescueVerdict.NotPlugins;
@@ -447,8 +462,9 @@ namespace AbletonManager
 
             if (Suspects.Count == 0)
             {
-                // Пусто — значит виновен не один плагин, и красивого имени не будет.
-                // Зато Working проверен на деле: с ним сет открывался.
+                // Empty means more than one plugin is guilty, and there will be no pretty name.
+                // Working, on the other hand, has been proved in practice: with it the set
+                // opened.
                 Verdict = RescueVerdict.Group;
                 Note("Verdict: more than one plugin is involved. Disabling " +
                      Describe(Working) + " opens the set.");
@@ -466,11 +482,11 @@ namespace AbletonManager
             Verdict = RescueVerdict.None;
         }
 
-        // ------------------------------------------------------------------ спасённая копия
+        // ------------------------------------------------------- the rescued copy
 
         /// <summary>
-        /// Что отключать в спасённой копии: найденного виновника, а если виновных
-        /// несколько — весь проверенный набор.
+        /// What to disable in the rescued copy: the culprit that was found, or, if there is
+        /// more than one, the whole proven set.
         /// </summary>
         public List<AlsPluginSlot> RescueSelection()
         {
@@ -486,8 +502,9 @@ namespace AbletonManager
         }
 
         /// <summary>
-        /// Копия рядом с оригиналом, где виновный плагин обезличен. Оригинал не трогаем
-        /// ни при каком исходе: он ещё пригодится, когда плагин обновят или переставят.
+        /// A copy next to the original with the guilty plugin anonymised. The original is not
+        /// touched on any outcome: it will come in handy again when the plugin is updated or
+        /// reinstalled.
         /// </summary>
         public string SaveRescued(List<AlsPluginSlot> disable)
         {
@@ -517,7 +534,7 @@ namespace AbletonManager
             return path;
         }
 
-        // ------------------------------------------------------------------ отчёт
+        // ------------------------------------------------------------------ the report
 
         public string Report()
         {
@@ -571,7 +588,7 @@ namespace AbletonManager
             }
         }
 
-        // ------------------------------------------------------------------ мелочи
+        // ------------------------------------------------------------------ odds and ends
 
         void Note(string line)
         {

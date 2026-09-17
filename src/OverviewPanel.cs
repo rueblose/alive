@@ -6,72 +6,76 @@ using System.Windows.Forms;
 namespace AbletonManager
 {
     /// <summary>
-    /// Сводка по библиотеке над списком проектов: плитки с числами и календарь работы.
+    /// A summary of the library above the project list: tiles with numbers and a calendar of
+    /// the work.
     ///
-    /// Не контрол, а рисовалка. Панель обязана ехать вместе с плитками — она стоит НАД
-    /// ними в одном потоке прокрутки, а не отдельной шапкой; отдельный контрол пришлось
-    /// бы двигать за чужой прокруткой вручную, и он всё равно перекрывал бы плитки при
-    /// перелёте за край. Поэтому HomeView просит у панели высоту, отдаёт ей кусок своей
-    /// поверхности и пересылает мышь — как делает со своими заголовками секций.
+    /// Not a control but a painter. The panel has to travel with the tiles — it stands ABOVE
+    /// them in one scrolling flow rather than as a separate header; a control of its own would
+    /// have to be moved by hand behind somebody else's scroll, and it would still cover the
+    /// tiles on an overshoot past the edge. So HomeView asks the panel for a height, hands it a
+    /// piece of its own surface and forwards the mouse — just as it does with its section
+    /// headings.
     ///
-    /// Своих данных панель не считает: и каталог, и история приходят из ProjectIndex,
-    /// сводка пересчитывается, только когда там подменили список (сканирование
-    /// публикует новый — см. ProjectIndex.Sets).
+    /// The panel counts no data of its own: both the catalog and the history come from
+    /// ProjectIndex, and the summary is recomputed only when the list there has been swapped (a
+    /// scan publishes a new one — see ProjectIndex.Sets).
     /// </summary>
     public sealed class OverviewPanel
     {
         public ProjectIndex Index;
 
-        /// <summary>Развёрнута ли панель. Свёрнутая — одна строка с заголовком.</summary>
+        /// <summary>Whether the panel is expanded. Collapsed, it is one line with a
+        /// heading.</summary>
         public bool Open = true;
 
         public float Dpi = 1f;
 
-        /// <summary>Изменилась высота — владельцу пора пересчитать раскладку.</summary>
+        /// <summary>The height changed — time for the owner to recompute the layout.</summary>
         public event Action LayoutChanged;
 
-        /// <summary>Что-то поменялось на вид — достаточно перерисовать.</summary>
+        /// <summary>Something changed in appearance — a redraw is enough.</summary>
         public event Action Repaint;
 
-        /// <summary>Пользователь свернул панель — это стоит запомнить.</summary>
+        /// <summary>The user collapsed the panel — that is worth remembering.</summary>
         public event Action StateChanged;
 
-        /// <summary>Место панели без учёта прокрутки — как Bounds у заголовка секции.</summary>
+        /// <summary>The panel's place without the scroll — like Bounds on a section
+        /// heading.</summary>
         public Rectangle Bounds;
 
         int Sc(int v) { return (int)Math.Round(v * Dpi); }
 
         /// <summary>
-        /// Значение в плитке. Отдельный кегль, а не FTitle: подпись и число обязаны
-        /// читаться как пара «мелкое серое / крупное белое», а на тринадцатом они
-        /// сливаются в две одинаковые строки.
+        /// The value in a tile. A type size of its own rather than FTitle: the caption and the
+        /// number have to read as a "small grey / large white" pair, and at thirteen they merge
+        /// into two identical lines.
         /// </summary>
         static readonly Font FValue = Theme.UISemibold(15f);
 
-        // ------------------------------------------------------------------ размеры
+        // ------------------------------------------------------------------ sizes
 
         const int CardGap = 8;
-        const int Cols = 4;        // плиток в ряду
-        const int CellGap = 3;     // между клетками календаря
+        const int Cols = 4;        // tiles per row
+        const int CellGap = 3;     // between calendar cells
         const int CellMax = 14;
 
         /// <summary>
-        /// Панель занимает две трети ширины. На всю ширину плитка растягивалась в
-        /// полосу шесть к одному: подпись жмётся к левому краю, справа полкарточки
-        /// пустоты, и весь блок читается разъехавшимся. Правая треть свободна
-        /// намеренно — там будет чему появиться, а пока пусть лучше будет воздух, чем
-        /// растянутое.
+        /// The panel takes two thirds of the width. Across the full width a tile stretched into
+        /// a six-to-one strip: the caption presses against the left edge, half a card of
+        /// emptiness on the right, and the whole block reads as having come apart. The right
+        /// third is deliberately free — something will turn up for it, and until then air is
+        /// better than stretching.
         /// </summary>
         int ContentWidth(int width)
         {
             return width <= Sc(560) ? width : Math.Max(Sc(560), width * 2 / 3);
         }
 
-        // --------------------------------------------------------------- раскладка
+        // ---------------------------------------------------------------- layout
 
         Rectangle _chevron, _title, _grid, _splash;
 
-        /// <summary>Вся строка заголовка кликабельна — по ней панель сворачивается.</summary>
+        /// <summary>The whole heading row is clickable — the panel collapses by it.</summary>
         Rectangle _toggle;
         bool _headHot;
         readonly List<Rectangle> _cards = new List<Rectangle>();
@@ -82,10 +86,11 @@ namespace AbletonManager
         int _cell, _gridMax;
 
         /// <summary>
-        /// Высоты строк берём у самих шрифтов, а не назначаем числом. Коробка ниже
-        /// строки — это не «плотнее», это обрезанные сверху и снизу буквы: GDI при
-        /// VerticalCenter центрирует строку в коробке и всё, что не влезло, срезает.
-        /// Первая версия панели ровно так и срезала подписям хвосты у «y» и «j».
+        /// Row heights come from the fonts themselves rather than being assigned as numbers. A
+        /// box shorter than the line is not "denser", it is letters clipped top and bottom:
+        /// with VerticalCenter, GDI centres the line in the box and shaves off whatever does
+        /// not fit. The first version of the panel shaved the tails off "y" and "j" in the
+        /// captions in exactly that way.
         /// </summary>
         int _labH, _valH, _headH, _monthH;
 
@@ -97,13 +102,14 @@ namespace AbletonManager
             _headH = Math.Max(Sc(30), TextRenderer.MeasureText("Ag", Theme.FHead).Height + Sc(8));
         }
 
-        /// <summary>Сколько воздуха между подписью месяца и первой клеткой под ней.</summary>
+        /// <summary>How much air there is between a month caption and the first cell beneath
+        /// it.</summary>
         int MonthGap { get { return Sc(7); } }
 
         /// <summary>
-        /// Своего зазора между подписью и числом нет: у измеренной строки сверху и
-        /// снизу уже сидит внутренний лидинг шрифта, и любой отступ поверх него
-        /// разносит пару на треть плитки — она перестаёт читаться как одна.
+        /// There is no gap of its own between the caption and the number: a measured line
+        /// already carries the font's internal leading above and below it, and any inset on top
+        /// of that spreads the pair across a third of a tile — it stops reading as one.
         /// </summary>
         int CardHeight { get { return Sc(6) + _labH + _valH + Sc(6); } }
 
@@ -112,9 +118,9 @@ namespace AbletonManager
         int _gridW;
 
         /// <summary>
-        /// Подобрать клетку под отведённую ширину и вернуть ширину получившейся сетки —
-        /// по ней равняется вся панель. Само место сетки задаётся позже, в LayoutGrid:
-        /// оно зависит от того, сколько над ней заняли плитки.
+        /// Fit the cell to the allotted width and return the width of the resulting grid — the
+        /// whole panel is aligned by it. The grid's own place is set later, in LayoutGrid: it
+        /// depends on how much the tiles above it took.
         /// </summary>
         int PrepareGrid(int avail)
         {
@@ -126,14 +132,15 @@ namespace AbletonManager
             _cell = Math.Max(Sc(7), Math.Min(Sc(CellMax), (avail - gap * (cols - 1)) / Math.Max(1, cols)));
             _gridW = cols * Step - gap;
 
-            // В совсем узком окне клетка упирается в нижний предел и сетка вылезает за
-            // край. Тогда равняемся по окну: съехавшая панель хуже несошедшихся краёв.
+            // In a really narrow window the cell hits its lower limit and the grid spills past
+            // the edge. We then align to the window: a panel that has slid off is worse than
+            // edges that do not meet.
             return Math.Min(avail, _gridW);
         }
 
         /// <summary>
-        /// Разложить панель по ширине и вернуть её нижний край. Считается заново на
-        /// каждую перестройку сетки — как и всё остальное в HomeView.
+        /// Lay the panel out across the width and return its bottom edge. Recomputed on every
+        /// rebuild of the grid — like everything else in HomeView.
         /// </summary>
         public int Layout(int width, int top)
         {
@@ -143,10 +150,10 @@ namespace AbletonManager
 
             MeasureRows();
 
-            // Ширину задаёт календарь. Клетка целочисленная, и сетка почти всегда чуть
-            // уже отведённого места — остаток от деления просто некуда деть. Если
-            // равнять плитки по доступной ширине, их правый край не сходится с
-            // последним столбцом на десяток пикселей, и это видно.
+            // The width is set by the calendar. The cell is a whole number, and the grid is
+            // almost always slightly narrower than the space allotted — the remainder of the
+            // division has nowhere to go. Align the tiles to the available width and their
+            // right edge misses the last column by a dozen pixels, and that shows.
             int w = PrepareGrid(ContentWidth(width));
             int y = top;
             int headH = _headH;
@@ -190,9 +197,9 @@ namespace AbletonManager
             int gap = Sc(CardGap);
             int ch = CardHeight;
 
-            // Границы считаем от края, а не «ширина плитки × номер»: при делении
-            // нацело остаток съедала бы последняя плитка, и её правый край не дотягивал
-            // бы до конца календаря на пару пикселей.
+            // The bounds are counted from the edge rather than as "tile width × number": with
+            // integer division the last tile would swallow the remainder, and its right edge
+            // would fall a couple of pixels short of the end of the calendar.
             for (int i = 0; i < labels.Length; i++)
             {
                 int col = i % Cols;
@@ -208,9 +215,9 @@ namespace AbletonManager
         }
 
         /// <summary>
-        /// Календарь за последний год: столбец — неделя, строка — день недели, как у
-        /// GitHub. Срок ровно один и не выбирается — переключатель сроков убран, а
-        /// вместе с ним и вторая форма календаря, которая была нужна только месяцу.
+        /// A calendar of the last year: a column is a week, a row a day of the week, as on
+        /// GitHub. The span is exactly one and is not selectable — the span switch was removed,
+        /// and with it the second form of the calendar, which only the month needed.
         /// </summary>
         int LayoutGrid(int y)
         {
@@ -234,17 +241,17 @@ namespace AbletonManager
             return (int)((to - from.AddDays(-Weekday(from))).TotalDays) / 7 + 1;
         }
 
-        /// <summary>Понедельник — ноль: неделя начинается с него, а не с воскресенья.</summary>
+        /// <summary>Monday is zero: the week starts with it rather than with Sunday.</summary>
         static int Weekday(DateTime d)
         {
-            int w = (int)d.DayOfWeek;      // 0 — воскресенье
+            int w = (int)d.DayOfWeek;      // 0 is Sunday
             return w == 0 ? 6 : w - 1;
         }
 
-        /// <summary>Понедельник первого столбца — от него отсчитываются все клетки.</summary>
+        /// <summary>The Monday of the first column — every cell is counted from it.</summary>
         DateTime FirstCol { get { return _gridFrom.AddDays(-Weekday(_gridFrom)); } }
 
-        /// <summary>Какой день стоит в этой клетке. Обратное — CellOf.</summary>
+        /// <summary>Which day stands in this cell. The inverse is CellOf.</summary>
         DateTime DayAt(int col, int row) { return FirstCol.AddDays(col * 7 + row); }
 
         void CellOf(DateTime day, out int col, out int row)
@@ -253,7 +260,7 @@ namespace AbletonManager
             col = n / 7; row = n % 7;
         }
 
-        // --------------------------------------------------------------- отрисовка
+        // ---------------------------------------------------------------- drawing
 
         public void Paint(Graphics g, Control owner, int scroll)
         {
@@ -273,8 +280,8 @@ namespace AbletonManager
         }
 
         /// <summary>
-        /// Свёрнутая панель — та же галка, повёрнутая на четверть. Отдельного значка
-        /// «вправо» в наборе нет, и заводить его ради одного состояния незачем.
+        /// A collapsed panel is the same chevron turned a quarter. There is no separate "right"
+        /// glyph in the set, and there is no point making one for a single state.
         /// </summary>
         void PaintChevron(Graphics g, RectangleF box, Color ink)
         {
@@ -295,9 +302,9 @@ namespace AbletonManager
         }
 
         /// <summary>
-        /// Подпись и число внутри плитки — ОБЯЗАТЕЛЬНО с обрезкой (CellLeft, а не Left):
-        /// в Chrome.Left зашит NoClipping, и длинное значение вроде «F Phrygian»
-        /// рисовалось прямо поверх соседней карточки, за собственной рамкой.
+        /// The caption and the number inside a tile — WITH clipping, without fail (CellLeft,
+        /// not Left): Chrome.Left has NoClipping baked in, and a long value like "F Phrygian"
+        /// drew straight over the neighbouring card, past its own frame.
         /// </summary>
         void PaintCard(Graphics g, Control owner, Rectangle r, int i)
         {
@@ -314,16 +321,17 @@ namespace AbletonManager
         }
 
         /// <summary>
-        /// Плотность вместо цвета: у окна вся палитра серая, и единственное цветное
-        /// пятно на экране читалось бы как ошибка, а не как график. Пустой день —
-        /// чуть светлее фона, самый плотный — почти белый.
+        /// Density instead of colour: the window's whole palette is grey, and the single
+        /// coloured spot on the screen would read as an error rather than as a chart. An empty
+        /// day is a shade lighter than the background, the densest almost white.
         /// </summary>
         Color Level(int saves)
         {
             if (saves <= 0) return Color.FromArgb(0x1A, 0xFF, 0xFF, 0xFF);
 
-            // Корень, а не прямая пропорция: один день на 28 сохранений сплющивал бы
-            // всю остальную шкалу в самый бледный уровень, и календарь читался пустым.
+            // A square root rather than straight proportion: one day with 28 saves would squash
+            // the whole rest of the scale into the palest level, and the calendar would read as
+            // empty.
             int step = (int)(3.999 * Math.Sqrt(saves / (double)Math.Max(1, _gridMax)));
             int[] alpha = { 0x4C, 0x80, 0xB8, 0xF4 };
             return Color.FromArgb(alpha[Math.Max(0, Math.Min(3, step))], Theme.Light);
@@ -334,17 +342,17 @@ namespace AbletonManager
         object _gridHist;
 
         /// <summary>
-        /// Календарь держим готовой картинкой. Клеток под четыре сотни, и каждая — это
-        /// GraphicsPath со скруглением; рисовать их заново на кадр значит собирать
-        /// двадцать тысяч путей в секунду, пока идёт прокрутка. Меняются они только от
-        /// диапазона, размера клетки и самой истории — по ним и сбрасываем.
+        /// The calendar is kept as a finished picture. There are close to four hundred cells,
+        /// and each is a GraphicsPath with rounding; redrawing them per frame means assembling
+        /// twenty thousand paths a second while scrolling. They change only with the range, the
+        /// cell size and the history itself — and those are what we reset on.
         /// </summary>
         void PaintGrid(Graphics g, int dy)
         {
             if (Index == null || _grid.Width <= 0 || _grid.Height <= 0) return;
 
-            // Дата в ключе не для красоты: окно в год едет каждую полночь, и без неё
-            // работающая ночь напролёт программа показывала бы вчерашнюю картинку.
+            // The date in the key is not decoration: the year window moves at every midnight,
+            // and without it a program left running all night would show yesterday's picture.
             string key = _gridFrom.ToString("yyyyMMdd") + "|" + _cell
                        + "|" + _grid.Width + "x" + _grid.Height + "|" + _gridMax;
             if (_gridCache == null || _gridKey != key || !ReferenceEquals(_gridHist, Index.History))
@@ -356,7 +364,8 @@ namespace AbletonManager
             }
             g.DrawImageUnscaled(_gridCache, _grid.X, _grid.Y + dy);
 
-            // Обводка под курсором — поверх картинки: она одна и меняется каждый кадр.
+            // The outline under the cursor goes over the picture: there is one of it and it
+            // changes every frame.
             if (_hoverDay != default(DateTime))
             {
                 int hc, hr;
@@ -370,12 +379,13 @@ namespace AbletonManager
         }
 
         /// <summary>
-        /// Подписи месяцев над столбцами, где месяц начинается.
+        /// Month captions over the columns where a month begins.
         ///
-        /// Идём СПРАВА НАЛЕВО и пропускаем те, что наезжают на уже нарисованную. Иначе
-        /// у годового вида первый столбец — это ещё декабрь прошлого года, а второй уже
-        /// январь: две подписи на расстоянии одной клетки складывались в «Deлan».
-        /// Справа налево пропускается именно обрезок слева, а не полный месяц справа.
+        /// We go RIGHT TO LEFT and skip the ones running into an already-drawn caption.
+        /// Otherwise in the year view the first column is still December of the previous year
+        /// while the second is already January: two captions one cell apart ran together into
+        /// something like "Decan". Going right to left, what gets skipped is the stub on the
+        /// left rather than the full month on the right.
         /// </summary>
         void PaintMonths(Graphics g, int dy)
         {
@@ -424,12 +434,13 @@ namespace AbletonManager
         static readonly string[] Months =
             { "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec" };
 
-        // ------------------------------------------------------------------- мышь
+        // ------------------------------------------------------------------- mouse
 
         string _hover = "";
         DateTime _hoverDay;
 
-        /// <summary>Точка уже с поправкой на прокрутку. true — надо перерисовать.</summary>
+        /// <summary>The point already corrected for the scroll. true means a redraw is
+        /// needed.</summary>
         public bool MouseMove(Point p)
         {
             bool was = _headHot;
@@ -460,7 +471,8 @@ namespace AbletonManager
             return true;
         }
 
-        /// <summary>true — клик наш, дальше его нести некуда.</summary>
+        /// <summary>true means the click was ours and there is nowhere further to carry
+        /// it.</summary>
         public bool MouseDown(Point p)
         {
             if (!_toggle.Contains(p)) return false;
@@ -472,7 +484,7 @@ namespace AbletonManager
             return true;
         }
 
-        // -------------------------------------------------------------- подсчёты
+        // ------------------------------------------------------------------ counting
 
         sealed class Stats
         {
@@ -504,8 +516,8 @@ namespace AbletonManager
             s.Record = h.LongestStreak;
             s.PeakHour = h.PeakHour;
 
-            // Вес считаем по папкам: у проекта рядом с десяток версий .als, и по сетам
-            // одна и та же папка сложилась бы десять раз.
+            // We count the weight by folders: a project has a dozen .als versions next to each
+            // other, and by sets one and the same folder would be added ten times over.
             HashSet<string> dirs = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             foreach (SetEntry e in Index.Sets)
                 if (!e.IsBackup && e.ProjectDir.Length > 0 && dirs.Add(e.ProjectDir))
@@ -513,13 +525,14 @@ namespace AbletonManager
             return s;
         }
 
-        // ------------------------------------------------------------ форматирование
+        // ------------------------------------------------------------- formatting
 
         static string Days(int n) { return n == 0 ? "—" : n + "d"; }
 
         /// <summary>
-        /// Дата всегда по-английски: весь интерфейс английский, а ToString без культуры
-        /// берёт системную — и посреди «nothing saved · » вылезало «21 авг 2025».
+        /// The date is always in English: the whole interface is English, and ToString without
+        /// a culture takes the system one — and on a machine with a Russian locale a localised
+        /// date turned up in the middle of "nothing saved · ".
         /// </summary>
         static string Date(DateTime d)
         {
@@ -541,8 +554,9 @@ namespace AbletonManager
         }
 
         /// <summary>
-        /// Строчка под календарём: вес библиотеки. Плитки её больше не показывают, а
-        /// место под курсором она всё равно занимает — там появляется день из календаря.
+        /// The line under the calendar: the weight of the library. The tiles no longer show it,
+        /// while it takes up the spot under the cursor anyway — the day from the calendar
+        /// appears there.
         /// </summary>
         string Footer()
         {
