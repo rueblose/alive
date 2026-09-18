@@ -143,7 +143,7 @@ namespace AbletonManager
                 }
 
                 // A tag pointing right, with a hole for the string — drawn from
-                // src/icons/tag.svg.
+                // src/icons/list/Tag.svg.
                 case Glyph.Tag:
                     DrawSvg(g, p, b, r, 14, 10, () => {
                         g.DrawPath(p, GetSvgPath("M1 3C1 1.89543 1.89543 1 3 1H9C9.62951 1 10.2223 1.29639 10.6 1.8L12.1 3.8C12.6333 4.51111 12.6333 5.48889 12.1 6.2L10.6 8.2C10.2223 8.70361 9.62951 9 9 9H3C1.89543 9 1 8.10457 1 7V3Z"));
@@ -270,7 +270,7 @@ namespace AbletonManager
                     });
                     break;
 
-                // src/icons/New Icons/Dice.svg: a faceted square and five pips — "roll the
+                // src/icons/toolbar/Dice.svg: a faceted square and five pips — "roll the
                 // dice" for picking a set at random.
                 case Glyph.Dice1:
                 case Glyph.Dice2:
@@ -327,9 +327,7 @@ namespace AbletonManager
             {
                 string[] candidates = {
                     Path.Combine(AppDomain.CurrentDomain.BaseDirectory, @"src\icons\nebula icon.png"),
-                    Path.Combine(AppDomain.CurrentDomain.BaseDirectory, @"..\src\icons\nebula icon.png"),
-                    Path.Combine(AppDomain.CurrentDomain.BaseDirectory, @"src\nebula icon (1).png"),
-                    Path.Combine(AppDomain.CurrentDomain.BaseDirectory, @"..\src\nebula icon (1).png")
+                    Path.Combine(AppDomain.CurrentDomain.BaseDirectory, @"..\src\icons\nebula icon.png")
                 };
                 foreach (string candidate in candidates)
                 {
