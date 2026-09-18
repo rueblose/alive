@@ -187,7 +187,7 @@ namespace AbletonManager
         public void LoadSet(SetEntry s, List<SetEntry> playlist = null, int playlistIndex = -1)
         {
             if (s == null) return;
-            bool sameSet = _set != null && ReferenceEquals(_set, s);
+            bool sameSet = SetEntry.SameSet(_set, s);
             _set = s;
             Caption = s.Name;
             _projectDir = RenderScan.ProjectRoot(s);
@@ -232,7 +232,7 @@ namespace AbletonManager
         {
             if (s == null || _playlist.Count == 0) return -1;
             for (int i = 0; i < _playlist.Count; i++)
-                if (ReferenceEquals(_playlist[i], s)) return i;
+                if (SetEntry.SameSet(_playlist[i], s)) return i;
             return -1;
         }
 

@@ -430,7 +430,7 @@ namespace AbletonManager
             for (int i = 0; i < _tiles.Count; i++)
             {
                 Tile t = _tiles[i];
-                if (t.Set == null || !ReferenceEquals(t.Set, _playingTag)) continue;
+                if (t.Set == null || !SetEntry.SameSet(t.Set, _playingTag)) continue;
                 if (!t.HasPlay) return Rectangle.Empty;   // the pulse lives in the play button
                 int dx = (int)Math.Round(t.AnimX) - t.Bounds.X;
                 int dy = (int)Math.Round(t.AnimY) - t.Bounds.Y - (_scroll + over);
@@ -1853,7 +1853,7 @@ namespace AbletonManager
                             Chrome.Left | TextFormatFlags.NoClipping);
 
             // The listen button — only if there is a render next to the project.
-            bool isPlaying = Playing && PlayingTag != null && ReferenceEquals(PlayingTag, t.Set);
+            bool isPlaying = Playing && SetEntry.SameSet(PlayingTag, t.Set);
             if (t.HasPlay)
             {
                 Rectangle pb = new Rectangle(t.Play.X + dx, t.Play.Y + dy, t.Play.Width, t.Play.Height);

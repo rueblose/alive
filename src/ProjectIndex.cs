@@ -80,6 +80,26 @@ namespace AbletonManager
 
         public string Directory { get { return System.IO.Path.GetDirectoryName(Path); } }
 
+        /// <summary>
+        /// Whether two row tags point at the same set. A set's identity is its path, not the
+        /// object: a scan republishes the catalog with NEW SetEntry objects even for files that
+        /// have not changed (Scan reads them back out of the cache on disk), so reference
+        /// equality stops holding the moment the folder watcher or F5 fires. The playing row
+        /// then quietly lost its pulse while the sound carried on — see RowListView.PlayingTag
+        /// and HomeView.PlayingTag, which is what this is for.
+        ///
+        /// Tags that are not sets (the player's own list of render files) fall back to
+        /// reference: those objects live as long as the window does.
+        /// </summary>
+        public static bool SameSet(object a, object b)
+        {
+            if (ReferenceEquals(a, b)) return a != null;
+
+            SetEntry x = a as SetEntry, y = b as SetEntry;
+            return x != null && y != null
+                && string.Equals(x.Path, y.Path, StringComparison.OrdinalIgnoreCase);
+        }
+
         string _projectDir;
 
         /// <summary>

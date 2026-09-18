@@ -3151,7 +3151,7 @@ namespace AbletonManager
 
             int playlistIndex = -1;
             for (int i = 0; i < playlist.Count; i++)
-                if (ReferenceEquals(playlist[i], s)) { playlistIndex = i; break; }
+                if (SetEntry.SameSet(playlist[i], s)) { playlistIndex = i; break; }
             if (playlistIndex < 0) playlistIndex = 0;
 
             _player.LoadSet(s, playlist, playlistIndex);
@@ -3295,7 +3295,7 @@ namespace AbletonManager
         /// </summary>
         void PlayOrToggle(SetEntry s, List<SetEntry> playlist)
         {
-            if (_player != null && !_player.IsDisposed && ReferenceEquals(_player.CurrentSet, s))
+            if (_player != null && !_player.IsDisposed && SetEntry.SameSet(_player.CurrentSet, s))
             {
                 _player.PlayPause();
                 return;

@@ -248,6 +248,7 @@ namespace AliveTools
             // It does not depend on file — CRITICAL 1 of the final review reproduces without a
             // single real file on disk (see the comment on CollisionProbe).
             CollisionProbe();
+            SameSetProbe();
 
             if (!File.Exists(file)) { Check(false, "no such set: " + file); return; }
 
@@ -468,6 +469,49 @@ namespace AliveTools
         /// source files exist on disk — only SetEntry.ProjectDir and
         /// DriveInfo.AvailableFreeSpace, and neither throws on "no such folder".
         /// </summary>
+        /// <summary>
+        /// A set's identity is its path, not the object. A scan republishes the catalog with new
+        /// SetEntry objects even for files that have not changed, and everything to do with
+        /// playback compares tags across exactly that moment: the pulse on the playing row, the
+        /// play/pause toggle, the position in the playlist. While those comparisons were
+        /// ReferenceEquals, a folder-watcher refresh or F5 left the sound playing and the row
+        /// without its animation.
+        ///
+        /// No files needed: SetEntry.SameSet looks at nothing but the paths.
+        /// </summary>
+        static void SameSetProbe()
+        {
+            SetEntry a = new SetEntry();
+            a.Path = @"E:\Music\Projects\demo Project\demo.als";
+
+            // The very case the bug was: another object, same file.
+            SetEntry rescanned = new SetEntry();
+            rescanned.Path = a.Path;
+            Check(SetEntry.SameSet(a, rescanned), "a rescanned copy of the same set is not recognised");
+
+            // Windows paths are case-insensitive, and the catalog compares them that way
+            // everywhere else (see Settings.HasRoot).
+            SetEntry cased = new SetEntry();
+            cased.Path = a.Path.ToUpperInvariant();
+            Check(SetEntry.SameSet(a, cased), "the same path in another case is not recognised");
+
+            SetEntry other = new SetEntry();
+            other.Path = @"E:\Music\Projects\demo Project\demo v2.als";
+            Check(!SetEntry.SameSet(a, other), "two different sets counted as one");
+
+            // Two "nothings" are not the same set: otherwise, with nothing playing, every row
+            // whose tag is null would light up at once.
+            Check(!SetEntry.SameSet(null, null), "two nulls counted as the same set");
+            Check(!SetEntry.SameSet(a, null), "a set and null counted as the same");
+
+            // Tags that are not sets — the player's own list of render files — stay on
+            // reference: those objects live as long as the window does.
+            object f = new object();
+            Check(SetEntry.SameSet(f, f), "a non-set tag is not equal to itself");
+            Check(!SetEntry.SameSet(f, new object()), "two different non-set tags counted as one");
+            Check(!SetEntry.SameSet(a, f), "a set and a foreign tag counted as the same");
+        }
+
         static void CollisionProbe()
         {
             SetEntry set = new SetEntry();

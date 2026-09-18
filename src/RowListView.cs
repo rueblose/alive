@@ -311,7 +311,7 @@ namespace AbletonManager
             int over = _scroller != null ? (int)Math.Round(_scroller.Overscroll) : 0;
             for (int i = 0; i < _rows.Count; i++)
             {
-                if (!ReferenceEquals(_rows[i].Tag, _playingTag)) continue;
+                if (!SetEntry.SameSet(_rows[i].Tag, _playingTag)) continue;
                 int top = HeaderHeight + i * rowH - _scroll - over;
                 if (top + rowH < HeaderHeight || top > Height) return Rectangle.Empty;
                 return PlayRect(top, rowH);
@@ -1539,7 +1539,7 @@ namespace AbletonManager
                             PaintPin(g, topAnim, rowH, i == _pinHot, row.Pinned);
                         if (ShowPlayButton && row.CanPlay)
                             PaintPlay(g, topAnim, rowH, i == _playHot,
-                                      Playing && PlayingTag != null && ReferenceEquals(PlayingTag, row.Tag));
+                                      Playing && SetEntry.SameSet(PlayingTag, row.Tag));
 
                         if (_columns.Count > 0 && row.Cells.Length > 0)
                         {
