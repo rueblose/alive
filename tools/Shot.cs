@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Drawing;
@@ -20,6 +20,7 @@ namespace AliveTools
     {
         [DllImport("user32.dll")] static extern bool GetWindowRect(IntPtr hWnd, out RECT r);
         [DllImport("user32.dll")] static extern bool ShowWindow(IntPtr hWnd, int cmd);
+        [DllImport("user32.dll")] static extern bool MoveWindow(IntPtr hWnd, int x, int y, int w, int h, bool repaint);
         [DllImport("user32.dll")] static extern bool SetProcessDPIAware();
 
         // Clicking an element of a window without a real mouse: WindowFromPoint finds the child
@@ -103,7 +104,7 @@ namespace AliveTools
         {
             if (args.Length < 2)
             {
-                Console.WriteLine("usage: Shot.exe <exe> <out.png> [args...]");
+                Console.WriteLine("usage: Shot.exe <exe> <out.png> [--size W,H] [--click X,Y] [args...]");
                 return 2;
             }
 
@@ -113,6 +114,7 @@ namespace AliveTools
             string png = args[1];
             string rest = "";
             List<Point> clicks = new List<Point>();
+            Size size = Size.Empty;
 
             for (int i = 2; i < args.Length; i++)
             {
@@ -122,6 +124,15 @@ namespace AliveTools
                 {
                     string[] xy = args[++i].Split(',');
                     clicks.Add(new Point(int.Parse(xy[0]), int.Parse(xy[1])));
+                    continue;
+                }
+                // --size W,H - resize the window before capturing, in physical pixels. A
+                // list draws as many rows as fit and clips the last one; the frame looks
+                // right only at a height that lands in the gap between two rows.
+                if (args[i] == "--size" && i + 1 < args.Length)
+                {
+                    string[] wh = args[++i].Split(',');
+                    size = new Size(int.Parse(wh[0]), int.Parse(wh[1]));
                     continue;
                 }
                 rest += "\"" + args[i] + "\" ";
@@ -151,6 +162,14 @@ namespace AliveTools
 
                 ShowWindow(hwnd, 5);
                 Thread.Sleep(800);
+
+                if (!size.IsEmpty)
+                {
+                    RECT cur;
+                    GetWindowRect(hwnd, out cur);
+                    MoveWindow(hwnd, cur.Left, cur.Top, size.Width, size.Height, true);
+                    Thread.Sleep(900);      // relayout, then the lists settle
+                }
 
                 foreach (Point c in clicks)
                 {

@@ -33,6 +33,15 @@ Alive reads the sets themselves and answers those questions.
 
 ## Features
 
+### Home
+
+The picture at the top of this page. Every project is a tile, and the picture on it is its own
+arrangement, drawn from the set — a track is recognisable by its shape long before you read the
+name. A star pins one to the front; the play button starts the render sitting next to it.
+
+Above the tiles, a year of work in one strip: the days you opened Live, the streak you are on,
+the longest one so far, the hour you usually start, and what the whole library weighs.
+
 ### Catalog
 
 <img src="docs/img/sets.png" alt="Sets list with the project inspector">
@@ -47,6 +56,8 @@ The whole folder folds into one row; the counter on the end opens up the individ
 **Filters and search.** `F` filters by date, Live version, key root and scale, track and plugin
 count, file state and whether a render exists. `Ctrl F` searches by name. Table columns are
 configurable — which ones, in what order, how wide.
+
+<img src="docs/img/filters.png" alt="Filters" width="560">
 
 **Tags and notes.** `Ctrl T` attaches your own labels and free text. They bind to the *project
 folder*, not the `.als`, so they survive the day `final 2.als` appears next to it.
@@ -66,6 +77,8 @@ can pin it to one specific install, or switch to walking your VST2/VST3 folders 
 
 ### Rescue
 
+<img src="docs/img/rescue.png" alt="Rescue — testing a set plugin by plugin" width="560">
+
 A set refuses to open? Alive reads Live's own log and names the plugin it died on — `VST3: Going
 to restore: X`, the last line before the crash. If the log says nothing, it finds the culprit by
 bisecting on a copy.
@@ -76,7 +89,7 @@ node, chain, automation lane and preset blob, stays byte for byte.
 
 ### Export
 
-<img src="docs/img/export.png" alt="Export dialog">
+<img src="docs/img/export.png" alt="Export dialog" width="560">
 
 Collect every media file a set uses — your own, from other projects, from the User Library, from
 factory packs — into one portable folder or `.zip`. The same four questions Live's *Collect All
@@ -105,14 +118,15 @@ Live's own housekeeping folders are skipped, and what is left is ordered by plau
 
 <img src="docs/img/stat.png" alt="Stat — the whole library as a point cloud">
 
-Your entire library as one point cloud. Every project is a dot, and six of its properties carry
-six values of the set — axes, size, fade and colour are all yours to map.
+Your entire library as one point cloud. Every project is a dot, and six of its numbers place it:
+three axes, plus the dot's size, its fade and its colour. Each of the six is yours to assign —
+tempo against track count against the year, or anything else the catalog knows.
 
 ### Settings
 
-<img src="docs/img/settings.png" alt="Settings">
+<img src="docs/img/settings.png" alt="Settings" width="560">
 
-`Ctrl ,` or a click on the program name in the header. Smooth scrolling, a transparency switch
+`Ctrl ,` or the gear in the header. Smooth scrolling, a transparency switch
 (on Windows 10 the acrylic backdrop is recomputed on every window move, so the window lags behind
 the cursor), and where the plugin list comes from — Live's own database, or your VST2/VST3 folders.
 

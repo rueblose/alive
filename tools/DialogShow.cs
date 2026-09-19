@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Globalization;
 using System.Threading;
 using System.Windows.Forms;
@@ -12,6 +12,8 @@ namespace AliveTools
     ///
     ///     Shot.exe DialogShow.exe out.png settings
     ///     Shot.exe DialogShow.exe out.png settings-folders
+    ///     Shot.exe DialogShow.exe out.png export  "set.als"
+    ///     Shot.exe DialogShow.exe out.png preview "set.als"
     ///
     /// Build: tools\build-rescue-test.cmd. Does not go into bin.
     /// </summary>
@@ -32,11 +34,42 @@ namespace AliveTools
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
 
-            Settings st = Settings.Load();
-            // "settings-folders" — the same dialog, but already in folder-scanning mode: it has
-            // four more rows there, and that is exactly where the layout breaks.
-            if (which == "settings-folders") st.PluginsFromFolders = true;
-            Form f = new SettingsDialog(st);
+            Form f;
+            if (which == "export" || which == "preview")
+            {
+                // Both dialogs want nothing from the catalog but a name and a path — the set
+                // is read from disk on the spot.
+                SetEntry set = new SetEntry();
+                set.Path = args[1];
+                set.Name = System.IO.Path.GetFileNameWithoutExtension(args[1]);
+                // The preview prints the key next to the tempo, and that one field is the only
+                // thing it wants from the catalog.
+                AlsInfo info = AlsFile.Read(args[1]);
+                if (info != null) set.Key = info.Key;
+
+                if (which == "export")
+                {
+                    f = new CollectDialog(set, LiveEnvironment.Detect(), Settings.Load());
+                }
+                else
+                {
+                    // The loader answers on the thread of the control it was given. The dialog
+                    // itself cannot be that control - it does not exist yet - so a hidden form
+                    // holds the handle, and Application.Run below pumps its messages.
+                    Form host = new Form();
+                    host.CreateControl();
+                    IntPtr unused = host.Handle;
+                    f = new PreviewDialog(set, new ArrangementLoader(host));
+                }
+            }
+            else
+            {
+                Settings st = Settings.Load();
+                // "settings-folders" — the same dialog, but already in folder-scanning mode: it
+                // has four more rows there, and that is exactly where the layout breaks.
+                if (which == "settings-folders") st.PluginsFromFolders = true;
+                f = new SettingsDialog(st);
+            }
 
             // "-flash" — keep the outline highlight lit so it shows up in the shot: on its own
             // it fades within a second (Chrome.SwallowBlockedClick lights it on every click
