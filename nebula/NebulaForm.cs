@@ -868,9 +868,23 @@ namespace AbletonManager.Nebula
 
         // ------------------------------------------------------- window and keys
 
+        const int CS_DROPSHADOW  = 0x00020000;   // class style
+        const int WS_MINIMIZEBOX = 0x00020000;   // window style — the same number, a different field
+
+        /// <summary>
+        /// WS_MINIMIZEBOX for the same reason as in MainForm and GlassDialog: the shell reads
+        /// it to decide whether a click on the taskbar button may minimise the window. Stat is
+        /// a window of its own in the taskbar, so it needs the style just as much.
+        /// </summary>
         protected override CreateParams CreateParams
         {
-            get { CreateParams cp = base.CreateParams; cp.ClassStyle |= 0x00020000; return cp; }
+            get
+            {
+                CreateParams cp = base.CreateParams;
+                cp.ClassStyle |= CS_DROPSHADOW;
+                cp.Style |= WS_MINIMIZEBOX;
+                return cp;
+            }
         }
 
         protected override void WndProc(ref Message m)
