@@ -1287,9 +1287,30 @@ namespace AbletonManager
             if (Visible) Glass.Apply(this);
         }
 
+        const int CS_DROPSHADOW   = 0x00020000;   // class style
+        const int WS_MINIMIZEBOX  = 0x00020000;   // window style — the same number, a different field
+
+        /// <summary>
+        /// WS_MINIMIZEBOX on a window that has no minimise button of Windows' own.
+        ///
+        /// The window is borderless and draws its own three buttons, so WinForms leaves the
+        /// style off — there is no caption to put a button in. But the shell reads exactly that
+        /// bit to decide whether a click on the taskbar button of an already active window may
+        /// minimise it. Without the style the click only re-activates what is already active,
+        /// and the minimise animation into the taskbar is skipped as well.
+        ///
+        /// We do not take WS_SYSMENU with it: that one would hand the borderless window Alt+Space
+        /// and Windows' own Move/Size menu, which has nothing to do with this chrome.
+        /// </summary>
         protected override CreateParams CreateParams
         {
-            get { CreateParams cp = base.CreateParams; cp.ClassStyle |= 0x00020000; return cp; }
+            get
+            {
+                CreateParams cp = base.CreateParams;
+                cp.ClassStyle |= CS_DROPSHADOW;
+                cp.Style |= WS_MINIMIZEBOX;
+                return cp;
+            }
         }
 
         const int WM_GETMINMAXINFO = 0x0024;
