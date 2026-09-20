@@ -180,6 +180,15 @@ namespace AbletonManager
             get { Run r = _run; return r != null && r.OpenOk && !r.Paused && !r.Done; }
         }
 
+        /// <summary>
+        /// The transport is standing on pause. This is what was ASKED for, and unlike
+        /// <see cref="IsPlaying"/> it does not wait for the device: while a file is opening
+        /// nothing is sounding yet, and "paused" is told apart from "about to start" only
+        /// here. Everything that decides what a press of play/pause means, or whether a
+        /// finished track may pull the next one in, asks this and not the device.
+        /// </summary>
+        public bool IsPaused { get { Run r = _run; return r != null && r.Paused; } }
+
         public int Position
         {
             get

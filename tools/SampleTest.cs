@@ -12,6 +12,7 @@ namespace AliveTools
     /// rather than being it.
     ///
     ///     SampleTest.exe scan &lt;root or .als&gt;   a breakdown by category, with the sums cross-checked
+    ///     SampleTest.exe transport             the play/pause button against a file still opening
     ///
     /// Build: tools\build-sample-test.cmd
     /// </summary>
@@ -37,12 +38,14 @@ namespace AliveTools
             else if (cmd == "patch") Patch(arg);
             else if (cmd == "collect") Collect(arg);
             else if (cmd == "show") Show(arg);
+            else if (cmd == "transport") TransportProbe();
             else
             {
                 Console.WriteLine("usage: SampleTest.exe scan <folder or .als>");
                 Console.WriteLine("       SampleTest.exe patch <set.als>");
                 Console.WriteLine("       SampleTest.exe collect <set.als>");
                 Console.WriteLine("       SampleTest.exe show <set.als>");
+                Console.WriteLine("       SampleTest.exe transport          needs no set - it makes its own render");
                 return 2;
             }
 
@@ -554,6 +557,151 @@ namespace AliveTools
                 Check(!string.Equals(relIn, relElsewhere, StringComparison.OrdinalIgnoreCase),
                       "collision probe: an elsewhere dependency landed on the same destination as an " +
                       "in-project dependency with the same file name (" + relIn + ")");
+        }
+
+        /// <summary>
+        /// The transport button while the file is still opening.
+        ///
+        /// Opening runs on its own thread and takes as long as the system decoder needs — a
+        /// noticeable fraction of a second on a big master, and every auto-advance of the
+        /// preview goes through that window. The button used to ask the device rather than the
+        /// transport, and while the device was not ready the only thing it could do was Play():
+        /// a pause pressed there was swallowed, the icon went on showing "not playing" — and a
+        /// moment later the track started, for no reason the person could see.
+        ///
+        /// The window is never shown: with the player collapsed to the footer strip is exactly
+        /// the case this went wrong in.
+        /// </summary>
+        static void TransportProbe()
+        {
+            string root = Path.Combine(Path.GetTempPath(), "alive-transport-probe");
+            Nuke(root);
+            string dir = Path.Combine(root, "demo Project");
+            Directory.CreateDirectory(dir);
+            WriteSilence(Path.Combine(dir, "demo master.wav"), 1.2);
+
+            SetEntry set = new SetEntry();
+            set.Name = "demo";
+            set.Path = Path.Combine(dir, "demo.als");
+            File.WriteAllText(set.Path, "");   // only the folder matters to RenderScan
+
+            try
+            {
+                using (PlayerDialog p = new PlayerDialog())
+                {
+                    IntPtr unused = p.Handle;   // no window, but the timers need a handle
+                    p.LoadSet(set);
+
+                    if (!p.Audio.IsOpening)
+                    {
+                        Console.WriteLine("transport probe skipped: the file opened before the probe could press");
+                        return;
+                    }
+
+                    // The press lands while the device is still being made ready.
+                    p.PlayPause();
+
+                    if (!Settle(delegate { return !p.Audio.IsOpening; }, 8000))
+                    {
+                        Console.WriteLine("transport probe skipped: the file never opened (no sound device?)");
+                        return;
+                    }
+
+                    Pump(300);          // the output thread gets its chance to start
+                    Check(!p.IsPlaying,
+                          "the track started although pause was pressed while the file was opening");
+
+                    // And the same button has to start it again: a pause that cannot be lifted
+                    // is not a pause.
+                    p.PlayPause();
+                    Check(Settle(delegate { return p.IsPlaying; }, 3000),
+                          "play after a pause during the open did not start the track");
+
+                    // Played to the end with nowhere to go — one render, one set in the
+                    // playlist. What is left is the pair the auto-advance reads: finished, and
+                    // standing on pause. Losing either is how a paused track starts the next
+                    // one by itself.
+                    Check(Settle(delegate { return p.Audio.Finished; }, 8000),
+                          "the track never reported that it had finished");
+                    Pump(300);
+                    Check(!p.IsPlaying, "the track was still playing after its own end");
+                }
+
+                // The other side of the same guard: a track that ran out while nobody had
+                // paused it still has to pull the next set in. This is what the preview does
+                // all day with the window collapsed to the footer.
+                string dirB = Path.Combine(root, "next Project");
+                Directory.CreateDirectory(dirB);
+                WriteSilence(Path.Combine(dirB, "next master.wav"), 1.2);
+
+                SetEntry next = new SetEntry();
+                next.Name = "next";
+                next.Path = Path.Combine(dirB, "next.als");
+                next.HasRenders = true;
+                File.WriteAllText(next.Path, "");
+                set.HasRenders = true;
+
+                using (PlayerDialog p = new PlayerDialog())
+                {
+                    IntPtr unused = p.Handle;
+                    List<SetEntry> playlist = new List<SetEntry>();
+                    playlist.Add(set);
+                    playlist.Add(next);
+                    p.LoadSet(set, playlist, 0);
+
+                    Check(Settle(delegate { return SetEntry.SameSet(p.CurrentSet, next); }, 12000),
+                          "a track that played to its end did not move on to the next set");
+                    Check(Settle(delegate { return p.IsPlaying; }, 3000),
+                          "the next set was loaded but never started playing");
+                }
+            }
+            finally { Nuke(root); }
+        }
+
+        /// <summary>
+        /// Waits for a condition while pumping messages: the player lives on timers, and
+        /// without a message loop not one of them ticks. False on running out of time.
+        /// </summary>
+        static bool Settle(Func<bool> done, int ms)
+        {
+            for (int waited = 0; waited < ms; waited += 20)
+            {
+                System.Windows.Forms.Application.DoEvents();
+                if (done()) return true;
+                System.Threading.Thread.Sleep(20);
+            }
+            System.Windows.Forms.Application.DoEvents();
+            return done();
+        }
+
+        static void Pump(int ms) { Settle(delegate { return false; }, ms); }
+
+        /// <summary>
+        /// Plain PCM silence — 44.1 kHz, mono, 16-bit. No codec is involved, so Media
+        /// Foundation opens it on any machine, and nothing here listens anyway.
+        /// </summary>
+        static void WriteSilence(string path, double seconds)
+        {
+            const int rate = 44100, channels = 1, bits = 16;
+            int dataBytes = (int)(rate * seconds) * channels * bits / 8;
+
+            using (FileStream fs = new FileStream(path, FileMode.Create, FileAccess.Write))
+            using (BinaryWriter w = new BinaryWriter(fs))
+            {
+                w.Write(Encoding.ASCII.GetBytes("RIFF"));
+                w.Write(36 + dataBytes);
+                w.Write(Encoding.ASCII.GetBytes("WAVEfmt "));
+                w.Write(16);                                  // the size of this chunk
+                w.Write((short)1);                            // PCM, uncompressed
+                w.Write((short)channels);
+                w.Write(rate);
+                w.Write(rate * channels * bits / 8);          // bytes per second
+                w.Write((short)(channels * bits / 8));        // block align
+                w.Write((short)bits);
+                w.Write(Encoding.ASCII.GetBytes("data"));
+                w.Write(dataBytes);
+                w.Write(new byte[dataBytes]);
+            }
         }
 
         /// <summary>

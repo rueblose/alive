@@ -345,11 +345,20 @@ namespace AbletonManager
 
         void TogglePlay()
         {
-            // The file is still opening — a second Open would simply restart the same thing
-            // from the beginning, so we merely note "play when you are ready".
-            if (_audio.IsOpening) { _audio.Play(); UpdatePlayIcon(); return; }
-            if (!_audio.IsOpen) { PlayIndex(_current >= 0 ? _current : 0, true); return; }
-            if (_audio.IsPlaying) _audio.Pause(); else _audio.Play();
+            // Nothing is loaded at all — the first press has to open something. A file that is
+            // merely still opening is not that case: it already has a transport, and a second
+            // Open would restart the same thing from the beginning.
+            if (!_audio.IsOpen && !_audio.IsOpening)
+            {
+                PlayIndex(_current >= 0 ? _current : 0, true);
+                return;
+            }
+
+            // The press is answered by the transport, not by the device. Asking IsPlaying here
+            // meant that while a file was opening — and every auto-advance of the preview goes
+            // through that window — the only answer possible was "play": a pause pressed there
+            // was swallowed, and a moment later the track started by itself.
+            if (_audio.IsPaused) _audio.Play(); else _audio.Pause();
             UpdatePlayIcon();
         }
 
@@ -454,7 +463,11 @@ namespace AbletonManager
             // without it we would come in here 25 times a second. And if there is nowhere to go
             // we simply stop: on the home page the playlist consists of one set, and the
             // preview used to loop round by itself.
-            if (_audio.Finished && !_atEnd)
+            //
+            // Standing on pause is a full stop: a track that ran out while the person had
+            // already pressed pause must not pull the next one in behind their back. The end
+            // and the pause arrive from two different threads, so they do overlap.
+            if (_audio.Finished && !_atEnd && !_audio.IsPaused)
             {
                 _atEnd = true;
 
