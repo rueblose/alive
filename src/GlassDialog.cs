@@ -11,7 +11,26 @@ namespace AbletonManager
     {
         protected readonly IconButton CloseBtn = new IconButton();
         protected Rectangle Card;
-        protected string Caption = "";
+        string _caption = "";
+
+        /// <summary>
+        /// The heading drawn on the glass — and, at the same time, the window's own name.
+        ///
+        /// It used to be only the first: Form.Text stayed empty, because a borderless window
+        /// has no caption bar to show it in. But the shell does show it — in Alt+Tab, and on
+        /// the taskbar button of any window that has one. The player is in the taskbar
+        /// (ShowInTaskbar), so it sat there nameless.
+        /// </summary>
+        protected string Caption
+        {
+            get { return _caption; }
+            set
+            {
+                _caption = value ?? "";
+                Text = _caption;
+                Invalidate();
+            }
+        }
 
         /// <summary>
         /// Overridden to false on dialogs with input fields: real glass on a window breaks

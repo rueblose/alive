@@ -1425,8 +1425,9 @@ namespace AbletonManager
                 if (d) { m.Result = (IntPtr)15; return; }
             }
 
-            // We drag the window by the toolbar — but not by the program name itself: that
-            // opens the settings.
+            // The window is dragged by the toolbar strip: everything above the content, minus a
+            // little, is a caption as far as Windows is concerned. The buttons standing in that
+            // strip are separate windows of their own and never see this message.
             if (p.Y < Sc(Theme.ContentY) - Sc(10)) m.Result = (IntPtr)2;
         }
 

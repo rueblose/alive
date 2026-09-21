@@ -82,7 +82,11 @@ namespace AbletonManager.Nebula
 
         public NebulaForm()
         {
-            Text = "Nebula — Ableton projects in six dimensions";
+            // What the shell shows in Alt+Tab and on the taskbar button. "Nebula" is the name
+            // of the folder this code lives in; the button that opens the window, the palette
+            // inside it and the documentation all say Stat, and that is the only name anybody
+            // outside this file has ever seen.
+            Text = "Stat — Alive";
             FormBorderStyle = FormBorderStyle.None;
             StartPosition = FormStartPosition.CenterScreen;
             ClientSize = new Size(1360, 860);
