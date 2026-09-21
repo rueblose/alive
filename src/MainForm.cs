@@ -1309,6 +1309,15 @@ namespace AbletonManager
         ///
         /// We do not take WS_SYSMENU with it: that one would hand the borderless window Alt+Space
         /// and Windows' own Move/Size menu, which has nothing to do with this chrome.
+        ///
+        /// WS_THICKFRAME is not here either, and that one was tried. It is what the shell reads
+        /// to decide whether a window may be snapped — Win+arrows, dragging to the edge of the
+        /// screen — and adding it does turn the snapping on. It cannot be honoured: MinimumSize
+        /// below is 1340 points wide, and half of a 2048-point screen is 1024. Windows offers a
+        /// snap the window is unable to take, and falls back on nonsense — measured, Win+Up
+        /// moved the window to the neighbouring monitor instead of maximising it, while without
+        /// the style Win+arrows do nothing at all. Nothing is the better of the two. Snapping
+        /// becomes possible only if that minimum width goes, and it is there for a reason.
         /// </summary>
         protected override CreateParams CreateParams
         {
