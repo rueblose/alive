@@ -3099,7 +3099,7 @@ namespace AbletonManager
         void OpenPlayerWindow(SetEntry s)
         {
             if (s == null) return;
-            ShowPlayer(s, VisiblePlaylist());
+            ShowPlayer(s, VisiblePlaylist(), false);
             ExpandPlayer();
         }
 
@@ -3185,7 +3185,11 @@ namespace AbletonManager
             if (_home.Visible) _home.RebuildTransition();
         }
 
-        void ShowPlayer(SetEntry s, List<SetEntry> playlist)
+        /// <summary>
+        /// Hand a set to the player, creating it if there is none yet. autoStart false only
+        /// loads it — see PlayerDialog.LoadSet.
+        /// </summary>
+        void ShowPlayer(SetEntry s, List<SetEntry> playlist, bool autoStart = true)
         {
             if (s == null) return;
 
@@ -3246,7 +3250,7 @@ namespace AbletonManager
                 if (SetEntry.SameSet(playlist[i], s)) { playlistIndex = i; break; }
             if (playlistIndex < 0) playlistIndex = 0;
 
-            _player.LoadSet(s, playlist, playlistIndex);
+            _player.LoadSet(s, playlist, playlistIndex, autoStart);
             _list.PlayingTag = _home.PlayingTag = s;
             _list.Invalidate();
             _home.Invalidate();

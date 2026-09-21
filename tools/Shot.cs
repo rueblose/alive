@@ -43,6 +43,7 @@ namespace AliveTools
 
         const uint WM_LBUTTONDOWN = 0x0201, WM_LBUTTONUP = 0x0202, WM_MOUSEMOVE = 0x0200;
         const uint WM_RBUTTONDOWN = 0x0204, WM_RBUTTONUP = 0x0205;
+        const uint WM_LBUTTONDBLCLK = 0x0203;
 
         /// <summary>
         /// The window draws itself into the given context. Capturing through CopyFromScreen
@@ -76,9 +77,16 @@ namespace AliveTools
         }
 
         /// <summary>A click at a point in the window's client coordinates.</summary>
-        static void Click(IntPtr window, int x, int y) { Click(window, x, y, false); }
+        static void Click(IntPtr window, int x, int y) { Click(window, x, y, Kind.Left); }
 
-        static void Click(IntPtr window, int x, int y, bool right)
+        /// <summary>
+        /// Double: the four messages Windows really sends for a quick double tap — DOWN, UP,
+        /// DBLCLK, UP. The second press arrives as its own message, not as a second DOWN, and
+        /// a control that miscounts it can only be caught by sending the genuine sequence.
+        /// </summary>
+        enum Kind { Left, Right, Double }
+
+        static void Click(IntPtr window, int x, int y, Kind kind)
         {
             POINT screen = new POINT(x, y);
             ClientToScreen(window, ref screen);
@@ -93,13 +101,21 @@ namespace AliveTools
             // The pause between press and release is mandatory: WinForms counts a click as a
             // pair of messages spread out in time, while a down+up stuck together in one queue
             // is handled by some controls as "the mouse was jerked", with no Click.
+            bool right = kind == Kind.Right;
             PostMessage(target, WM_MOUSEMOVE, IntPtr.Zero, lp);
             Thread.Sleep(60);
             PostMessage(target, right ? WM_RBUTTONDOWN : WM_LBUTTONDOWN, (IntPtr)(right ? 2 : 1), lp);
             Thread.Sleep(120);
             PostMessage(target, right ? WM_RBUTTONUP : WM_LBUTTONUP, IntPtr.Zero, lp);
+            if (kind == Kind.Double)
+            {
+                Thread.Sleep(60);
+                PostMessage(target, WM_LBUTTONDBLCLK, (IntPtr)1, lp);
+                Thread.Sleep(60);
+                PostMessage(target, WM_LBUTTONUP, IntPtr.Zero, lp);
+            }
 
-            Console.WriteLine((right ? "right-clicked " : "clicked ") + x + "," + y + " -> hwnd " + target.ToInt64()
+            Console.WriteLine(kind.ToString().ToLowerInvariant() + "-clicked " + x + "," + y + " -> hwnd " + target.ToInt64()
                             + (target == window ? " (the window itself, not a control)" : " (child control)"));
         }
 
@@ -107,7 +123,7 @@ namespace AliveTools
         {
             if (args.Length < 2)
             {
-                Console.WriteLine("usage: Shot.exe <exe> <out.png> [--size W,H] [--click X,Y] [--rclick X,Y] [args...]");
+                Console.WriteLine("usage: Shot.exe <exe> <out.png> [--size W,H] [--click X,Y] [--rclick X,Y] [--dbl X,Y] [args...]");
                 return 2;
             }
 
@@ -117,19 +133,21 @@ namespace AliveTools
             string png = args[1];
             string rest = "";
             List<Point> clicks = new List<Point>();
-            List<bool> rightClick = new List<bool>();
+            List<Kind> kinds = new List<Kind>();
             Size size = Size.Empty;
 
             for (int i = 2; i < args.Length; i++)
             {
                 // --click X,Y — click a point in the window's client coordinates before
                 // capturing
-                if ((args[i] == "--click" || args[i] == "--rclick") && i + 1 < args.Length)
+                if ((args[i] == "--click" || args[i] == "--rclick" || args[i] == "--dbl")
+                    && i + 1 < args.Length)
                 {
-                    bool right = args[i] == "--rclick";
+                    Kind kind = args[i] == "--rclick" ? Kind.Right
+                              : args[i] == "--dbl" ? Kind.Double : Kind.Left;
                     string[] xy = args[++i].Split(',');
                     clicks.Add(new Point(int.Parse(xy[0]), int.Parse(xy[1])));
-                    rightClick.Add(right);
+                    kinds.Add(kind);
                     continue;
                 }
                 // --size W,H - resize the window before capturing, in physical pixels. A
@@ -179,7 +197,7 @@ namespace AliveTools
 
                 for (int i = 0; i < clicks.Count; i++)
                 {
-                    Click(hwnd, clicks[i].X, clicks[i].Y, rightClick[i]);
+                    Click(hwnd, clicks[i].X, clicks[i].Y, kinds[i]);
                     Thread.Sleep(900);      // the window gets time to rebuild the list
                 }
 

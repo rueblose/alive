@@ -184,7 +184,14 @@ namespace AbletonManager
 
         // ------------------------------------------------------------------ content
 
-        public void LoadSet(SetEntry s, List<SetEntry> playlist = null, int playlistIndex = -1)
+        /// <summary>
+        /// Put a set into the player. autoStart false loads it and stops there: the renders are
+        /// listed, the waveform is drawn, the first one is ready — and nothing sounds until
+        /// somebody presses play. That is what opening the player window from the menu wants;
+        /// starting the sound is a separate wish with a separate button.
+        /// </summary>
+        public void LoadSet(SetEntry s, List<SetEntry> playlist = null, int playlistIndex = -1,
+                            bool autoStart = true)
         {
             if (s == null) return;
             bool sameSet = SetEntry.SameSet(_set, s);
@@ -221,7 +228,7 @@ namespace AbletonManager
             else if (!sameSet || !_audio.IsOpen || _current < 0)
             {
                 _current = -1;
-                PlayIndex(0, true);
+                PlayIndex(0, autoStart);
             }
 
             if (SetChanged != null) SetChanged(_set);
