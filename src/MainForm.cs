@@ -198,6 +198,10 @@ namespace AbletonManager
                      ControlStyles.UserPaint | ControlStyles.ResizeRedraw, true);
 
             _settings = Settings.Load();
+            // After the defaults above and before anything is built: the sizes computed there
+            // stay as the fallback for a first run, or for a window left on a screen that is no
+            // longer plugged in.
+            RestoreGeometry();
             Settings.RootsChanged += OnGlobalRootsChanged;
             LoadColumns();
 
@@ -3636,8 +3640,52 @@ namespace AbletonManager
             Invalidate();
         }
 
+        // ------------------------------------------------- where the window was left
+
+        /// <summary>
+        /// Put the window back where it was last closed.
+        ///
+        /// The rectangle is checked against the screens as they are NOW: a window left on a
+        /// second monitor that has since been unplugged would otherwise open somewhere nobody
+        /// can reach it. It is enough that the saved place still meets some working area —
+        /// Windows drags the rest into view itself.
+        /// </summary>
+        void RestoreGeometry()
+        {
+            string[] parts = _settings.WindowBounds.Split(',');
+            if (parts.Length != 4) return;
+
+            int x, y, w, h;
+            if (!int.TryParse(parts[0], out x) || !int.TryParse(parts[1], out y) ||
+                !int.TryParse(parts[2], out w) || !int.TryParse(parts[3], out h)) return;
+            if (w < 100 || h < 100) return;
+
+            Rectangle saved = new Rectangle(x, y, w, h);
+            bool onScreen = false;
+            foreach (Screen sc in Screen.AllScreens)
+                if (sc.WorkingArea.IntersectsWith(saved)) { onScreen = true; break; }
+            if (!onScreen) return;
+
+            StartPosition = FormStartPosition.Manual;
+            Bounds = saved;
+            if (_settings.WindowMaximized) WindowState = FormWindowState.Maximized;
+        }
+
+        void SaveGeometry()
+        {
+            // Minimized is not a state to come back to, and the bounds of a minimized window are
+            // nonsense (-32000): what we want either way is the place it unfolds to.
+            Rectangle b = WindowState == FormWindowState.Normal ? Bounds : RestoreBounds;
+            if (b.Width < 100 || b.Height < 100) return;
+
+            _settings.WindowBounds = b.X + "," + b.Y + "," + b.Width + "," + b.Height;
+            _settings.WindowMaximized = WindowState == FormWindowState.Maximized;
+            _settings.Save();
+        }
+
         protected override void OnFormClosing(FormClosingEventArgs e)
         {
+            SaveGeometry();
             if (_minimizeHotkey)
             {
                 try { UnregisterHotKey(Handle, HotkeyMinimize); } catch { }

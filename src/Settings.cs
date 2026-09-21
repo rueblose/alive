@@ -108,6 +108,18 @@ namespace AbletonManager
         /// <summary>Put the collected material into a .zip instead of a folder.</summary>
         public bool CollectToZip;
 
+        /// <summary>
+        /// Where the main window stood and how big it was, as "x,y,w,h" — empty until it has
+        /// been closed once. Physical pixels of the screen it was left on, which is what the
+        /// window is measured in; restoring is refused if the rectangle no longer meets any
+        /// screen (see MainForm.RestoreGeometry).
+        /// </summary>
+        public string WindowBounds = "";
+
+        /// <summary>Whether it was left maximized. The bounds above are then the size it
+        /// unfolds back to, not the size of the screen.</summary>
+        public bool WindowMaximized;
+
         public static string Dir
         {
             get
@@ -161,6 +173,8 @@ namespace AbletonManager
                     else if (key == "collectuserlibrary") s.CollectUserLibrary = val == "1";
                     else if (key == "collectfactorypacks") s.CollectFactoryPacks = val == "1";
                     else if (key == "collecttozip") s.CollectToZip = val == "1";
+                    else if (key == "window") s.WindowBounds = val;
+                    else if (key == "windowmax") s.WindowMaximized = val == "1";
                 }
             }
             catch { }
@@ -226,6 +240,8 @@ namespace AbletonManager
                 if (SetColumns.Length > 0) sb.Append("setcolumns=").AppendLine(SetColumns);
                 if (PluginColumns.Length > 0) sb.Append("plugincolumns=").AppendLine(PluginColumns);
                 sb.Append("columnssorted=").AppendLine(ColumnsSorted ? "1" : "0");
+                if (WindowBounds.Length > 0) sb.Append("window=").AppendLine(WindowBounds);
+                sb.Append("windowmax=").AppendLine(WindowMaximized ? "1" : "0");
                 File.WriteAllText(FilePath, sb.ToString(), new UTF8Encoding(false));
             }
             catch { }
