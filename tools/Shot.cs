@@ -42,6 +42,7 @@ namespace AliveTools
         struct POINT { public int X, Y; public POINT(int x, int y) { X = x; Y = y; } }
 
         const uint WM_LBUTTONDOWN = 0x0201, WM_LBUTTONUP = 0x0202, WM_MOUSEMOVE = 0x0200;
+        const uint WM_RBUTTONDOWN = 0x0204, WM_RBUTTONUP = 0x0205;
 
         /// <summary>
         /// The window draws itself into the given context. Capturing through CopyFromScreen
@@ -75,7 +76,9 @@ namespace AliveTools
         }
 
         /// <summary>A click at a point in the window's client coordinates.</summary>
-        static void Click(IntPtr window, int x, int y)
+        static void Click(IntPtr window, int x, int y) { Click(window, x, y, false); }
+
+        static void Click(IntPtr window, int x, int y, bool right)
         {
             POINT screen = new POINT(x, y);
             ClientToScreen(window, ref screen);
@@ -92,11 +95,11 @@ namespace AliveTools
             // is handled by some controls as "the mouse was jerked", with no Click.
             PostMessage(target, WM_MOUSEMOVE, IntPtr.Zero, lp);
             Thread.Sleep(60);
-            PostMessage(target, WM_LBUTTONDOWN, (IntPtr)1, lp);
+            PostMessage(target, right ? WM_RBUTTONDOWN : WM_LBUTTONDOWN, (IntPtr)(right ? 2 : 1), lp);
             Thread.Sleep(120);
-            PostMessage(target, WM_LBUTTONUP, IntPtr.Zero, lp);
+            PostMessage(target, right ? WM_RBUTTONUP : WM_LBUTTONUP, IntPtr.Zero, lp);
 
-            Console.WriteLine("clicked " + x + "," + y + " -> hwnd " + target.ToInt64()
+            Console.WriteLine((right ? "right-clicked " : "clicked ") + x + "," + y + " -> hwnd " + target.ToInt64()
                             + (target == window ? " (the window itself, not a control)" : " (child control)"));
         }
 
@@ -104,7 +107,7 @@ namespace AliveTools
         {
             if (args.Length < 2)
             {
-                Console.WriteLine("usage: Shot.exe <exe> <out.png> [--size W,H] [--click X,Y] [args...]");
+                Console.WriteLine("usage: Shot.exe <exe> <out.png> [--size W,H] [--click X,Y] [--rclick X,Y] [args...]");
                 return 2;
             }
 
@@ -114,16 +117,19 @@ namespace AliveTools
             string png = args[1];
             string rest = "";
             List<Point> clicks = new List<Point>();
+            List<bool> rightClick = new List<bool>();
             Size size = Size.Empty;
 
             for (int i = 2; i < args.Length; i++)
             {
                 // --click X,Y — click a point in the window's client coordinates before
                 // capturing
-                if (args[i] == "--click" && i + 1 < args.Length)
+                if ((args[i] == "--click" || args[i] == "--rclick") && i + 1 < args.Length)
                 {
+                    bool right = args[i] == "--rclick";
                     string[] xy = args[++i].Split(',');
                     clicks.Add(new Point(int.Parse(xy[0]), int.Parse(xy[1])));
+                    rightClick.Add(right);
                     continue;
                 }
                 // --size W,H - resize the window before capturing, in physical pixels. A
@@ -171,9 +177,9 @@ namespace AliveTools
                     Thread.Sleep(900);      // relayout, then the lists settle
                 }
 
-                foreach (Point c in clicks)
+                for (int i = 0; i < clicks.Count; i++)
                 {
-                    Click(hwnd, c.X, c.Y);
+                    Click(hwnd, clicks[i].X, clicks[i].Y, rightClick[i]);
                     Thread.Sleep(900);      // the window gets time to rebuild the list
                 }
 

@@ -1245,13 +1245,11 @@ namespace AbletonManager
 
         /// <summary>
         /// A double click activates a row — but only if it landed on the row itself rather than
-        /// on one of its independent buttons (the "+N" tail, the star, play, the checkbox). On
-        /// Windows the second click of a quick double tap does not go through OnMouseDown a
-        /// second time — it arrives here, bypassing those same checks. The row's buttons are
-        /// all toggles (pin, play/pause, expanding the versions, the checkbox), so the second
-        /// click is simply swallowed here — otherwise it would repeat the same action and
-        /// cancel the first: the pin would pin and unpin at once, play would start and pause at
-        /// once.
+        /// on one of its independent buttons (the "+N" tail, the star, play, the checkbox).
+        /// Those buttons are all toggles, and the second press of a quick double tap has
+        /// already gone through OnMouseDown: WinForms raises MouseDown for WM_LBUTTONDBLCLK as
+        /// well, with Clicks == 2. So here the press is simply swallowed — acting on it again
+        /// would count one press twice and undo itself.
         /// </summary>
         protected override void OnMouseDoubleClick(MouseEventArgs e)
         {

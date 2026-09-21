@@ -21,6 +21,7 @@ namespace AbletonManager
 
         public event Action<SetEntry> Activated;       // double click — open in Live
         public event Action<SetEntry> PlayRequested;
+        public event Action<SetEntry> PlayerRequested;  // right click → the player window itself
         public event Action<SetEntry> RevealRequested;
         public event Action<SetEntry> DetailsRequested; // right click → go to the set on the Sets tab
         public event Action<SetEntry> RescueRequested;  // right click → the rescue helper
@@ -1211,12 +1212,13 @@ namespace AbletonManager
             // The tags glyph already opened the editor on the first click — the second we
             // simply swallow, or on top of the editor it would also launch the project in Live.
             if (hit >= 0 && tags) { base.OnMouseDoubleClick(e); return; }
-            if (hit >= 0 && (play || pin))
-            {
-                OnMouseDown(e);
-                base.OnMouseDoubleClick(e);
-                return;
-            }
+
+            // Play and pin are toggles, and the second press of a quick double tap has already
+            // done its work: WinForms raises MouseDown for WM_LBUTTONDBLCLK too, with Clicks ==
+            // 2. Calling OnMouseDown again from here counted that press a second time — play,
+            // pause, play — and the button looked as though it refused to answer twice in a
+            // row. Swallow it: two presses, two toggles.
+            if (hit >= 0 && (play || pin)) { base.OnMouseDoubleClick(e); return; }
             if (Math.Abs(Environment.TickCount - _lastPinTime) < SystemInformation.DoubleClickTime + 150)
                 return;
 
@@ -1246,6 +1248,10 @@ namespace AbletonManager
                 play.ShortcutKeyDisplayString = "Space";
                 play.Click += delegate { if (PlayRequested != null) PlayRequested(s); };
                 m.Items.Add(play);
+
+                ToolStripMenuItem player = new ToolStripMenuItem("Open player");
+                player.Click += delegate { if (PlayerRequested != null) PlayerRequested(s); };
+                m.Items.Add(player);
             }
 
             ToolStripMenuItem pin = new ToolStripMenuItem(

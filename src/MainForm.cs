@@ -872,6 +872,7 @@ namespace AbletonManager
             _arrangements.Ready += _home.OnArrangement;
             _home.Activated += OnHomeActivated;
             _home.PlayRequested += OpenPlayer;
+            _home.PlayerRequested += OpenPlayerWindow;
             _home.RevealRequested += RevealSet;
             _home.DetailsRequested += OnSetRequested;   // "Show details" — go to the set in Sets
             _home.RescueRequested += RescueSet;
@@ -3061,15 +3062,45 @@ namespace AbletonManager
             SetEntry s = _list.Rows[idx].Tag as SetEntry;
             if (s == null) return;
 
-            // The playlist is what is currently visible in the list: the next track is
-            // logically taken from the same selection the person has in front of them.
+            PlayOrToggle(s, VisiblePlaylist());
+        }
+
+        /// <summary>
+        /// The queue the player walks: whatever the person has in front of them right now — the
+        /// rows of the sets list, or the tiles of the home page in the order they lie there
+        /// (pinned first, then the recent). The next track is logically taken from the same
+        /// selection that is on screen.
+        /// </summary>
+        List<SetEntry> VisiblePlaylist()
+        {
             List<SetEntry> playlist = new List<SetEntry>();
-            foreach (RowData row in _list.Rows)
+            if (Tiles)
             {
-                SetEntry candidate = row.Tag as SetEntry;
-                if (candidate != null && candidate.HasRenders) playlist.Add(candidate);
+                foreach (SetEntry t in _home.VisibleSets())
+                    if (t.HasRenders) playlist.Add(t);
             }
-            PlayOrToggle(s, playlist);
+            else
+            {
+                foreach (RowData row in _list.Rows)
+                {
+                    SetEntry candidate = row.Tag as SetEntry;
+                    if (candidate != null && candidate.HasRenders) playlist.Add(candidate);
+                }
+            }
+            return playlist;
+        }
+
+        /// <summary>
+        /// The player window on this set — not just its sound. The transport in the footer
+        /// plays the main render and says nothing about the rest; here the project's whole list
+        /// of renders is in front of you, with the waveform and the choice of which one counts
+        /// as the preview.
+        /// </summary>
+        void OpenPlayerWindow(SetEntry s)
+        {
+            if (s == null) return;
+            ShowPlayer(s, VisiblePlaylist());
+            ExpandPlayer();
         }
 
         /// <summary>
@@ -3080,10 +3111,7 @@ namespace AbletonManager
         /// </summary>
         void OpenPlayer(SetEntry s)
         {
-            List<SetEntry> playlist = new List<SetEntry>();
-            foreach (SetEntry t in _home.VisibleSets())
-                if (t.HasRenders) playlist.Add(t);
-            PlayOrToggle(s, playlist);
+            PlayOrToggle(s, VisiblePlaylist());
         }
 
         /// <summary>A right click on a row in the sets list — the same menu as on a home tile,
@@ -3108,6 +3136,10 @@ namespace AbletonManager
                 play.ShortcutKeyDisplayString = "Space";
                 play.Click += delegate { OnRowPlay(idx); };
                 m.Items.Add(play);
+
+                ToolStripMenuItem player = new ToolStripMenuItem("Open player");
+                player.Click += delegate { OpenPlayerWindow(s); };
+                m.Items.Add(player);
             }
 
             ToolStripMenuItem pin = new ToolStripMenuItem(
