@@ -1221,10 +1221,14 @@ namespace AbletonManager
             }
 
             Invalidate(true);
+            _shown = true;
 
-            if (_settings.IsFirstRun) { if (EditRoots()) return; }
+            if (_settings.IsFirstRun) { if (EditRoots()) { FlushPending(); return; } }
             StartScan(false);
             Rewatch();
+            // If there was nothing to scan, the paths we were started with are all we have to
+            // go on — otherwise they wait for the scan to finish.
+            FlushPending();
         }
 
         /// <summary>
@@ -1336,6 +1340,20 @@ namespace AbletonManager
             if (m.Msg == WM_HOTKEY && m.WParam.ToInt32() == HotkeyMinimize)
             {
                 WindowState = FormWindowState.Minimized;
+                return;
+            }
+
+            // A second copy was started: it handed us its command line and left. Even an empty
+            // one is an instruction — "show me the window I already have".
+            string[] handed = SingleInstance.Received(ref m);
+            if (handed != null)
+            {
+                if (WindowState == FormWindowState.Minimized)
+                    WindowState = FormWindowState.Normal;
+                BringToFront();
+                Activate();
+                try { SetForegroundWindow(Handle); } catch { }
+                OpenPaths(handed);
                 return;
             }
 
@@ -2523,13 +2541,19 @@ namespace AbletonManager
         [DllImport("user32.dll")]
         static extern bool SetForegroundWindow(IntPtr hWnd);
 
-        public void SelectSetByPath(string path)
+        /// <summary>
+        /// Show the set at this path — or anything lying inside its project folder. False: the
+        /// catalog knows nothing about it, and the caller decides what that means. Asked from
+        /// another thread the answer is not available, so the work is handed to the UI thread
+        /// and false comes back.
+        /// </summary>
+        public bool SelectSetByPath(string path)
         {
-            if (string.IsNullOrEmpty(path)) return;
+            if (string.IsNullOrEmpty(path)) return false;
             if (InvokeRequired)
             {
                 try { BeginInvoke((MethodInvoker)delegate { SelectSetByPath(path); }); } catch { }
-                return;
+                return false;
             }
 
             if (WindowState == FormWindowState.Minimized)
@@ -2586,6 +2610,7 @@ namespace AbletonManager
             BringToFront();
             Activate();
             try { SetForegroundWindow(Handle); } catch { }
+            return specific != null || matched != null;
         }
 
         // ------------------------------------------------------------------ actions
@@ -3380,8 +3405,16 @@ namespace AbletonManager
             Invalidate();
 
             string[] paths = e.Data.GetData(DataFormats.FileDrop) as string[];
-            if (paths == null) return;
+            if (paths != null) AddRoots(paths);
+        }
 
+        /// <summary>
+        /// Take paths in as new folders to watch. A file counts as its folder: dropping a set
+        /// on the window means "watch the project it lies in". The command line gives the same
+        /// answer to the same question — see OpenPaths.
+        /// </summary>
+        void AddRoots(string[] paths)
+        {
             List<string> added = new List<string>();
             foreach (string path in paths)
             {
@@ -3400,6 +3433,39 @@ namespace AbletonManager
             Notify(added.Count == 1 ? "Added " + added[0] : "Added " + added.Count + " folders");
             StartScan(true);
             Rewatch();
+        }
+
+        // A path from the command line, or from a second copy that handed us its own and left.
+        // It waits for the first scan: until the catalog has been read there is nothing to look
+        // a set up in, and "not found" would turn into "add its folder as a new root".
+        readonly List<string> _pendingOpen = new List<string>();
+        bool _shown;
+
+        /// <summary>
+        /// Paths the program was started with. A path we already know is shown; anything else
+        /// is taken in as a folder to watch — the same two answers a drop onto the window
+        /// gives.
+        /// </summary>
+        public void OpenPaths(string[] paths)
+        {
+            if (paths == null) return;
+            foreach (string p in paths)
+                if (!string.IsNullOrEmpty(p)) _pendingOpen.Add(p);
+            FlushPending();
+        }
+
+        void FlushPending()
+        {
+            if (!_shown || _scanning || _pendingOpen.Count == 0) return;
+
+            string[] paths = _pendingOpen.ToArray();
+            _pendingOpen.Clear();
+
+            List<string> unknown = new List<string>();
+            foreach (string p in paths)
+                if (!SelectSetByPath(p)) unknown.Add(p);
+
+            if (unknown.Count > 0) AddRoots(unknown.ToArray());
         }
 
         bool HasRoot(string folder)
@@ -3531,6 +3597,9 @@ namespace AbletonManager
                         // The line at the bottom is left only for what there is no other way of
                         // learning — errors from actions.
                         Status("");
+
+                        // Now there is a catalog to look a path up in — see OpenPaths.
+                        FlushPending();
 
                         // Something else on disk changed while we were scanning — we go round
                         // once more, or those edits would wait for the next occasion.

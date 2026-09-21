@@ -21,6 +21,15 @@ namespace Alive
         [STAThread]
         static void Main(string[] args)
         {
+            // Before anything else, and before the log in particular: Diag.Start() truncates
+            // alive.log, and a second copy doing that would wipe the running one's log — the
+            // very file we ask people to send when something goes wrong.
+            if (!SingleInstance.Claim())
+            {
+                SingleInstance.HandOver(args);
+                return;
+            }
+
             // Order of the preamble matters: the log is opened first (some crashes happen
             // before any window exists), the runtime's message language is pinned to English,
             // and Glass.Enabled is read BEFORE Theme is first touched — half of its colours
@@ -56,6 +65,7 @@ namespace Alive
             {
                 MainForm main = new MainForm();
                 AttachStat(main);
+                main.OpenPaths(args);      // queued until the catalog is on its feet
                 Application.Run(main);
             }
             catch (Exception ex) { Report(ex, true); }
