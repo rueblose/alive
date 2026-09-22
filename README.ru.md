@@ -8,7 +8,7 @@
 
 Один `.exe`. Без установки, без внешних DLL, без рантайма.
 
-![version](https://img.shields.io/badge/version-1.1-2ea043)
+![version](https://img.shields.io/badge/version-1.2-2ea043)
 ![platform](https://img.shields.io/badge/platform-Windows%2010%20%7C%2011-0078d4)
 ![framework](https://img.shields.io/badge/.NET%20Framework-4.6%2B-512BD4)
 ![license](https://img.shields.io/badge/license-MIT-blue)
