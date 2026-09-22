@@ -41,7 +41,15 @@ namespace AbletonManager
         public long Size;
         public SampleFolder Folder;
 
+        /// <summary>An AIFF the preview cannot open — in practice Ableton's own compressed
+        /// AIFC, which is most of Live's packs. Only Live plays it; the walk finds out once.</summary>
+        public bool Silent;
+
         public string Path { get { return FolderScan.Combine(Folder.Path, Name); } }
+
+        /// <summary>Whether the preview can play it: by the extension, and for an AIFF by what
+        /// the walk found in its header.</summary>
+        public bool CanPreview { get { return !Silent && SampleIndex.CanPreview(Name); } }
     }
 
     public delegate void SampleProgress(int found);
@@ -53,7 +61,7 @@ namespace AbletonManager
     /// </summary>
     public sealed class SampleIndex
     {
-        const int CacheVersion = 1;
+        const int CacheVersion = 2;   // 2: the Silent flag of an AIFF only Live can play
 
         public readonly List<SampleFolder> Roots = new List<SampleFolder>();
         public readonly List<SampleFolder> Folders = new List<SampleFolder>();   // parents before children
@@ -190,7 +198,7 @@ namespace AbletonManager
 
             Parallel.For(0, walk.Count, delegate (int i)
             {
-                trees[i] = Walk(walk[i], delegate (int n)
+                trees[i] = Walk(walk[i], true, delegate (int n)
                 {
                     int now = Interlocked.Add(ref total, n);
                     if (progress != null) progress(now);
@@ -215,7 +223,7 @@ namespace AbletonManager
         /// in the folders dialog must agree with the tab. -1: the folder would not open.</summary>
         public static int CountIn(string folder, Func<bool> cancelled)
         {
-            List<SampleFolder> tree = Walk(folder, null, cancelled);
+            List<SampleFolder> tree = Walk(folder, false, null, cancelled);
             return tree == null ? -1 : tree[0].TotalSamples;
         }
 
@@ -223,8 +231,11 @@ namespace AbletonManager
         /// One root. A stack rather than recursion — libraries run a dozen levels deep. Returns
         /// the root first and then every kept folder, a parent always before its children. null:
         /// the root itself would not open, or the walk was called off.
+        ///
+        /// probe — look into the header of every AIFF (see SampleFile.Silent). The index wants
+        /// it; the count in the folders dialog does not.
         /// </summary>
-        static List<SampleFolder> Walk(string root, SampleProgress found, Func<bool> cancelled)
+        static List<SampleFolder> Walk(string root, bool probe, SampleProgress found, Func<bool> cancelled)
         {
             string top;
             try { top = System.IO.Path.GetFullPath(root); }
@@ -271,6 +282,8 @@ namespace AbletonManager
                     f.Name = name;
                     f.Size = size;
                     f.Folder = p.Folder;
+                    if (probe && AiffReader.IsAiffName(name))
+                        f.Silent = !AiffReader.CanRead(FolderScan.Combine(p.Path, name));
                     p.Folder.Files.Add(f);
                     if (++batch == 256)
                     {
@@ -394,6 +407,7 @@ namespace AbletonManager
                         s.Folder = idx.Folders[r.ReadInt32()];
                         s.Name = r.ReadString();
                         s.Size = r.ReadInt64();
+                        s.Silent = r.ReadBoolean();
                         s.Folder.Files.Add(s);
                         idx.Files.Add(s);
                     }
@@ -432,6 +446,7 @@ namespace AbletonManager
                         w.Write(s.Folder.Index);
                         w.Write(s.Name);
                         w.Write(s.Size);
+                        w.Write(s.Silent);
                     }
                     w.Write(Roots.Count);
                     foreach (SampleFolder r in Roots) w.Write(r.Index);

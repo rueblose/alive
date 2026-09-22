@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Runtime.InteropServices;
 
 namespace AbletonManager
@@ -128,6 +129,55 @@ namespace AbletonManager
                 mn[i] = lo; mx[i] = hi;
             }
             w.Min = mn; w.Max = mx;
+        }
+
+        /// <summary>
+        /// What a sample is, for the details panel — "WAV · 44.1 kHz · 24-bit · stereo" — and its
+        /// length. WAV and AIFF from their headers; everything else asks Media Foundation, which
+        /// knows the rate and the channels but converts to float and so cannot tell the bits.
+        /// </summary>
+        public static string Describe(string path, out int durationMs)
+        {
+            durationMs = 0;
+            string ext = (System.IO.Path.GetExtension(path) ?? "").TrimStart('.').ToUpperInvariant();
+            if (ext == "AIF" || ext == "AIFC") ext = "AIFF";
+            int channels = 0, rate = 0, bits = 0;
+            try
+            {
+                if (AiffReader.IsAiffName(path))
+                {
+                    using (AiffReader a = AiffReader.Open(path))
+                        if (a != null) { channels = a.Channels; rate = a.Rate; bits = a.Bits; durationMs = a.DurationMs; }
+                }
+                else if (ext == "WAV") WaveReader.RiffFormat(path, out channels, out rate, out bits, out durationMs);
+
+                if (rate == 0 && Mf.MFStartup(Mf.Version, 0) == 0)
+                {
+                    IMFSourceReader reader = null;
+                    try
+                    {
+                        int floatBits;
+                        long ms;
+                        if (Mf.OpenPcm(path, out reader, out channels, out floatBits, out rate, out ms))
+                            durationMs = (int)ms;
+                    }
+                    finally
+                    {
+                        Mf.Release(reader);
+                        try { Mf.MFShutdown(); } catch { }
+                    }
+                }
+            }
+            catch { }
+
+            List<string> parts = new List<string>();
+            if (ext.Length > 0) parts.Add(ext);
+            if (rate > 0) parts.Add((rate / 1000.0).ToString("0.#", CultureInfo.InvariantCulture) + " kHz");
+            if (bits > 0) parts.Add(bits + "-bit");
+            if (channels == 1) parts.Add("mono");
+            else if (channels == 2) parts.Add("stereo");
+            else if (channels > 2) parts.Add(channels + " channels");
+            return string.Join(" · ", parts.ToArray());
         }
 
         public static float Pcm(byte[] b, int i, int bits)

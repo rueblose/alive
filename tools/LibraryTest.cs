@@ -47,6 +47,7 @@ namespace AliveTools
             if (cmd == "all" || cmd == "index") Index();
             if (cmd == "all" || cmd == "walk") Walk();
             if (cmd == "all" || cmd == "usage") Usage();
+            if (cmd == "all" || cmd == "aiff") Aiff();
 
             if (_checks == 0)
             {
@@ -387,6 +388,179 @@ namespace AliveTools
             Check(newest.Count == 1 && newest[0].Name == "a v2", "usage: Newest keeps the newest set of a project");
 
             Check(SampleUsage.Compute(idx, new List<SetEntry>()).UsedFiles.Count == 0, "usage: no sets - no usage");
+        }
+
+        // ------------------------------------------------------------------- aiff
+
+        static byte[] Be16(int v) { return new byte[] { (byte)(v >> 8), (byte)v }; }
+        static byte[] Be32(long v) { return new byte[] { (byte)(v >> 24), (byte)(v >> 16), (byte)(v >> 8), (byte)v }; }
+
+        /// <summary>An 80-bit IEEE extended for a whole number — AIFF keeps its sample rate so.</summary>
+        static byte[] Extended80(int v)
+        {
+            byte[] b = new byte[10];
+            if (v <= 0) return b;
+            int e = 0;
+            while ((1L << (e + 1)) <= v) e++;
+            int exp = 16383 + e;
+            ulong mant = (ulong)v << (63 - e);
+            b[0] = (byte)(exp >> 8);
+            b[1] = (byte)exp;
+            for (int i = 0; i < 8; i++) b[2 + i] = (byte)(mant >> (56 - 8 * i));
+            return b;
+        }
+
+        static void Chunk(MemoryStream ms, string id, params byte[][] parts)
+        {
+            int size = 0;
+            foreach (byte[] p in parts) size += p.Length;
+            ms.Write(Encoding.ASCII.GetBytes(id), 0, 4);
+            ms.Write(Be32(size), 0, 4);
+            foreach (byte[] p in parts) ms.Write(p, 0, p.Length);
+            if ((size & 1) != 0) ms.WriteByte(0);
+        }
+
+        /// <summary>An AIFF — or an AIFC when compression is given — around sample bytes already
+        /// in the file's own byte order.</summary>
+        static string WriteAiff(string name, int channels, int bits, int rate, byte[] data, string compression)
+        {
+            string path = Path.Combine(Fresh("aiff-" + name), name + ".aif");
+            int frames = data.Length / (channels * ((bits + 7) / 8));
+            MemoryStream body = new MemoryStream();
+            if (compression == null)
+                Chunk(body, "COMM", Be16(channels), Be32(frames), Be16(bits), Extended80(rate));
+            else
+                Chunk(body, "COMM", Be16(channels), Be32(frames), Be16(bits), Extended80(rate),
+                      Encoding.ASCII.GetBytes(compression), new byte[] { 0, 0 });
+            Chunk(body, "SSND", new byte[8], data);
+            byte[] b = body.ToArray();
+            using (FileStream fs = File.Create(path))
+            {
+                fs.Write(Encoding.ASCII.GetBytes("FORM"), 0, 4);
+                fs.Write(Be32(4 + b.Length), 0, 4);
+                fs.Write(Encoding.ASCII.GetBytes(compression == null ? "AIFF" : "AIFC"), 0, 4);
+                fs.Write(b, 0, b.Length);
+            }
+            return path;
+        }
+
+        static float[] ReadAll(AiffReader a)
+        {
+            List<float> all = new List<float>();
+            byte[] buf = new byte[a.Channels * 4 * 3];      // small on purpose: several Read calls
+            int n;
+            while ((n = a.Read(buf)) > 0)
+                for (int i = 0; i < n; i += 4) all.Add(BitConverter.ToSingle(buf, i));
+            return all.ToArray();
+        }
+
+        static bool Near(float[] got, params float[] want)
+        {
+            if (got.Length != want.Length) return false;
+            for (int i = 0; i < got.Length; i++)
+                if (Math.Abs(got[i] - want[i]) > 1e-6f) return false;
+            return true;
+        }
+
+        static void Aiff()
+        {
+            // 16-bit mono, big-endian: 0, 16384, -16384, 32767, -32768
+            byte[] s16 = { 0x00, 0x00, 0x40, 0x00, 0xC0, 0x00, 0x7F, 0xFF, 0x80, 0x00 };
+            string p16 = WriteAiff("s16", 1, 16, 44100, s16, null);
+            using (AiffReader a = AiffReader.Open(p16))
+            {
+                Check(a != null && a.Channels == 1 && a.Rate == 44100 && a.Bits == 16 && a.Frames == 5,
+                      "aiff: the header of a 16-bit mono file");
+                if (a != null)
+                {
+                    Check(Near(ReadAll(a), 0f, 0.5f, -0.5f, 32767f / 32768f, -1f), "aiff: 16-bit samples");
+                    a.Seek(3);
+                    Check(Near(ReadAll(a), 32767f / 32768f, -1f), "aiff: Seek(3) must start at the fourth frame");
+                }
+            }
+
+            // 24-bit stereo: (8388607, -8388608), (0, 4194304)
+            byte[] s24 = { 0x7F, 0xFF, 0xFF, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x40, 0x00, 0x00 };
+            using (AiffReader a = AiffReader.Open(WriteAiff("s24", 2, 24, 48000, s24, null)))
+                Check(a != null && a.Rate == 48000 && a.Frames == 2
+                      && Near(ReadAll(a), 8388607f / 8388608f, -1f, 0f, 0.5f), "aiff: 24-bit stereo");
+
+            // AIFC "sowt": the same 16-bit samples, little-endian
+            byte[] le = { 0x00, 0x00, 0x00, 0x40, 0x00, 0xC0, 0xFF, 0x7F, 0x00, 0x80 };
+            using (AiffReader a = AiffReader.Open(WriteAiff("sowt", 1, 16, 44100, le, "sowt")))
+                Check(a != null && Near(ReadAll(a), 0f, 0.5f, -0.5f, 32767f / 32768f, -1f), "aiff: sowt");
+
+            // AIFC "fl32": 0.25, -0.75 as big-endian floats
+            byte[] fl = { 0x3E, 0x80, 0x00, 0x00, 0xBF, 0x40, 0x00, 0x00 };
+            using (AiffReader a = AiffReader.Open(WriteAiff("fl32", 1, 32, 44100, fl, "fl32")))
+                Check(a != null && Near(ReadAll(a), 0.25f, -0.75f), "aiff: fl32");
+
+            // 8-bit: AIFF keeps it signed, unlike WAV
+            using (AiffReader a = AiffReader.Open(WriteAiff("s8", 1, 8, 22050, new byte[] { 0x80, 0x00, 0x40 }, null)))
+                Check(a != null && Near(ReadAll(a), -1f, 0f, 0.5f), "aiff: 8-bit is signed");
+
+            Check(AiffReader.Open(WriteAiff("ima4", 1, 16, 44100, new byte[34], "ima4")) == null,
+                  "aiff: a compressed AIFC must be refused rather than read as noise");
+            string notAiff = Path.Combine(Fresh("aiff-wav"), "x.wav");
+            WriteWav(notAiff, 10);
+            Check(AiffReader.Open(notAiff) == null, "aiff: a WAV is not an AIFF");
+
+            Waveform w = WaveReader.Read(p16, 32);
+            Check(w.Ok, "aiff: no envelope for an AIFF");
+            int ms;
+            string said = MediaDecoder.Describe(p16, out ms);
+            Check(said == "AIFF · 44.1 kHz · 16-bit · mono", "aiff: Describe says '" + said + "'");
+            string wav = Path.Combine(Fresh("describe"), "x.wav");
+            WriteWav(wav, 44100);
+            said = MediaDecoder.Describe(wav, out ms);
+            Check(said == "WAV · 44.1 kHz · 16-bit · mono" && ms == 1000,
+                  "aiff: Describe of a one-second WAV says '" + said + "', " + ms + " ms");
+
+            // The walk marks what only Live can play: Ableton's own compressed AIFC.
+            string dir = Fresh("aiff-index");
+            File.Copy(p16, Path.Combine(dir, "plain.aif"));
+            File.Copy(WriteAiff("able", 1, 16, 44100, new byte[20], "able"), Path.Combine(dir, "live.aif"));
+            SampleIndex idx = SampleIndex.Build(new List<string> { dir }, new List<string>(), null, CancellationToken.None);
+            SampleFile plain = FileNamed(idx, "plain.aif"), live = FileNamed(idx, "live.aif");
+            Check(plain != null && plain.CanPreview && live != null && live.Silent && !live.CanPreview,
+                  "aiff: the walk must mark the AIFF only Live plays");
+            idx.SaveCache();
+            SampleFile back = FileNamed(SampleIndex.LoadCache(), "live.aif");
+            Check(back != null && back.Silent, "aiff: Silent did not survive the cache");
+
+            // Real ones, when this machine has them: a plain AIFF from a sample library plays,
+            // an Ableton-compressed one from Live's packs is refused.
+            string real = FirstAiff(@"E:\Music\Samples", true) ?? FirstAiff(@"D:\Music\Samples", true);
+            if (real == null) Console.WriteLine("aiff: no plain AIFF in the sample folders - that check is skipped");
+            else
+                using (AiffReader a = AiffReader.Open(real))
+                {
+                    Check(a != null && a.Frames > 0 && a.DurationMs > 0, "aiff: could not open " + real);
+                    if (a != null) Check(ReadAll(a).Length == a.Frames * a.Channels, "aiff: not every frame of " + real + " was read");
+                }
+
+            string able = FirstAiff(@"E:\Music\Factory Packs", false);
+            if (able == null) Console.WriteLine("aiff: no Ableton-compressed AIFF here - that check is skipped");
+            else Check(!WaveReader.Read(able, 32).Ok, "aiff: an Ableton-compressed AIFF must not pretend to have a wave: " + able);
+        }
+
+        /// <summary>The first AIFF under root the reader does (readable) or does not take — at
+        /// most 500 looked at.</summary>
+        static string FirstAiff(string root, bool readable)
+        {
+            if (!Directory.Exists(root)) return null;
+            int seen = 0;
+            try
+            {
+                foreach (string f in Directory.EnumerateFiles(root, "*.aif", SearchOption.AllDirectories))
+                {
+                    if (Path.GetFileName(f).StartsWith("._", StringComparison.Ordinal)) continue;
+                    if (AiffReader.CanRead(f) == readable) return f;
+                    if (++seen >= 500) break;
+                }
+            }
+            catch { }
+            return null;
         }
 
         // ------------------------------------------------------------------- real
