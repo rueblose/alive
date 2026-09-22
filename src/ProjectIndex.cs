@@ -103,11 +103,18 @@ namespace AbletonManager
         /// and HomeView.PlayingTag, which is what this is for.
         ///
         /// Tags that are not sets (the player's own list of render files) fall back to
-        /// reference: those objects live as long as the window does.
+        /// reference: those objects live as long as the window does — except files of the
+        /// sample library, which are compared by their path.
         /// </summary>
         public static bool SameSet(object a, object b)
         {
             if (ReferenceEquals(a, b)) return a != null;
+
+            // The Samples tab plays files of the library; a quiet re-walk makes new objects for
+            // the same files, and the playing row has to keep its pulse all the same.
+            SampleFile fa = a as SampleFile, fb = b as SampleFile;
+            if (fa != null && fb != null)
+                return string.Equals(fa.Path, fb.Path, StringComparison.OrdinalIgnoreCase);
 
             SetEntry x = a as SetEntry, y = b as SetEntry;
             return x != null && y != null

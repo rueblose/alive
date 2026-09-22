@@ -59,10 +59,16 @@ namespace AbletonManager
         /// on.</summary>
         public bool Pinned;
 
-        /// <summary>One of the versions under an expanded row rather than the project itself —
-        /// the name in the first column is indented and gets a short rail in front of it,
-        /// showing the nesting.</summary>
-        public bool ChildRow;
+        /// <summary>
+        /// How deep the row sits in a tree: the name column is indented by this many steps with
+        /// a rail in the last one — a version under its project (1), a folder or a sample under
+        /// its folder on the Samples tab (any depth). Which column is "the name" is said by
+        /// RowListView.IndentColumn.
+        /// </summary>
+        public int Indent;
+
+        /// <summary>The whole row in the dim colour — on the Samples tab, what no set uses.</summary>
+        public bool Dim;
     }
 
     /// <summary>
@@ -194,6 +200,10 @@ namespace AbletonManager
         /// — a project version with no render reference, for instance.
         /// </summary>
         public Func<RowData, string> DragFilePath;
+
+        /// <summary>The column that gets RowData.Indent. The sets name column can be dragged to
+        /// any place, so "the first column" would not do.</summary>
+        public string IndentColumn = "Set";
 
         /// <summary>The row whose play button the cursor is currently on, otherwise
         /// -1.</summary>
@@ -1490,7 +1500,7 @@ namespace AbletonManager
                         int offsetY = (int)Math.Round((1.0f - entrance) * Sc(18));
                         int topAnim = top + offsetY;
                         RowData row = _rows[i];
-                        bool dim = ShowCheckboxes && !row.Checked;
+                        bool dim = (ShowCheckboxes && !row.Checked) || row.Dim;
                         bool bright = i == _selected;
 
                         for (int c = 1; c < _columns.Count && c < row.Cells.Length; c++)
@@ -1529,7 +1539,7 @@ namespace AbletonManager
                         int offsetY = (int)Math.Round((1.0f - entrance) * Sc(18));
                         int topAnim = top + offsetY;
                         RowData row = _rows[i];
-                        bool dim = ShowCheckboxes && !row.Checked;
+                        bool dim = (ShowCheckboxes && !row.Checked) || row.Dim;
                         bool bright = i == _selected;
 
                         if (ShowCheckboxes) PaintCheckbox(g, topAnim, rowH, row.Checked);
@@ -1610,14 +1620,15 @@ namespace AbletonManager
 
             // A version under an expanded row is indented in the name column, and right in that
             // indent sits a short rail: only on child rows and only next to the text rather
-            // than across the whole row — like the "|" before a name in a file tree.
-            bool childHere = row.ChildRow && col.Id == "Set";
-            int indent = childHere ? Sc(20) : 0;
+            // than across the whole row — like the "|" before a name in a file tree. On the
+            // Samples tab the same rail marks every level of the folder tree.
+            int level = col.Id == IndentColumn ? row.Indent : 0;
+            int indent = level * Sc(20);
             int x = ColX(widths, c);
 
-            if (childHere)
+            if (level > 0)
             {
-                Rectangle rail = new Rectangle(x + Sc(6), topAnim + Sc(4), Sc(2), rowH - Sc(8));
+                Rectangle rail = new Rectangle(x + (level - 1) * Sc(20) + Sc(6), topAnim + Sc(4), Sc(2), rowH - Sc(8));
                 Color railColor = Color.FromArgb((int)Math.Round(120 * entrance), Theme.TextDim);
                 g.FillRectangle(Theme.GetBrush(railColor), rail);
             }
