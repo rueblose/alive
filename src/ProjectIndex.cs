@@ -32,6 +32,20 @@ namespace AbletonManager
         public string Error = "";
 
         /// <summary>
+        /// The samples the set plays: resolved paths of its SampleRef dependencies that were
+        /// found, without repeats. The Samples tab counts usage from these. Lost ones are not
+        /// here — a file that is not on disk belongs to no library.
+        /// </summary>
+        public string[] Samples = new string[0];
+
+        /// <summary>
+        /// Parallel to Samples: the size recorded in the set (OriginalFileSize), or the length on
+        /// disk when the set did not record one. A copy Collect All put into the project is
+        /// recognised by name and this size, without opening anything.
+        /// </summary>
+        public long[] SampleSizes = new long[0];
+
+        /// <summary>
         /// How many of a set's plugins are not installed. Computed after the scan rather than
         /// during it — what is installed changes without the sets themselves being edited, so
         /// it cannot be cached.
@@ -260,7 +274,7 @@ namespace AbletonManager
     /// </summary>
     public sealed class ProjectIndex
     {
-        const int CacheVersion = 10;  // 10: Files/Missing are counted by distinct files
+        const int CacheVersion = 11;  // 11: the paths and sizes of the samples a set plays
 
         volatile List<SetEntry> _sets = new List<SetEntry>();
 
@@ -577,6 +591,8 @@ namespace AbletonManager
             // exactly those.
             HashSet<string> seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             int missing = 0, real = 0;
+            List<string> found = new List<string>();
+            List<long> sizes = new List<long>();
             foreach (FileRefInfo fr in info.Files)
             {
                 // We count only clip samples. Ableton embeds presets and racks into the set,
@@ -587,11 +603,25 @@ namespace AbletonManager
                 if (rr.Status == RefStatus.Empty) continue;
                 if (!seen.Add(rr.ResolvedPath)) continue;
                 real++;
-                if (rr.Status == RefStatus.Missing || rr.Status == RefStatus.MissingPack) missing++;
+                if (rr.Status == RefStatus.Missing || rr.Status == RefStatus.MissingPack)
+                {
+                    missing++;
+                    continue;
+                }
+                found.Add(rr.ResolvedPath);
+                sizes.Add(fr.OriginalFileSize > 0 ? fr.OriginalFileSize : LengthOf(rr.ResolvedPath));
             }
             e.TotalRefs = real;
             e.MissingFiles = missing;
+            e.Samples = found.ToArray();
+            e.SampleSizes = sizes.ToArray();
             return e;
+        }
+
+        static long LengthOf(string path)
+        {
+            try { return new FileInfo(path).Length; }
+            catch { return 0; }
         }
 
         /// <summary>The nearest "* Project" folder above, otherwise simply the parent folder's
@@ -686,6 +716,16 @@ namespace AbletonManager
                         e.PluginVendors = vendors;
                         e.PluginVendorConfident = confident;
                         e.PluginUids = uids;
+                        int sc = r.ReadInt32();
+                        string[] samples = new string[sc];
+                        long[] sampleSizes = new long[sc];
+                        for (int j = 0; j < sc; j++)
+                        {
+                            samples[j] = r.ReadString();
+                            sampleSizes[j] = r.ReadInt64();
+                        }
+                        e.Samples = samples;
+                        e.SampleSizes = sampleSizes;
                         map[e.Path] = e;
                     }
                 }
@@ -720,6 +760,12 @@ namespace AbletonManager
                             w.Write(i < e.PluginVendors.Length ? (e.PluginVendors[i] ?? "") : "");
                             w.Write(i < e.PluginVendorConfident.Length && e.PluginVendorConfident[i]);
                             w.Write(i < e.PluginUids.Length ? (e.PluginUids[i] ?? "") : "");
+                        }
+                        w.Write(e.Samples.Length);
+                        for (int i = 0; i < e.Samples.Length; i++)
+                        {
+                            w.Write(e.Samples[i]);
+                            w.Write(i < e.SampleSizes.Length ? e.SampleSizes[i] : 0L);
                         }
                     }
                 }
