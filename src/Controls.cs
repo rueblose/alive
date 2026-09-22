@@ -165,9 +165,16 @@ namespace AbletonManager
             return (int)Math.Round(pillH / 2f + capH / 2f - Theme.Baseline(f));
         }
 
+        /// <summary>
+        /// Wrapped text, measured and drawn by the same rule. TextBoxControl is what makes it
+        /// the same rule: without it a word wider than the line (a path — "Effect\Freesound4live\
+        /// Downloads\01530") widens the measured rectangle, the other lines are laid out on
+        /// that width, and the height comes out a line or two short of what is drawn — the file
+        /// name at the end of a sample's path simply was not there.
+        /// </summary>
         public static readonly TextFormatFlags Wrap =
             TextFormatFlags.Left | TextFormatFlags.Top | TextFormatFlags.WordBreak |
-            TextFormatFlags.NoPrefix | TextFormatFlags.NoPadding;
+            TextFormatFlags.TextBoxControl | TextFormatFlags.NoPrefix | TextFormatFlags.NoPadding;
 
         // ------------------------------------------------------------ the system beep
 

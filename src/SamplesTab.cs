@@ -542,11 +542,21 @@ namespace AbletonManager
             _list.ScrollOffsetX = scrollX;
         }
 
-        /// <summary>The panel for the selected row. Folders and samples get their own look in
-        /// the next step; until then — an empty panel with the right words.</summary>
+        /// <summary>The panel for the selected row: a folder with its numbers, most used samples
+        /// and projects, or a sample with its wave and projects.</summary>
         void ShowSampleDetails()
         {
-            _detail.ShowEmpty("No folder selected", "Pick a folder or a sample");
+            RowData row = _list.Selected;
+            SampleFile f = row != null ? row.Tag as SampleFile : null;
+            if (f != null) _detail.ShowSample(f, Usage(), UsageUnknown);
+            else _detail.ShowFolder(row != null ? row.Tag as SampleFolder : null, Usage(), UsageUnknown);
+        }
+
+        /// <summary>A sample picked in the panel's "Most used": shown in the tree, its folders
+        /// opened on the way.</summary>
+        void OnSampleRequested(SampleFile f)
+        {
+            if (f != null) ShowSampleInTree(f.Folder, f.Path);
         }
 
         // ----------------------------------------------------------------- tree

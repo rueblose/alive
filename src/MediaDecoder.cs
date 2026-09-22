@@ -132,7 +132,7 @@ namespace AbletonManager
         }
 
         /// <summary>
-        /// What a sample is, for the details panel — "WAV · 44.1 kHz · 24-bit · stereo" — and its
+        /// What a sample is, for the details panel — "44.1 kHz · 24-bit · stereo" — and its
         /// length. WAV and AIFF from their headers; everything else asks Media Foundation, which
         /// knows the rate and the channels but converts to float and so cannot tell the bits.
         /// </summary>
@@ -171,12 +171,14 @@ namespace AbletonManager
             catch { }
 
             List<string> parts = new List<string>();
-            if (ext.Length > 0) parts.Add(ext);
             if (rate > 0) parts.Add((rate / 1000.0).ToString("0.#", CultureInfo.InvariantCulture) + " kHz");
             if (bits > 0) parts.Add(bits + "-bit");
             if (channels == 1) parts.Add("mono");
             else if (channels == 2) parts.Add("stereo");
             else if (channels > 2) parts.Add(channels + " channels");
+            // The container is in the file's own name, and with it the line did not fit the
+            // panel at 125%: it is said only when nothing else could be read.
+            if (parts.Count == 0 && ext.Length > 0) parts.Add(ext);
             return string.Join(" · ", parts.ToArray());
         }
 

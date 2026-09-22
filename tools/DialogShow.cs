@@ -15,6 +15,7 @@ namespace AliveTools
     ///     Shot.exe DialogShow.exe out.png export  "set.als"
     ///     Shot.exe DialogShow.exe out.png preview "set.als"
     ///     Shot.exe DialogShow.exe out.png samples
+    ///     Shot.exe DialogShow.exe out.png player  "set.als"
     ///
     /// Build: tools\build-rescue-test.cmd. Does not go into bin.
     /// </summary>
@@ -62,6 +63,17 @@ namespace AliveTools
                     IntPtr unused = host.Handle;
                     f = new PreviewDialog(set, new ArrangementLoader(host));
                 }
+            }
+            else if (which == "player")
+            {
+                // The render player with the set's first render loaded but silent - the wave is
+                // what is being looked at, and a shot should not play music at somebody.
+                SetEntry set = new SetEntry();
+                set.Path = args[1];
+                set.Name = System.IO.Path.GetFileNameWithoutExtension(args[1]);
+                PlayerDialog p = new PlayerDialog();
+                p.Shown += delegate { p.LoadSet(set, null, -1, false); };
+                f = p;
             }
             else if (which == "samples")
             {

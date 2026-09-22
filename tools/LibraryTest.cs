@@ -510,11 +510,11 @@ namespace AliveTools
             Check(w.Ok, "aiff: no envelope for an AIFF");
             int ms;
             string said = MediaDecoder.Describe(p16, out ms);
-            Check(said == "AIFF · 44.1 kHz · 16-bit · mono", "aiff: Describe says '" + said + "'");
+            Check(said == "44.1 kHz · 16-bit · mono", "aiff: Describe says '" + said + "'");
             string wav = Path.Combine(Fresh("describe"), "x.wav");
             WriteWav(wav, 44100);
             said = MediaDecoder.Describe(wav, out ms);
-            Check(said == "WAV · 44.1 kHz · 16-bit · mono" && ms == 1000,
+            Check(said == "44.1 kHz · 16-bit · mono" && ms == 1000,
                   "aiff: Describe of a one-second WAV says '" + said + "', " + ms + " ms");
 
             // The walk marks what only Live can play: Ableton's own compressed AIFC.

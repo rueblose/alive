@@ -862,6 +862,7 @@ namespace AbletonManager
             _detail.CollectRequested += CollectSelected;
             _detail.SetRequested += OnSetRequested;
             _detail.PluginRequested += OnPluginRequested;
+            _detail.SampleRequested += OnSampleRequested;
             _detail.NotesRequested += EditNotes;
             Controls.Add(_detail);
 

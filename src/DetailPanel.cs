@@ -7,9 +7,9 @@ using System.Windows.Forms;
 namespace AbletonManager
 {
     /// <summary>
-    /// The panel on the right: the details of the selected set or plugin. A card of one colour,
-    /// the primary action pinned to the bottom, and everything else a column of blocks with
-    /// identical insets.
+    /// The panel on the right: the details of the selected set, plugin, library folder or
+    /// sample. A card of one colour, the primary action pinned to the bottom, and everything
+    /// else a column of blocks with identical insets.
     /// </summary>
     public sealed class DetailPanel : GlassControl
     {
@@ -19,12 +19,34 @@ namespace AbletonManager
         ContextMenuStrip _openMenu;   // the popup of secondary actions, while it is open
         int _menuClosedTick;          // when it closed — see ShowActionMenu
 
+        enum PanelMode { Set, Plugin, Folder, Sample }
+        PanelMode _mode = PanelMode.Set;
+
         SetEntry _set;
         PluginStat _plugin;
-        bool _pluginMode;
 
-        // Set: the panel shows only this — a tab with nothing to detail yet (see ShowEmpty).
-        string _emptyTitle, _emptyHint;
+        // A folder or a sample of the library, and what the sets use of it. _unknown — the
+        // sets are still being read, and "never" would be a lie.
+        SampleFolder _folder;
+        SampleFile _sample;
+        SampleUsage _use = SampleUsage.Empty;
+        bool _unknown;
+        readonly List<SampleFile> _topFiles = new List<SampleFile>();
+        readonly List<SetEntry> _projects = new List<SetEntry>();
+        readonly List<Rectangle> _fileRowRects = new List<Rectangle>();
+        int _fileRowHot = -1;
+
+        // The sample's picture and what it is — read in the background when it is picked, and
+        // kept for its path: the list re-selects the same row after every refill.
+        Waveform _wave;
+        string _waveFor = "";
+        string _format = "";
+        int _durationMs;
+        float _waveProgress;
+        bool _wavePlaying;
+        Rectangle _waveRect;
+        bool _waveHot;
+
         int _scroll;
         int _contentHeight;
         float _scrollTarget, _scrollCurrent;
@@ -79,6 +101,12 @@ namespace AbletonManager
         public event Action<SetEntry> SetRequested;
         public event Action<string> PluginRequested;
 
+        /// <summary>A sample picked in a folder's "Most used" list.</summary>
+        public event Action<SampleFile> SampleRequested;
+
+        /// <summary>A click on a sample's wave, 0..1 across it.</summary>
+        public event Action<float> WaveClicked;
+
         public DetailPanel()
         {
             Cursor = Cursors.Default;
@@ -91,7 +119,7 @@ namespace AbletonManager
             _action.SurfaceOverlay = Theme.Surface;
             _action.Click += delegate
             {
-                if (_pluginMode) { if (RevealRequested != null) RevealRequested(); }
+                if (_mode != PanelMode.Set) { if (RevealRequested != null) RevealRequested(); }
                 else if (OpenRequested != null) OpenRequested();
             };
             Controls.Add(_action);
@@ -130,10 +158,11 @@ namespace AbletonManager
 
         public void Show(SetEntry s)
         {
-            _emptyTitle = null;
             bool same = _set != null && s != null && _set.Path == s.Path;
             _plugin = null;
-            _pluginMode = false;
+            _folder = null;
+            _sample = null;
+            _mode = PanelMode.Set;
             _set = s;
             _scroll = 0;
             _scrollTarget = _scrollCurrent = 0;
@@ -166,9 +195,10 @@ namespace AbletonManager
 
         public void ShowPlugin(PluginStat p)
         {
-            _emptyTitle = null;
             _plugin = p;
-            _pluginMode = true;
+            _folder = null;
+            _sample = null;
+            _mode = PanelMode.Plugin;
             _set = null;
             _arr = null;
             DropThumb();
@@ -191,20 +221,127 @@ namespace AbletonManager
             Invalidate();
         }
 
-        /// <summary>Nothing selected on a tab that has no details of its own yet — the Samples
-        /// tab until something is picked in its tree.</summary>
-        public void ShowEmpty(string title, string hint)
+        /// <summary>A folder of the sample library: its numbers, its most used samples, the
+        /// projects that use it. d == null — nothing is selected.</summary>
+        public void ShowFolder(SampleFolder d, SampleUsage use, bool unknown)
         {
+            ShowLibrary(PanelMode.Folder, use, unknown);
+            _folder = d;
+            if (d == null || unknown) return;
+
+            List<SetEntry> sets = new List<SetEntry>();
+            foreach (SampleFile x in _use.UsedUnder(d))
+            {
+                sets.AddRange(_use.Of(x).Sets);
+                if (_topFiles.Count < 10) _topFiles.Add(x);
+            }
+            _projects.AddRange(SampleUsage.Newest(sets));
+        }
+
+        /// <summary>One sample: its wave and format (read in the background), its path, the
+        /// projects that use it.</summary>
+        public void ShowSample(SampleFile f, SampleUsage use, bool unknown)
+        {
+            ShowLibrary(PanelMode.Sample, use, unknown);
+            _sample = f;
+            if (f == null) return;
+            if (!string.Equals(_waveFor, f.Path, StringComparison.OrdinalIgnoreCase)) LoadWave(f);
+            SampleUse u = unknown ? null : _use.Of(f);
+            if (u != null) _projects.AddRange(SampleUsage.Newest(u.Sets));
+        }
+
+        void ShowLibrary(PanelMode mode, SampleUsage use, bool unknown)
+        {
+            _mode = mode;
             _set = null;
             _plugin = null;
-            _pluginMode = true;          // no buttons at the bottom
-            _emptyTitle = title;
-            _emptyHint = hint;
+            _arr = null;
+            DropThumb();
+            _folder = null;
+            _sample = null;
+            _use = use ?? SampleUsage.Empty;
+            _unknown = unknown;
+            _topFiles.Clear();
+            _projects.Clear();
             _scroll = 0;
             _scrollTarget = _scrollCurrent = 0;
             if (_scroller != null) _scroller.SyncPosition(0);
+            _topHot = _waveHot = false;
+            _topRect = Rectangle.Empty;
+            _setRowHot = _pluginRowHot = _fileRowHot = -1;
             ApplyAction();
             Invalidate();
+        }
+
+        public bool ShowsSample(SampleFile f)
+        {
+            return _mode == PanelMode.Sample && _sample != null && f != null
+                && string.Equals(_sample.Path, f.Path, StringComparison.OrdinalIgnoreCase);
+        }
+
+        public int SampleDurationMs { get { return _durationMs; } }
+
+        public void SetWaveProgress(float t)
+        {
+            if (_wavePlaying && Math.Abs(t - _waveProgress) < 0.001f) return;
+            _wavePlaying = true;
+            _waveProgress = t;
+            Invalidate(_waveRect);
+        }
+
+        public void StopWave()
+        {
+            if (!_wavePlaying) return;
+            _wavePlaying = false;
+            _waveProgress = 0f;
+            Invalidate(_waveRect);
+        }
+
+        /// <summary>The wave and the format line, off the UI thread. A file only Live plays gets
+        /// the format alone — there is no wave to read out of it.</summary>
+        void LoadWave(SampleFile f)
+        {
+            string path = f.Path;
+            bool wave = f.CanPreview;
+            _waveFor = path;
+            _wave = null;
+            _format = "";
+            _durationMs = 0;
+            _wavePlaying = false;
+            _waveProgress = 0f;
+            int buckets = Math.Max(120, Width - Pad * 2);
+            System.Threading.ThreadPool.QueueUserWorkItem(delegate
+            {
+                int ms = 0;
+                string fmt = "";
+                Waveform w = null;
+                // A drive that went away mid-read throws — on a pool thread that would take
+                // the whole program down.
+                try
+                {
+                    fmt = MediaDecoder.Describe(path, out ms);
+                    if (wave) w = WaveReader.Read(path, buckets);
+                }
+                catch (Exception ex)
+                {
+                    Diag.Line("samples: wave: " + ex.Message);
+                    w = new Waveform();
+                    w.Note = "cannot decode";
+                }
+                try
+                {
+                    BeginInvoke((MethodInvoker)delegate
+                    {
+                        // Another sample was picked meanwhile — this answer is nobody's now.
+                        if (!string.Equals(_waveFor, path, StringComparison.OrdinalIgnoreCase)) return;
+                        _wave = w;
+                        _format = fmt;
+                        _durationMs = ms;
+                        Invalidate();
+                    });
+                }
+                catch { }
+            });
         }
 
         public void OnArrangement(Arrangement a)
@@ -217,7 +354,7 @@ namespace AbletonManager
 
         void ApplyAction()
         {
-            if (_pluginMode)
+            if (_mode != PanelMode.Set)
             {
                 // The "Show in Explorer" button was removed: the plugin path became a link
                 // itself, and the button at the bottom repeated what one wants to click anyway.
@@ -239,7 +376,7 @@ namespace AbletonManager
         /// </summary>
         void ShowActionMenu()
         {
-            if (_set == null || _pluginMode) return;
+            if (_set == null || _mode != PanelMode.Set) return;
 
             // A click on the button while the popup is open closes it first — the popup leaves
             // on any click outside itself, and only then does the click reach the button.
@@ -311,7 +448,7 @@ namespace AbletonManager
         {
             get
             {
-                int buttons = _pluginMode ? 0 : Sc(Theme.ControlH);
+                int buttons = _mode != PanelMode.Set ? 0 : Sc(Theme.ControlH);
                 return Height - Pad - buttons - Sc(16);
             }
         }
@@ -350,16 +487,25 @@ namespace AbletonManager
             for (int i = 0; i < _pluginRowRects.Count; i++)
                 if (_pluginRowRects[i].Contains(e.Location)) { pluginRowHot = i; break; }
 
-            bool n = _set != null && !_pluginMode && _notesRect.Contains(e.Location);
-            bool up = !_topRect.IsEmpty && _topRect.Contains(e.Location);
-            if (up) { t = l = n = false; rowHot = pluginRowHot = -1; }
+            int fileRowHot = -1;
+            for (int i = 0; i < _fileRowRects.Count; i++)
+                if (_fileRowRects[i].Contains(e.Location)) { fileRowHot = i; break; }
 
-            if (t != _thumbHot || l != _linkHot || n != _notesHot || up != _topHot
-                || rowHot != _setRowHot || pluginRowHot != _pluginRowHot)
+            // The wave is a button only where something will sound.
+            bool wave = WaveClicked != null && _sample != null && _sample.CanPreview
+                     && !_waveRect.IsEmpty && _waveRect.Contains(e.Location);
+
+            bool n = _set != null && _mode == PanelMode.Set && _notesRect.Contains(e.Location);
+            bool up = !_topRect.IsEmpty && _topRect.Contains(e.Location);
+            if (up) { t = l = n = wave = false; rowHot = pluginRowHot = fileRowHot = -1; }
+
+            if (t != _thumbHot || l != _linkHot || n != _notesHot || up != _topHot || wave != _waveHot
+                || rowHot != _setRowHot || pluginRowHot != _pluginRowHot || fileRowHot != _fileRowHot)
             {
-                _thumbHot = t; _linkHot = l; _notesHot = n; _topHot = up;
-                _setRowHot = rowHot; _pluginRowHot = pluginRowHot;
-                Cursor = (t || l || n || up || rowHot >= 0 || pluginRowHot >= 0) ? Cursors.Hand : Cursors.Default;
+                _thumbHot = t; _linkHot = l; _notesHot = n; _topHot = up; _waveHot = wave;
+                _setRowHot = rowHot; _pluginRowHot = pluginRowHot; _fileRowHot = fileRowHot;
+                Cursor = (t || l || n || up || wave || rowHot >= 0 || pluginRowHot >= 0 || fileRowHot >= 0)
+                       ? Cursors.Hand : Cursors.Default;
                 Invalidate();
             }
             base.OnMouseMove(e);
@@ -367,11 +513,13 @@ namespace AbletonManager
 
         protected override void OnMouseLeave(EventArgs e)
         {
-            if (_thumbHot || _linkHot || _notesHot || _topHot || _setRowHot >= 0 || _pluginRowHot >= 0)
+            if (_thumbHot || _linkHot || _notesHot || _topHot || _waveHot
+                || _setRowHot >= 0 || _pluginRowHot >= 0 || _fileRowHot >= 0)
             {
-                _thumbHot = _linkHot = _notesHot = _topHot = false;
+                _thumbHot = _linkHot = _notesHot = _topHot = _waveHot = false;
                 _setRowHot = -1;
                 _pluginRowHot = -1;
+                _fileRowHot = -1;
                 Cursor = Cursors.Default;
                 Invalidate();
             }
@@ -408,6 +556,19 @@ namespace AbletonManager
                     PluginRequested(_pluginRowNames[_pluginRowHot]);
                     return;
                 }
+                if (_fileRowHot >= 0 && _fileRowHot < _topFiles.Count && SampleRequested != null)
+                {
+                    SampleRequested(_topFiles[_fileRowHot]);
+                    return;
+                }
+                if (_waveHot && WaveClicked != null)
+                {
+                    // The same inset as the wave's own box in WaveView.PaintWave.
+                    int inset = Sc(10);
+                    float at = (e.X - _waveRect.X - inset) / (float)Math.Max(1, _waveRect.Width - inset * 2);
+                    WaveClicked(Math.Max(0f, Math.Min(1f, at)));
+                    return;
+                }
             }
             base.OnMouseDown(e);
         }
@@ -438,37 +599,27 @@ namespace AbletonManager
             int over = _scroller != null ? (int)Math.Round(_scroller.Overscroll) : 0;
             int y = Pad - _scroll - over;
 
-            if (_emptyTitle != null)
-            {
-                _thumbRect = _linkRect = _topRect = Rectangle.Empty;
-                _setRowRects.Clear(); _setRowSets.Clear(); _pluginRowRects.Clear(); _pluginRowNames.Clear();
-                PaintEmpty(g, Pad, w, _emptyTitle, _emptyHint);
-                return;
-            }
-
-            if (_pluginMode) { PaintPlugin(g, Pad, y, w, over); return; }
+            // Every clickable rectangle is laid out anew by the paint below.
+            _thumbRect = _linkRect = _topRect = _waveRect = Rectangle.Empty;
             _setRowRects.Clear();
             _setRowSets.Clear();
             _pluginRowRects.Clear();
             _pluginRowNames.Clear();
+            _fileRowRects.Clear();
+
+            if (_mode == PanelMode.Plugin) { PaintPlugin(g, Pad, y, w, over); return; }
+            if (_mode == PanelMode.Folder) { PaintFolder(g, y, w, over); return; }
+            if (_mode == PanelMode.Sample) { PaintSample(g, y, w, over); return; }
 
             if (_set == null)
             {
-                _thumbRect = _linkRect = _topRect = Rectangle.Empty;
                 PaintEmpty(g, Pad, w, "No set selected", "Pick one from the list");
                 return;
             }
 
             // The heading and the weight of the whole project folder on one line — the same
             // number as in the list column.
-            int titleH = Sc(26);
-            string size = MainForm.SizeMB(_set.ProjectSize);
-            Size sw = TextRenderer.MeasureText(g, size, Theme.FLabel, new Size(w, titleH), PanelRight);
-            Chrome.DrawText(g, _set.Name, Theme.FTitle,
-                new Rectangle(Pad, y, w - sw.Width - Sc(10), titleH), Theme.Text, PanelLeft);
-            Chrome.DrawText(g, size, Theme.FLabel,
-                new Rectangle(Pad, y, w, titleH), Theme.TextDim, PanelRight);
-            y += titleH + Sc(16);
+            y = Header(g, _set.Name, MainForm.SizeMB(_set.ProjectSize), y, w) + Sc(16);
 
             y = Thumb(g, Pad, y, w) + Sc(16);
 
@@ -535,16 +686,8 @@ namespace AbletonManager
                     if (m == MatchKind.OtherFormat)
                         Chrome.DrawText(g, "other format", Theme.FLabel,
                                         rr, Theme.TextDim, PanelRight);
-                    if (hot)
-                    {
-                        // We underline only this row and only to the width of the text — the
-                        // same presentation as the clickable sets in a plugin's panel.
-                        Size ts = TextRenderer.MeasureText(g, _set.Plugins[i], Theme.FLabel, new Size(rr.Width, rr.Height), PanelLeft);
-                        int ly = rr.Y + (rr.Height + ts.Height) / 2;
-                        int lx = rr.X + UnderlinePad;
-                        using (Pen ln = new Pen(c))
-                            g.DrawLine(ln, lx, ly, lx + Math.Min(ts.Width, rr.Width - UnderlinePad), ly);
-                    }
+                    // The same presentation as the clickable sets in a plugin's panel.
+                    if (hot) Underline(g, _set.Plugins[i], Theme.FLabel, rr, c);
                     _pluginRowRects.Add(rr);
                     _pluginRowNames.Add(_set.Plugins[i]);
                     y += Sc(28);
@@ -701,14 +844,7 @@ namespace AbletonManager
 
                 // We do not underline the current one even under the cursor: there is no point
                 // clicking it.
-                if (hot && !current)
-                {
-                    Size ts = TextRenderer.MeasureText(g, v.Name, Theme.FBadge, new Size(rr.Width, rr.Height), PanelLeft);
-                    int ly = rr.Y + (rr.Height + ts.Height) / 2;
-                    using (Pen ln = new Pen(Color.White))
-                        g.DrawLine(ln, rr.X + UnderlinePad, ly,
-                                   rr.X + UnderlinePad + Math.Min(ts.Width, rr.Width - UnderlinePad), ly);
-                }
+                if (hot && !current) Underline(g, v.Name, Theme.FBadge, rr, Color.White);
 
                 _setRowRects.Add(rr);
                 _setRowSets.Add(v);
@@ -739,11 +875,6 @@ namespace AbletonManager
 
         void PaintPlugin(Graphics g, int pad, int y, int w, int over)
         {
-            _thumbRect = _linkRect = _topRect = Rectangle.Empty;
-            _setRowRects.Clear();
-            _setRowSets.Clear();
-            _pluginRowRects.Clear();
-            _pluginRowNames.Clear();
             PluginStat p = _plugin;
             if (p == null)
             {
@@ -813,16 +944,7 @@ namespace AbletonManager
                 Rectangle rr = new Rectangle(pad, y, w, Sc(28));
                 bool hot = _setRowHot == shown;
                 Chrome.DrawText(g, s.Name, Theme.FLabel, rr, hot ? Color.White : Theme.Text, PanelLeft);
-                if (hot)
-                {
-                    // We underline only this row and only to the width of the text — not the
-                    // whole row, or it looks like a button rather than a link.
-                    Size ts = TextRenderer.MeasureText(g, s.Name, Theme.FLabel, new Size(rr.Width, rr.Height), PanelLeft);
-                    int ly = rr.Y + (rr.Height + ts.Height) / 2;
-                    int lx = rr.X + UnderlinePad;
-                    using (Pen ln = new Pen(Color.White))
-                        g.DrawLine(ln, lx, ly, lx + Math.Min(ts.Width, rr.Width - UnderlinePad), ly);
-                }
+                if (hot) Underline(g, s.Name, Theme.FLabel, rr, Color.White);
                 _setRowRects.Add(rr);
                 _setRowSets.Add(s);
                 y += Sc(28);
@@ -848,7 +970,196 @@ namespace AbletonManager
             PaintScrollTop(g);
         }
 
+        static readonly System.Globalization.CultureInfo Inv = System.Globalization.CultureInfo.InvariantCulture;
+
+        void PaintFolder(Graphics g, int y, int w, int over)
+        {
+            SampleFolder d = _folder;
+            if (d == null)
+            {
+                PaintEmpty(g, Pad, w, "No folder selected", "Pick a folder or a sample");
+                return;
+            }
+
+            y = Header(g, d.Name, MainForm.SizeMB(d.TotalBytes), y, w) + Sc(10);
+            y = PathLink(g, d.Path, y, w) + Sc(16);
+
+            FolderUse u = _unknown ? null : _use.Of(d);
+            y = Row(g, "Samples:", d.TotalSamples.ToString("N0", Inv), Theme.Text, Pad, y, w);
+            y = UseRow(g, "Used:", u == null ? null : u.Used.ToString("N0", Inv) + " · " + Share(u.Used, d.TotalSamples), "none", y, w);
+            y = UseRow(g, "Projects:", u == null ? null : u.Projects.ToString("N0", Inv), "none", y, w);
+            y = UseRow(g, "Last used:", u == null ? null : u.LastUsed.ToLocalTime().ToString("yyyy-MM-dd"), "never", y, w);
+            y += Sc(16);
+
+            if (u != null && _topFiles.Count > 0)
+            {
+                y = Line(g, "Most used (" + u.Used.ToString("N0", Inv) + "):", Theme.FLabel, Theme.TextDim, Pad, y, w) + Sc(8);
+                foreach (SampleFile f in _topFiles)
+                {
+                    if (Below(y + Sc(28))) break;
+                    bool hot = _fileRowHot == _fileRowRects.Count;
+                    Rectangle rr = new Rectangle(Pad, y, w, Sc(28));
+                    // How many projects, at the right — the reason the sample is in the list.
+                    string count = _use.Of(f).Projects.ToString("N0", Inv);
+                    Chrome.DrawText(g, count, Theme.FLabel, rr, Theme.TextDim, PanelRight);
+                    int cw = TextRenderer.MeasureText(g, count, Theme.FLabel, rr.Size, PanelRight).Width;
+                    Rectangle nr = new Rectangle(rr.X, rr.Y, Math.Max(0, rr.Width - cw - Sc(8)), rr.Height);
+                    Chrome.DrawText(g, f.Name, Theme.FLabel, nr, hot ? Color.White : Theme.Text, PanelLeft);
+                    if (hot) Underline(g, f.Name, Theme.FLabel, nr, Color.White);
+                    _fileRowRects.Add(rr);
+                    y += Sc(28);
+                }
+                // Ten at most, on purpose: the whole list is the Most used lens.
+                if (u.Used > _fileRowRects.Count && !Below(y + Sc(28)))
+                    y = Line(g, "… " + (u.Used - _fileRowRects.Count).ToString("N0", Inv) + " more",
+                             Theme.FLabel, Theme.TextDim, Pad, y, w);
+                y += Sc(16);
+            }
+
+            y = ProjectsList(g, y, w);
+            _contentHeight = y + _scroll + over + Pad;
+            ClampScroll();
+            PaintScrollTop(g);
+        }
+
+        void PaintSample(Graphics g, int y, int w, int over)
+        {
+            SampleFile f = _sample;
+            if (f == null)
+            {
+                PaintEmpty(g, Pad, w, "No folder selected", "Pick a folder or a sample");
+                return;
+            }
+
+            y = Header(g, f.Name, MainForm.SampleSize(f.Size), y, w) + Sc(16);
+
+            // Where a set shows its arrangement, a sample shows its wave.
+            _waveRect = new Rectangle(Pad, y, w, Sc(96));
+            string hint = !f.CanPreview ? "only Live plays this file"
+                        : _wave == null ? "reading…"
+                        : _wave.Ok ? "" : _wave.Note;
+            WaveView.PaintWave(g, _waveRect, _wave, _waveProgress, _wavePlaying, hint, DeviceDpi / 96f);
+            y = _waveRect.Bottom + Sc(16);
+
+            y = PathLink(g, f.Path, y, w) + Sc(16);
+
+            SampleUse u = _unknown ? null : _use.Of(f);
+            if (_durationMs > 0) y = Row(g, "Duration:", Duration(_durationMs), Theme.Text, Pad, y, w);
+            if (_format.Length > 0) y = Row(g, "Format:", _format, Theme.Text, Pad, y, w);
+            y = UseRow(g, "Projects:", u == null ? null : u.Projects.ToString("N0", Inv), "none", y, w);
+            y = UseRow(g, "Last used:", u == null ? null : u.LastUsed.ToLocalTime().ToString("yyyy-MM-dd"), "never", y, w);
+            y += Sc(16);
+
+            y = ProjectsList(g, y, w);
+            _contentHeight = y + _scroll + over + Pad;
+            ClampScroll();
+            PaintScrollTop(g);
+        }
+
+        /// <summary>A usage line: the value, or — while the sets are still being read — "…", or
+        /// dim "none"/"never" when nothing uses it.</summary>
+        int UseRow(Graphics g, string label, string value, string nothing, int y, int w)
+        {
+            if (value != null) return Row(g, label, value, Theme.Text, Pad, y, w);
+            return Row(g, label, _unknown ? "…" : nothing, Theme.TextDim, Pad, y, w);
+        }
+
+        /// <summary>The projects of a folder or a sample, newest first, each under its newest
+        /// set — a click goes to that set on the Sets tab, as from a plugin's panel. Names
+        /// only, as there: a date beside them cut the longer ones short.</summary>
+        int ProjectsList(Graphics g, int y, int w)
+        {
+            if (_projects.Count == 0) return y;
+            y = Line(g, "Projects (" + _projects.Count.ToString("N0", Inv) + "):", Theme.FLabel, Theme.TextDim, Pad, y, w) + Sc(8);
+            int shown = 0;
+            foreach (SetEntry s in _projects)
+            {
+                if (Below(y + Sc(28))) break;
+                bool hot = _setRowHot == shown;
+                Rectangle rr = new Rectangle(Pad, y, w, Sc(28));
+                Chrome.DrawText(g, s.Name, Theme.FLabel, rr, hot ? Color.White : Theme.Text, PanelLeft);
+                if (hot) Underline(g, s.Name, Theme.FLabel, rr, Color.White);
+                _setRowRects.Add(rr);
+                _setRowSets.Add(s);
+                y += Sc(28);
+                shown++;
+            }
+            // As on a plugin: what did not fit is counted, and its height is kept so the tail
+            // can be scrolled to.
+            if (_projects.Count > shown)
+            {
+                if (!Below(y + Sc(28)))
+                    y = Line(g, "… " + (_projects.Count - shown) + " more", Theme.FLabel, Theme.TextDim, Pad, y, w);
+                else
+                    y += Sc(28) * (_projects.Count - shown);
+            }
+            return y;
+        }
+
+        static string Share(int part, int whole)
+        {
+            if (whole <= 0) return "";
+            double p = part * 100.0 / whole;
+            if (p > 0 && p < 0.1) return "<0.1%";
+            return p.ToString(p < 10 ? "0.0" : "0", Inv) + "%";
+        }
+
+        static string Duration(int ms)
+        {
+            if (ms < 60000) return (ms / 1000.0).ToString("0.0", Inv) + " s";
+            int s = ms / 1000;
+            return (s / 60) + ":" + (s % 60).ToString("00");
+        }
+
         // ------------------------------------------------------------------ pieces
+
+        /// <summary>
+        /// The name and the weight on one line — the heading of every kind of panel. A name too
+        /// long for it takes a second line rather than losing its end: names in a sample library
+        /// run long ("Session Drums Multimic" already does not fit beside "12.31 GB").
+        /// </summary>
+        int Header(Graphics g, string name, string size, int y, int w)
+        {
+            int titleH = Sc(26);
+            Size sw = TextRenderer.MeasureText(g, size, Theme.FLabel, new Size(w, titleH), PanelRight);
+            int nw = w - sw.Width - Sc(10);
+            Chrome.DrawText(g, size, Theme.FLabel, new Rectangle(Pad, y, w, titleH), Theme.TextDim, PanelRight);
+
+            const TextFormatFlags oneLine = TextFormatFlags.SingleLine | TextFormatFlags.NoPrefix | TextFormatFlags.NoPadding;
+            if (TextRenderer.MeasureText(g, name, Theme.FTitle, Size.Empty, oneLine).Width <= nw)
+            {
+                Chrome.DrawText(g, name, Theme.FTitle, new Rectangle(Pad, y, nw, titleH), Theme.Text, PanelLeft);
+                return y + titleH;
+            }
+
+            // The first line stands where the one-line title would; the second, if even two
+            // are not enough, ends in an ellipsis.
+            int line = TextRenderer.MeasureText(g, "Ag", Theme.FTitle).Height;
+            int top = y + (titleH - line) / 2;
+            int h = Math.Min(line * 2, TextRenderer.MeasureText(g, name, Theme.FTitle, new Size(nw, int.MaxValue), Chrome.Wrap).Height);
+            TextRenderer.DrawText(g, name, Theme.FTitle, new Rectangle(Pad, top, nw, h), Theme.Text,
+                                  Chrome.Wrap | TextFormatFlags.EndEllipsis);
+            return top + h + (titleH - line) / 2;
+        }
+
+        /// <summary>A path that is itself the link to Explorer, as on a plugin.</summary>
+        int PathLink(Graphics g, string path, int y, int w)
+        {
+            int bottom = Wrapped(g, path, Theme.FSmall, _linkHot ? Theme.Text : Theme.TextDim, Pad, y, w);
+            _linkRect = new Rectangle(Pad, y, w, bottom - y);
+            return bottom;
+        }
+
+        /// <summary>Only this row and only to the width of its text — a link, not a
+        /// button.</summary>
+        void Underline(Graphics g, string text, Font f, Rectangle rr, Color c)
+        {
+            Size ts = TextRenderer.MeasureText(g, text, f, new Size(rr.Width, rr.Height), PanelLeft);
+            int ly = rr.Y + (rr.Height + ts.Height) / 2;
+            int lx = rr.X + UnderlinePad;
+            using (Pen ln = new Pen(c))
+                g.DrawLine(ln, lx, ly, lx + Math.Min(ts.Width, rr.Width - UnderlinePad), ly);
+        }
 
         int Thumb(Graphics g, int x, int y, int w)
         {
