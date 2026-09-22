@@ -443,17 +443,13 @@ namespace AbletonManager
             Section(x, ref y, w, "General");
 
             Line(x, ref y, w, h, _update, "Alive " + Application.ProductVersion, "");
-            _updateRect = Rectangle.Empty;
-            if (_updateNote.Length > 0)
-            {
-                _updateRect = new Rectangle(x, y - Sc(8), w - _update.Width - Sc(16), Sc(24));
-                y += Sc(22);
-            }
+            // The answer shares the row with the version and is pushed against the button that
+            // produced it. Under the row it would have to be given room the moment it appears,
+            // and a window that grows taller to say "you have the latest version" asks for more
+            // attention than the news deserves.
+            _updateRect = _rows[_rows.Count - 1].Rect;
 
-            Line(x, ref y, w, h, _autoUpdate,
-                 "Check automatically",
-                 "Once a day, asks GitHub for the newest release. Nothing about you, your "
-                 + "library or this machine is sent.");
+            Line(x, ref y, w, h, _autoUpdate, "Check updates once a day", "");
 
             Line(x, ref y, w, h, _openCache,
                  "Temporary files",
@@ -611,6 +607,9 @@ namespace AbletonManager
         /// edge.</summary>
         internal void PaintRows(Graphics g)
         {
+            const TextFormatFlags rightFlags = TextFormatFlags.Right | TextFormatFlags.VerticalCenter |
+                                               TextFormatFlags.SingleLine | TextFormatFlags.NoPrefix |
+                                               TextFormatFlags.EndEllipsis;
             const TextFormatFlags leftFlags = TextFormatFlags.Left | TextFormatFlags.VerticalCenter |
                                               TextFormatFlags.SingleLine | TextFormatFlags.NoPrefix |
                                               TextFormatFlags.NoPadding | TextFormatFlags.NoClipping;
@@ -645,7 +644,7 @@ namespace AbletonManager
             }
 
             Chrome.DrawText(g, _inventory, Theme.FSmall, _statusRect, Theme.TextDim, leftFlags);
-            Chrome.DrawText(g, _updateNote, Theme.FSmall, _updateRect, Theme.TextDim, leftFlags);
+            Chrome.DrawText(g, _updateNote, Theme.FSmall, _updateRect, Theme.TextDim, rightFlags);
         }
 
         /// <summary>The wheel over the heading or the close button scrolls too.</summary>
