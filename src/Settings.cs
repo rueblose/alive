@@ -14,6 +14,11 @@ namespace AbletonManager
         // (and in the UI), but Scan() skips it until it is put back.
         public readonly List<string> DisabledRoots = new List<string>();
 
+        /// <summary>Folders of the sample library — the Samples tab. The same shape as Roots
+        /// and DisabledRoots: a folder switched off stays in the list but is not walked.</summary>
+        public readonly List<string> SampleRoots = new List<string>();
+        public readonly List<string> DisabledSampleRoots = new List<string>();
+
         /// <summary>
         /// Columns of the sets list: visibility, order and widths in one string of the form
         /// "Set,Modified:150,BPM:81,…". Empty means the default set. It is stored as is; the
@@ -176,6 +181,10 @@ namespace AbletonManager
                     if (key == "root" && val.Length > 0 && !Has(s.Roots, val)) s.Roots.Add(val);
                     else if (key == "root_off" && val.Length > 0 && !Has(s.DisabledRoots, val))
                         s.DisabledRoots.Add(val);
+                    else if (key == "samplefolder" && val.Length > 0 && !Has(s.SampleRoots, val))
+                        s.SampleRoots.Add(val);
+                    else if (key == "samplefolder_off" && val.Length > 0 && !Has(s.DisabledSampleRoots, val))
+                        s.DisabledSampleRoots.Add(val);
                     else if (key == "setcolumns") s.SetColumns = val;
                     else if (key == "plugincolumns") s.PluginColumns = val;
                     else if (key == "columnssorted") s.ColumnsSorted = val == "1";
@@ -247,6 +256,8 @@ namespace AbletonManager
                 sb.AppendLine("# Alive - folders to scan for projects");
                 foreach (string r in Roots) sb.Append("root=").AppendLine(r);
                 foreach (string r in DisabledRoots) sb.Append("root_off=").AppendLine(r);
+                foreach (string r in SampleRoots) sb.Append("samplefolder=").AppendLine(r);
+                foreach (string r in DisabledSampleRoots) sb.Append("samplefolder_off=").AppendLine(r);
                 sb.Append("pinnedfirst=").AppendLine(PinnedFirst ? "1" : "0");
                 sb.Append("overviewopen=").AppendLine(OverviewOpen ? "1" : "0");
                 sb.Append("noglass=").AppendLine(DisableGlass ? "1" : "0");

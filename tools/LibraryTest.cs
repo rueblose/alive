@@ -45,6 +45,7 @@ namespace AliveTools
             string cmd = args.Length > 0 ? args[0].ToLowerInvariant() : "";
             if (cmd == "real") { Real(args); return 0; }
             if (cmd == "all" || cmd == "index") Index();
+            if (cmd == "all" || cmd == "walk") Walk();
 
             if (_checks == 0)
             {
@@ -176,6 +177,129 @@ namespace AliveTools
             Check(c != null && c.Samples.Length == 1 && c.SampleSizes.Length == 1
                   && Same(c.Samples[0], kick) && c.SampleSizes[0] == kickSize,
                   "index: the samples did not survive the cache");
+        }
+
+        // ------------------------------------------------------------------- walk
+
+        [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+        static extern bool CreateDirectoryW(string path, IntPtr security);
+
+        [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+        static extern bool CopyFileW(string from, string to, bool failIfExists);
+
+        static bool Junction(string link, string target)
+        {
+            ProcessStartInfo psi = new ProcessStartInfo("cmd.exe", "/c mklink /J \"" + link + "\" \"" + target + "\"");
+            psi.UseShellExecute = false;
+            psi.CreateNoWindow = true;
+            psi.RedirectStandardOutput = true;
+            using (Process p = Process.Start(psi))
+            {
+                p.StandardOutput.ReadToEnd();
+                p.WaitForExit(10000);
+                return p.ExitCode == 0;
+            }
+        }
+
+        /// <summary>A chain of folders past 260 characters with one sample at the bottom.
+        /// Returns the sample's path, or null when Windows refused to make it.</summary>
+        static string LongSample(string root, string first)
+        {
+            string dir = Path.Combine(root, first);
+            Directory.CreateDirectory(dir);
+            while (dir.Length < 300)
+            {
+                dir = dir + "\\" + new string('x', 40);
+                if (!CreateDirectoryW(@"\\?\" + dir, IntPtr.Zero)) return null;
+            }
+            string small = Path.Combine(DataRoot, "one.wav");
+            WriteWav(small, 10);
+            string file = dir + "\\deep.wav";
+            return CopyFileW(small, @"\\?\" + file, false) ? file : null;
+        }
+
+        static SampleFolder Child(SampleFolder f, string name)
+        {
+            if (f == null) return null;
+            foreach (SampleFolder c in f.Children)
+                if (Same(c.Name, name)) return c;
+            return null;
+        }
+
+        static long Size(string path) { return new FileInfo(path).Length; }
+
+        static void Walk()
+        {
+            string lib = Path.Combine(Fresh("walk"), "Samples");
+            WriteWav(Path.Combine(lib, "top.wav"), 10);                                       // right in the root
+            string kick1 = Path.Combine(lib, @"Pack A\Kicks\kick 1.wav");
+            WriteWav(kick1, 10);
+            WriteWav(Path.Combine(lib, @"Pack A\Kicks\kick 2.WAV"), 10);                     // case of the extension
+            File.WriteAllBytes(Path.Combine(lib, @"Pack A\Kicks\._kick 1.wav"), new byte[4096]);  // AppleDouble
+            File.WriteAllBytes(Path.Combine(lib, @"Pack A\Kicks\kick 1.wav.asd"), new byte[100]); // analysis file
+            string ogg = Path.Combine(lib, @"Pack A\Ableton Folder Info\Previews\kick.ogg");
+            WriteWav(ogg, 10);                                                                  // Live's preview
+            string take = Path.Combine(lib, @"Pack A\Demo Project\Samples\take.wav");
+            WriteWav(take, 10);                                                                 // a project inside
+            Directory.CreateDirectory(Path.Combine(lib, @"Pack A\Presets"));
+            File.WriteAllBytes(Path.Combine(lib, @"Pack A\Presets\bass.adv"), new byte[300]);  // nothing to hear
+            WriteWav(Path.Combine(lib, @"Pack B\loop.aif"), 10);
+            bool junction = Junction(Path.Combine(lib, @"Pack B\again"), lib);
+            string deep = LongSample(lib, "Pack C");
+            if (!junction) Console.WriteLine("walk: could not make a junction - that check is skipped");
+            if (deep == null) Console.WriteLine("walk: could not make a long path - that check is skipped");
+
+            int expected = 4 + (deep != null ? 1 : 0);      // top, kick 1, kick 2, loop, and the deep one
+            long packA = Size(kick1) + Size(Path.Combine(lib, @"Pack A\Kicks\kick 2.WAV")) + 4096 + 100
+                       + Size(ogg) + Size(take) + 300;
+
+            // The second root lies inside the first: it must not be walked on its own.
+            List<string> roots = new List<string> { lib, Path.Combine(lib, "Pack A") };
+            SampleIndex idx = SampleIndex.Build(roots, new List<string>(), null, CancellationToken.None);
+
+            Check(idx.Roots.Count == 1, "walk: a root inside another root must be skipped");
+            SampleFolder r = idx.Roots.Count > 0 ? idx.Roots[0] : null;
+            Check(r != null && r.TotalSamples == expected,
+                  "walk: " + expected + " samples expected, got " + (r != null ? r.TotalSamples : -1));
+            SampleFolder a = Child(r, "Pack A");
+            Check(a != null && a.Children.Count == 1 && Same(a.Children[0].Name, "Kicks"),
+                  "walk: only folders with samples below them become nodes");
+            SampleFolder kicks = Child(a, "Kicks");
+            Check(kicks != null && kicks.Files.Count == 2, "walk: ._ files and .asd are not samples");
+            Check(a != null && a.TotalBytes == packA,
+                  "walk: Pack A should weigh " + packA + " with its weight-only folders, got " + (a != null ? a.TotalBytes : -1));
+            Check(kicks != null && kicks.Files.Count > 0 && Same(kicks.Files[0].Path.Substring(0, kicks.Path.Length), kicks.Path),
+                  "walk: a sample's path is not under its folder");
+            if (junction)
+                Check(Child(r, "Pack B") != null && Child(r, "Pack B").TotalSamples == 1, "walk: the junction was followed");
+            Check(idx.Files.Count == expected, "walk: Files holds " + idx.Files.Count + " instead of " + expected);
+            Check(SampleIndex.CountIn(lib, null) == expected, "walk: CountIn disagrees with the walk");
+            Check(SampleIndex.CountIn(Path.Combine(lib, "nowhere"), null) == -1, "walk: a missing folder must count -1");
+
+            idx.SaveCache();
+            SampleIndex back = SampleIndex.LoadCache();
+            Check(back.Roots.Count == 1 && back.Files.Count == expected && back.Folders.Count == idx.Folders.Count,
+                  "walk: the cache does not give back the same index");
+            SampleFolder backA = back.Roots.Count == 1 ? Child(back.Roots[0], "Pack A") : null;
+            Check(backA != null && backA.TotalBytes == packA && Child(backA, "Kicks") != null
+                  && Child(backA, "Kicks").Files.Count == 2,
+                  "walk: the cache lost weights or files");
+
+            Check(back.Only(new List<string>(), new List<string>()).Roots.Count == 0, "walk: Only kept a removed root");
+            Check(back.Only(new List<string> { lib }, new List<string> { lib }).Files.Count == 0, "walk: Only kept a disabled root");
+            Check(ReferenceEquals(back.Only(new List<string> { lib }, new List<string>()), back),
+                  "walk: Only made a copy although nothing changed");
+
+            File.WriteAllBytes(Path.Combine(Settings.Dir, "samples.cache"), new byte[] { 99, 0, 0, 0 });
+            Check(SampleIndex.LoadCache().Roots.Count == 0, "walk: a cache of another version must read as empty");
+
+            Settings s = new Settings();
+            s.SampleRoots.Add(lib);
+            s.DisabledSampleRoots.Add(lib);
+            s.Save();
+            Settings loaded = Settings.Load();
+            Check(loaded.SampleRoots.Count == 1 && Same(loaded.SampleRoots[0], lib)
+                  && loaded.DisabledSampleRoots.Count == 1, "walk: sample folders did not survive settings.cfg");
         }
 
         // ------------------------------------------------------------------- real
