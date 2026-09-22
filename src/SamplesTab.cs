@@ -48,6 +48,14 @@ namespace AbletonManager
 
         readonly SamplesEmpty _samplesEmpty = new SamplesEmpty();
 
+        // The preview: a player of its own, not the render player — a sample is heard, not
+        // listened to. _audition: Space or ▶ armed it, and moving the selection plays the next
+        // sample until it is stopped, the way Live's browser previews.
+        readonly AudioPlayer _preview = new AudioPlayer();
+        readonly System.Windows.Forms.Timer _previewTimer = new System.Windows.Forms.Timer();
+        SampleFile _previewing;
+        bool _audition;
+
         sealed class SampleCol
         {
             public string Id = "", Title = "";
@@ -73,6 +81,9 @@ namespace AbletonManager
             _samplesEmpty.ChooseFolders += delegate { EditSampleRoots(false); };
             _samplesEmpty.Visible = false;
             Controls.Add(_samplesEmpty);
+
+            _previewTimer.Interval = 50;
+            _previewTimer.Tick += delegate { PreviewTick(); };
         }
 
         void LoadSamplesFromCache()
@@ -270,8 +281,8 @@ namespace AbletonManager
                 SampleFile f = r.Tag as SampleFile;
                 return f != null ? f.Path : null;
             };
-            _list.PlayingTag = null;
-            _list.Playing = false;
+            _list.PlayingTag = _previewing;
+            _list.Playing = _previewing != null;
 
             _sampleCols = SampleColumns();
             Column[] cols = new Column[_sampleCols.Count];
@@ -559,6 +570,101 @@ namespace AbletonManager
             if (f != null) ShowSampleInTree(f.Folder, f.Path);
         }
 
+        // -------------------------------------------------------------- preview
+
+        void PlaySample(SampleFile f)
+        {
+            if (f == null || !f.CanPreview) return;
+            // One sound at a time: a render that is playing makes way.
+            bool player = _player != null && !_player.IsDisposed;
+            if (player && _player.IsPlaying) _player.PlayPause();
+            _preview.Volume = player ? _player.Volume : 0.8f;
+            _preview.Open(f.Path, true);
+            _previewing = f;
+            _audition = true;
+            _list.PlayingTag = f;
+            _list.Playing = true;
+            _list.Invalidate();
+            _previewTimer.Start();
+            UpdatePlayerTransport();
+        }
+
+        /// <summary>disarm — the person stopped it: the next arrow is silent again. A sample that
+        /// simply ran out keeps the audition armed, or a short hit would have to be started
+        /// anew on every step.</summary>
+        void StopSample(bool disarm)
+        {
+            if (disarm) _audition = false;
+            if (_previewing == null) return;
+            _preview.Close();
+            _previewing = null;
+            _previewTimer.Stop();
+            if (SamplesDomain) { _list.PlayingTag = null; _list.Playing = false; _list.Invalidate(); }
+            _detail.StopWave();
+        }
+
+        /// <summary>▶, Space, Enter on a sample: the playing one stops, any other starts. A file
+        /// only Live plays silences whatever was playing.</summary>
+        void ToggleSample(SampleFile f)
+        {
+            if (f == null) return;
+            if (SamePath(_previewing, f.Path) || !f.CanPreview) { StopSample(true); return; }
+            PlaySample(f);
+        }
+
+        void ToggleSelectedSample()
+        {
+            RowData r = _list.Selected;
+            SampleFile f = r != null ? r.Tag as SampleFile : null;
+            if (f != null) ToggleSample(f);
+            else StopSample(true);
+        }
+
+        void PreviewTick()
+        {
+            if (_previewing == null) { _previewTimer.Stop(); return; }
+            if (_preview.OpenFailed)
+            {
+                string why = _preview.Error;
+                StopSample(false);
+                Notify(why == "File is gone" ? "File is gone" : "Can't play this file");
+                return;
+            }
+            if (_preview.Finished) { StopSample(false); return; }
+            int len = _preview.Length > 0 ? _preview.Length : _detail.SampleDurationMs;
+            if (len > 0 && _detail.ShowsSample(_previewing))
+                _detail.SetWaveProgress(Math.Min(1f, _preview.Position / (float)len));
+        }
+
+        /// <summary>An armed audition follows the selection: a sample plays, a file only Live
+        /// plays is silence, a folder ends the audition.</summary>
+        void AuditionSelection()
+        {
+            if (!_audition) return;
+            RowData r = _list.Selected;
+            SampleFile f = r != null ? r.Tag as SampleFile : null;
+            if (f == null) { StopSample(true); return; }
+            if (!f.CanPreview) { StopSample(false); return; }
+            if (!SamePath(_previewing, f.Path)) PlaySample(f);
+        }
+
+        /// <summary>A click on the wave in the panel: play from there.</summary>
+        void OnWaveClicked(float t)
+        {
+            RowData r = _list.Selected;
+            SampleFile f = r != null ? r.Tag as SampleFile : null;
+            if (f == null || !f.CanPreview) return;
+            if (!SamePath(_previewing, f.Path)) PlaySample(f);
+            int len = _detail.SampleDurationMs > 0 ? _detail.SampleDurationMs : _preview.Length;
+            if (len > 0) _preview.Seek((int)(t * len));
+        }
+
+        /// <summary>The tab is left: the preview belongs to it.</summary>
+        void LeaveSamples()
+        {
+            StopSample(true);
+        }
+
         // ----------------------------------------------------------------- tree
 
         /// <summary>The "+N" tail, Enter or an arrow. The selection stays where it was — the tail
@@ -610,7 +716,7 @@ namespace AbletonManager
         }
 
         /// <summary>Enter or a double click. A folder in the tree opens or closes; in a flat list
-        /// it is shown in the tree. A sample is shown in Explorer.</summary>
+        /// it is shown in the tree. A sample plays or stops.</summary>
         void ActivateSample()
         {
             RowData row = _list.Selected;
@@ -622,8 +728,7 @@ namespace AbletonManager
                 else ShowSampleInTree(d.Parent, d.Path);
                 return;
             }
-            SampleFile f = row.Tag as SampleFile;
-            if (f != null) RevealPath(f.Path, true);
+            ToggleSample(row.Tag as SampleFile);
         }
 
         void RevealSample()
@@ -684,6 +789,13 @@ namespace AbletonManager
             if (path == null) return;
 
             ContextMenuStrip m = DarkMenu.Create();
+            if (f != null && f.CanPreview)
+            {
+                ToolStripMenuItem play = new ToolStripMenuItem(SamePath(_previewing, f.Path) ? "Stop" : "Play");
+                play.ShortcutKeyDisplayString = "Space";
+                play.Click += delegate { ToggleSample(f); };
+                m.Items.Add(play);
+            }
             if (d != null && !SampleFlat && d.Children.Count + d.Files.Count > 0)
             {
                 ToolStripMenuItem t = new ToolStripMenuItem(_openSampleDirs.Contains(d.Path) ? "Collapse" : "Expand");

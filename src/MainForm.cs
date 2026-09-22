@@ -763,9 +763,11 @@ namespace AbletonManager
                 // catalog in two views: there is nothing to knock the sort down for, and the
                 // person will come back to it.
                 bool domainChanged = _lastDomain != Domain;
+                int leaving = _lastDomain;
                 _lastDomain = Domain;
                 if (domainChanged)
                 {
+                    if (leaving == 2) LeaveSamples();
                     _pluginView = -1;
                     _summary.Selected = -1;
                     _setSortId = null; _pluginSortId = null; _sortDesc = false;
@@ -863,6 +865,7 @@ namespace AbletonManager
             _detail.SetRequested += OnSetRequested;
             _detail.PluginRequested += OnPluginRequested;
             _detail.SampleRequested += OnSampleRequested;
+            _detail.WaveClicked += OnWaveClicked;
             _detail.NotesRequested += EditNotes;
             Controls.Add(_detail);
 
@@ -1658,6 +1661,11 @@ namespace AbletonManager
             else if (e.Control && e.KeyCode == Keys.Space && !typing && SetsDomain)
             {
                 OpenPreview();
+                e.Handled = e.SuppressKeyPress = true;
+            }
+            else if (e.KeyCode == Keys.Space && !e.Control && !typing && SamplesDomain)
+            {
+                ToggleSelectedSample();
                 e.Handled = e.SuppressKeyPress = true;
             }
             else if (e.KeyCode == Keys.Space && !typing && SetsDomain)
@@ -2568,7 +2576,9 @@ namespace AbletonManager
 
         void OnSelectionChanged()
         {
-            if (SamplesDomain) { ShowSampleDetails(); return; }
+            // The audition follows the person's selection only — not the refill that clears the
+            // selection for a moment before putting it back.
+            if (SamplesDomain) { ShowSampleDetails(); AuditionSelection(); return; }
             if (PluginsDomain)
             {
                 RowData sel = _list.Selected;
@@ -3154,8 +3164,9 @@ namespace AbletonManager
         /// </summary>
         void OnRowPlay(int idx)
         {
-            if (!SetsDomain) return;
             if (idx < 0 || idx >= _list.Rows.Count) return;
+            if (SamplesDomain) { ToggleSample(_list.Rows[idx].Tag as SampleFile); return; }
+            if (!SetsDomain) return;
             SetEntry s = _list.Rows[idx].Tag as SetEntry;
             if (s == null) return;
 
@@ -3309,7 +3320,8 @@ namespace AbletonManager
                 _player.Size = new Size(s0.Width + 1, s0.Height);
                 _player.Size = s0;
                 _player.SetChanged += delegate (SetEntry changed) {
-                    _list.PlayingTag = _home.PlayingTag = changed;
+                    _home.PlayingTag = changed;
+                    if (!SamplesDomain) _list.PlayingTag = changed;
                     UpdatePlayerTransport();   // the track changed — we re-check Playing
                     _list.Invalidate();
                     _home.Invalidate();
@@ -3324,8 +3336,9 @@ namespace AbletonManager
                     _playerVolPopup.Visible = false;
                     _volPopupTimer.Stop();
                     _playerSetLink.SetName = "";
-                    _list.PlayingTag = _home.PlayingTag = null;
-                    _list.Playing = _home.Playing = false;
+                    _home.PlayingTag = null;
+                    _home.Playing = false;
+                    if (!SamplesDomain) { _list.PlayingTag = null; _list.Playing = false; }
                     _list.Invalidate();
                     _home.Invalidate();
                     LayoutAll();       // hides the mini transport — there is nothing left to control
@@ -3409,10 +3422,14 @@ namespace AbletonManager
         void UpdatePlayerTransport()
         {
             bool playing = _player != null && !_player.IsDisposed && _player.IsPlaying;
+            // A render started from the footer or a media key silences the sample preview: two
+            // sounds at once are never wanted.
+            if (playing && _previewing != null) StopSample(true);
             Glyph want = playing ? Glyph.Pause : Glyph.Play;
             if (_playerPlayPause.Icon != want) { _playerPlayPause.Icon = want; _playerPlayPause.Invalidate(); }
 
-            if (_list.Playing != playing) { _list.Playing = playing; _list.Invalidate(); }
+            // On the Samples tab the list's pulse belongs to the preview.
+            if (!SamplesDomain && _list.Playing != playing) { _list.Playing = playing; _list.Invalidate(); }
             if (_home.Playing != playing) { _home.Playing = playing; _home.Invalidate(); }
 
             UpdatePlayerVolumeIcon();
@@ -3907,6 +3924,8 @@ namespace AbletonManager
             if (_sampleCancel != null) { try { _sampleCancel.Cancel(); } catch { } }
             if (_watch != null) { try { _watch.Dispose(); } catch { } _watch = null; }
             if (_player != null && !_player.IsDisposed) { try { _player.Close(); } catch { } }
+            _previewTimer.Stop();
+            _preview.Dispose();
             base.OnFormClosing(e);
         }
     }
