@@ -120,6 +120,23 @@ namespace AbletonManager
         /// unfolds back to, not the size of the screen.</summary>
         public bool WindowMaximized;
 
+        // ------------------------------------------------------------------ updates
+
+        /// <summary>
+        /// Whether the program may ask GitHub about a newer release on its own. This is the
+        /// only network request it ever makes — see UpdateCheck — and the only setting here
+        /// that decides whether anything leaves the machine at all.
+        /// </summary>
+        public bool CheckUpdates = true;
+
+        /// <summary>The day it last asked, yyyy-MM-dd. Once a day is plenty for a program
+        /// that gets a release every few weeks.</summary>
+        public string LastUpdateCheck = "";
+
+        /// <summary>The newest version we know of. The dot on the gear burns until the
+        /// settings are opened, and opening them writes this down.</summary>
+        public string SeenUpdate = "";
+
         public static string Dir
         {
             get
@@ -175,6 +192,9 @@ namespace AbletonManager
                     else if (key == "collecttozip") s.CollectToZip = val == "1";
                     else if (key == "window") s.WindowBounds = val;
                     else if (key == "windowmax") s.WindowMaximized = val == "1";
+                    else if (key == "checkupdates") s.CheckUpdates = val == "1";
+                    else if (key == "lastupdatecheck") s.LastUpdateCheck = val;
+                    else if (key == "seenupdate") s.SeenUpdate = val;
                 }
             }
             catch { }
@@ -242,6 +262,9 @@ namespace AbletonManager
                 sb.Append("columnssorted=").AppendLine(ColumnsSorted ? "1" : "0");
                 if (WindowBounds.Length > 0) sb.Append("window=").AppendLine(WindowBounds);
                 sb.Append("windowmax=").AppendLine(WindowMaximized ? "1" : "0");
+                sb.Append("checkupdates=").AppendLine(CheckUpdates ? "1" : "0");
+                if (LastUpdateCheck.Length > 0) sb.Append("lastupdatecheck=").AppendLine(LastUpdateCheck);
+                if (SeenUpdate.Length > 0) sb.Append("seenupdate=").AppendLine(SeenUpdate);
                 File.WriteAllText(FilePath, sb.ToString(), new UTF8Encoding(false));
             }
             catch { }

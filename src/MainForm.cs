@@ -1456,11 +1456,25 @@ namespace AbletonManager
         /// </summary>
         void ShowSettings()
         {
+            // The dot has done its job the moment the settings are opened: whatever it was
+            // about is on the first screen now. We write down which release it was, so the same
+            // one does not light it again tomorrow.
+            if (_settingsBtn.Dot)
+            {
+                _settingsBtn.Dot = false;
+                _settingsBtn.Invalidate();
+                // Written down here and not only where the button in the dialog is pressed:
+                // otherwise the background check would find the same release tomorrow and light
+                // the dot again for somebody who has already looked.
+                if (_dotVersion.Length > 0) _settings.SeenUpdate = _dotVersion;
+            }
+
             bool rescan;
             using (SettingsDialog d = new SettingsDialog(_settings))
             {
                 d.ShowDialog(this);
                 rescan = d.RescanWanted;
+                if (d.SeenVersion.Length > 0) _settings.SeenUpdate = d.SeenVersion;
             }
 
             _settings.Save();
@@ -3650,6 +3664,7 @@ namespace AbletonManager
 
                         // Now there is a catalog to look a path up in — see OpenPaths.
                         FlushPending();
+                        CheckUpdatesInBackground();
 
                         // Something else on disk changed while we were scanning — we go round
                         // once more, or those edits would wait for the next occasion.
@@ -3683,6 +3698,65 @@ namespace AbletonManager
             _status = msg;
             if (had != (_status.Length > 0)) LayoutAll();
             Invalidate();
+        }
+
+        // ------------------------------------------------------------------ updates
+
+        /// <summary>
+        /// Ask GitHub, quietly, whether there is a newer release — the one network request the
+        /// program makes, and only if the settings allow it.
+        ///
+        /// It says nothing. Failure, no network, a machine behind a proxy, GitHub rate-limiting
+        /// the address: all of it ends the same way, with no dot and no message. A catalog of
+        /// local files has no business interrupting anybody over its own version. The only
+        /// thing that can come of this is the dot on the gear, and only for a release that
+        /// moved the major or the minor number — a fix waits for somebody to ask.
+        ///
+        /// Once a day. It runs after the first scan rather than at startup so it never competes
+        /// with the thing people actually opened the program for.
+        /// </summary>
+        /// <summary>Which release the dot is burning about, so that opening the settings can
+        /// write it down and tomorrow's check stays quiet about the same one.</summary>
+        string _dotVersion = "";
+
+        void CheckUpdatesInBackground()
+        {
+            if (!_settings.CheckUpdates) return;
+
+            string today = DateTime.Now.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+            if (_settings.LastUpdateCheck == today) return;
+
+            string current = Application.ProductVersion;
+            Thread t = new Thread(delegate ()
+            {
+                UpdateCheck.Result r = UpdateCheck.Fetch();
+                try
+                {
+                    BeginInvoke((MethodInvoker)delegate
+                    {
+                        if (IsDisposed) return;
+
+                        // The day is written down even when the answer was no use: retrying on
+                        // every scan of a machine with no network would be a request a minute.
+                        _settings.LastUpdateCheck = today;
+                        _settings.Save();
+
+                        if (r.Error.Length > 0 || r.Version.Length == 0) return;
+                        if (UpdateCheck.Compare(current, r.Version) != UpdateCheck.Step.Big) return;
+
+                        // Already shown once and the settings were opened — do not light it
+                        // again for the same release.
+                        if (string.Equals(_settings.SeenUpdate, r.Version, StringComparison.Ordinal)) return;
+
+                        _dotVersion = r.Version;
+                        _settingsBtn.Dot = true;
+                        _settingsBtn.Invalidate();
+                    });
+                }
+                catch { }
+            });
+            t.IsBackground = true;
+            t.Start();
         }
 
         // ------------------------------------------------- where the window was left

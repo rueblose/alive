@@ -123,7 +123,7 @@ namespace AliveTools
         {
             if (args.Length < 2)
             {
-                Console.WriteLine("usage: Shot.exe <exe> <out.png> [--size W,H] [--click X,Y] [--rclick X,Y] [--dbl X,Y] [args...]");
+                Console.WriteLine("usage: Shot.exe <exe> <out.png> [--wait S] [--size W,H] [--click X,Y] [--rclick X,Y] [--dbl X,Y] [args...]");
                 return 2;
             }
 
@@ -135,6 +135,7 @@ namespace AliveTools
             List<Point> clicks = new List<Point>();
             List<Kind> kinds = new List<Kind>();
             Size size = Size.Empty;
+            int settle = 6000;
 
             for (int i = 2; i < args.Length; i++)
             {
@@ -153,6 +154,14 @@ namespace AliveTools
                 // --size W,H - resize the window before capturing, in physical pixels. A
                 // list draws as many rows as fit and clips the last one; the frame looks
                 // right only at a height that lands in the gap between two rows.
+                // --wait SECONDS - how long to let the program get itself together before
+                // the shot. Six is enough to read a plugin database and a set; a full scan of
+                // a real library, or anything that only happens after it, needs more.
+                if (args[i] == "--wait" && i + 1 < args.Length)
+                {
+                    settle = (int)(double.Parse(args[++i], System.Globalization.CultureInfo.InvariantCulture) * 1000);
+                    continue;
+                }
                 if (args[i] == "--size" && i + 1 < args.Length)
                 {
                     string[] wh = args[++i].Split(',');
@@ -182,7 +191,7 @@ namespace AliveTools
 
                 // The plugin database and the set are read in the background — a shot taken
                 // before that would show empty panels and "reading...".
-                Thread.Sleep(6000);
+                Thread.Sleep(settle);
 
                 ShowWindow(hwnd, 5);
                 Thread.Sleep(800);

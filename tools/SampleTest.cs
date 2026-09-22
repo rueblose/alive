@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.IO.Compression;
 using System.Text;
+using System.Windows.Forms;
 using AbletonManager;
 
 namespace AliveTools
@@ -39,6 +40,7 @@ namespace AliveTools
             else if (cmd == "collect") Collect(arg);
             else if (cmd == "show") Show(arg);
             else if (cmd == "transport") TransportProbe();
+            else if (cmd == "updates") UpdateFetch();
             else
             {
                 Console.WriteLine("usage: SampleTest.exe scan <folder or .als>");
@@ -46,6 +48,7 @@ namespace AliveTools
                 Console.WriteLine("       SampleTest.exe collect <set.als>");
                 Console.WriteLine("       SampleTest.exe show <set.als>");
                 Console.WriteLine("       SampleTest.exe transport          needs no set - it makes its own render");
+                Console.WriteLine("       SampleTest.exe updates            asks GitHub for real - a diagnostic, not a test");
                 return 2;
             }
 
@@ -252,6 +255,7 @@ namespace AliveTools
             // single real file on disk (see the comment on CollisionProbe).
             CollisionProbe();
             SameSetProbe();
+            UpdateProbe();
 
             if (!File.Exists(file)) { Check(false, "no such set: " + file); return; }
 
@@ -513,6 +517,77 @@ namespace AliveTools
             Check(SetEntry.SameSet(f, f), "a non-set tag is not equal to itself");
             Check(!SetEntry.SameSet(f, new object()), "two different non-set tags counted as one");
             Check(!SetEntry.SameSet(a, f), "a set and a foreign tag counted as the same");
+        }
+
+        /// <summary>
+        /// Which release is newer, and by how much.
+        ///
+        /// Two traps live here. One is that versions are numbers and not text: 1.10 comes after
+        /// 1.9, while any string comparison puts it before. The other is that the answer has
+        /// three values rather than two — a patch is not worth lighting the dot on the gear for,
+        /// and only the manual check ever mentions it.
+        ///
+        /// No network: Compare is given two strings and nothing else.
+        /// </summary>
+        static void UpdateProbe()
+        {
+            Check(UpdateCheck.Compare("1.1", "1.2") == UpdateCheck.Step.Big,
+                  "a new minor version is not counted as a big step");
+            Check(UpdateCheck.Compare("1.1", "2.0") == UpdateCheck.Step.Big,
+                  "a new major version is not counted as a big step");
+            Check(UpdateCheck.Compare("1.1", "1.1.2") == UpdateCheck.Step.Patch,
+                  "a patch is not recognised as a patch");
+
+            // The tag carries a v, the assembly does not.
+            Check(UpdateCheck.Compare("1.1", "v1.2") == UpdateCheck.Step.Big,
+                  "the v in front of a tag is not ignored");
+
+            // Numbers, not text: the day 1.10 comes out, a string comparison would call it
+            // older than 1.9 and the update would never be offered at all.
+            Check(UpdateCheck.Compare("1.9", "1.10") == UpdateCheck.Step.Big,
+                  "1.10 is not seen as newer than 1.9");
+
+            Check(UpdateCheck.Compare("1.1", "1.1") == UpdateCheck.Step.None,
+                  "the same version is offered as an update");
+            Check(UpdateCheck.Compare("1.1", "1.1.0") == UpdateCheck.Step.None,
+                  "a trailing zero makes the same version look new");
+            Check(UpdateCheck.Compare("1.1.0.0", "1.1") == UpdateCheck.Step.None,
+                  "the four-part assembly version does not match its own tag");
+            Check(UpdateCheck.Compare("1.2", "1.1") == UpdateCheck.Step.None,
+                  "an older release is offered as an update");
+
+            // Anything we cannot read is silence, not a guess: a redesigned answer from the
+            // other end must never turn into an update that does not exist.
+            Check(UpdateCheck.Compare("1.1", "") == UpdateCheck.Step.None,
+                  "an empty answer is treated as a version");
+            Check(UpdateCheck.Compare("1.1", "not a version") == UpdateCheck.Step.None,
+                  "nonsense is treated as a version");
+            Check(UpdateCheck.Compare("", "1.2") == UpdateCheck.Step.None,
+                  "an unknown current version still offers an update");
+        }
+
+        /// <summary>
+        /// The real request, run by hand. This is a diagnostic and not a test: the answer
+        /// depends on somebody else's server, and a suite that fails because a machine is
+        /// offline is a suite people learn to ignore. What it proves is the part that cannot be
+        /// proved on strings — that TLS is agreed, that GitHub accepts our user agent, and that
+        /// the reply still carries the two fields we read out of it.
+        /// </summary>
+        static void UpdateFetch()
+        {
+            Console.WriteLine("asking GitHub as " + Application.ProductVersion + " ...");
+            UpdateCheck.Result r = UpdateCheck.Fetch();
+
+            Console.WriteLine("  version : " + (r.Version.Length > 0 ? r.Version : "(none)"));
+            Console.WriteLine("  url     : " + r.Url);
+            Console.WriteLine("  error   : " + (r.Error.Length > 0 ? r.Error : "(none)"));
+            Console.WriteLine("  verdict : " + UpdateCheck.Compare(Application.ProductVersion, r.Version));
+
+            // The one thing that must hold whatever the network did: an answer is either a
+            // version or a reason, never both empty and never a crash.
+            Check(r.Version.Length > 0 || r.Error.Length > 0,
+                  "the check came back with neither a version nor a reason");
+            Check(r.Url.Length > 0, "no page to send anybody to");
         }
 
         static void CollisionProbe()

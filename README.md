@@ -130,6 +130,16 @@ tempo against track count against the year, or anything else the catalog knows.
 (on Windows 10 the acrylic backdrop is recomputed on every window move, so the window lags behind
 the cursor), and where the plugin list comes from — Live's own database, or your VST2/VST3 folders.
 
+**Updates.** Once a day Alive asks GitHub whether a newer release exists, and says so with a dot
+on the gear. No popup, no window in your way: the dot waits until you look. Only a release that
+moves the major or the minor number lights it — a fix waits to be asked about. **Check for
+updates** in the same row asks on the spot and reports anything, fixes included.
+
+That request is the only one the program ever makes. Nothing about you, your library or your
+machine goes with it: it is a plain GET for a public page, and GitHub learns from it what any web
+server learns from anybody who opens one. The switch beside it turns even that off, and then Alive
+touches the network never.
+
 ---
 
 ## Download

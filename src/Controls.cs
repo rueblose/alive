@@ -730,6 +730,13 @@ namespace AbletonManager
     {
         public Glyph Icon = Glyph.Close;
         public bool Danger;          // the window close button turns red under the cursor
+
+        /// <summary>
+        /// A dot in the top right corner of the glyph. The quietest thing a toolbar button
+        /// can say: something is waiting inside, look when you feel like it. Used by the
+        /// gear when a newer release has been found.
+        /// </summary>
+        public bool Dot;
         public bool Quiet;           // no backing: just the glyph, lightening under the cursor
         public float IconScale = 0.46f;
 
@@ -823,6 +830,23 @@ namespace AbletonManager
                 return;
             }
             Icons.Draw(g, Icon, ir, ink, Math.Max(1.4f, Width / 24f));
+            PaintDot(g);
+        }
+
+        /// <summary>
+        /// The dot sits on the glyph rather than beside it — the button is round and has no
+        /// corner of its own to spare — and is ringed in the colour of whatever lies under
+        /// the button, so it reads as a dot and not as a smudge on a busy icon.
+        /// </summary>
+        void PaintDot(Graphics g)
+        {
+            if (!Dot) return;
+            float d = Math.Max(5f, Width * 0.20f);
+            float x = Width - d - Width * 0.14f, y = Width * 0.14f;
+            using (SolidBrush ring = new SolidBrush(Surface))
+                g.FillEllipse(ring, x - 1.5f, y - 1.5f, d + 3f, d + 3f);
+            using (SolidBrush fill = new SolidBrush(Theme.Green))
+                g.FillEllipse(fill, x, y, d, d);
         }
     }
 

@@ -38,6 +38,8 @@ namespace AbletonManager
         readonly GlassButton _rescan = new GlassButton();
 
         readonly GlassButton _openCache = new GlassButton();
+        readonly GlassButton _update = new GlassButton();
+        readonly PillToggle _autoUpdate = new PillToggle();
         readonly GlassButton _restart = new GlassButton();
 
         /// <summary>The transparency toggle was touched — we offer a restart. This used to be
@@ -47,6 +49,16 @@ namespace AbletonManager
 
         /// <summary>Rebuild the catalog: the plugin settings changed.</summary>
         public bool RescanWanted;
+
+        /// <summary>The release the check turned up, for the caller to write down: the dot
+        /// on the gear must not light for the same one twice. Empty — nothing was found or
+        /// nobody asked.</summary>
+        public string SeenVersion = "";
+
+        // The grey line under the update button — the only place the check speaks.
+        string _updateNote = "";
+        string _updateUrl = "";
+        int _updateJob;
 
 
         readonly List<string> _installs = new List<string>();
@@ -119,6 +131,15 @@ namespace AbletonManager
                 string p = Pick("VST3 plug-in folder", _s.Vst3CustomPath);
                 if (p != null) { _s.Vst3CustomPath = p; _s.Vst3CustomOn = true; _vst3On.Checked = true; }
             });
+
+            _autoUpdate.Checked = _s.CheckUpdates;
+            _autoUpdate.CheckedChanged += delegate { _s.CheckUpdates = _autoUpdate.Checked; };
+            State(_autoUpdate);
+
+            _update.Text = "Check for updates";
+            _update.FitToText(16);
+            _update.Click += delegate { OnUpdateButton(); };
+            _body.Controls.Add(_update);
 
             _rescan.Text = "Rescan";
             _rescan.FitToText(16);
@@ -217,6 +238,63 @@ namespace AbletonManager
         /// older passes are discarded by number — otherwise a number from the previous settings
         /// would settle on the screen.
         /// </summary>
+        /// <summary>
+        /// The button asks, and once something has been found it opens the page instead. Two
+        /// jobs on one button because they are one errand: the answer to "is there anything
+        /// new" is either "no" or a place to go.
+        /// </summary>
+        void OnUpdateButton()
+        {
+            if (_updateUrl.Length > 0)
+            {
+                try { Process.Start(new ProcessStartInfo(_updateUrl) { UseShellExecute = true }); }
+                catch (Exception ex) { _updateNote = ex.Message; Invalidate(); }
+                return;
+            }
+
+            _updateNote = "Checking…";
+            _update.Enabled = false;
+            Invalidate();
+
+            string current = Application.ProductVersion;
+            int mine = ++_updateJob;
+            System.Threading.ThreadPool.QueueUserWorkItem(delegate
+            {
+                UpdateCheck.Result r = UpdateCheck.Fetch();
+                try
+                {
+                    if (IsDisposed || !IsHandleCreated) return;
+                    BeginInvoke((MethodInvoker)delegate
+                    {
+                        if (mine != _updateJob || IsDisposed) return;
+                        _update.Enabled = true;
+
+                        // Asked by hand, so a failure is reported. The background check stays
+                        // silent about exactly the same thing — there nobody is waiting for an
+                        // answer.
+                        if (r.Error.Length > 0) { _updateNote = r.Error; Invalidate(); return; }
+
+                        // Any newer release is worth mentioning here, a fix included. The dot on
+                        // the gear is the one that keeps to big steps only.
+                        if (UpdateCheck.Compare(current, r.Version) == UpdateCheck.Step.None)
+                        {
+                            _updateNote = "You have the latest version";
+                            Invalidate();
+                            return;
+                        }
+
+                        SeenVersion = r.Version;
+                        _updateUrl = r.Url;
+                        _updateNote = "Version " + r.Version + " is available";
+                        _update.Text = "Open release page";
+                        _update.FitToText(16);
+                        Relayout();
+                    });
+                }
+                catch { }
+            });
+        }
+
         void DescribeInventoryAsync()
         {
             _inventory = "Reading…";
@@ -363,6 +441,20 @@ namespace AbletonManager
             int y = -scroll;
 
             Section(x, ref y, w, "General");
+
+            Line(x, ref y, w, h, _update, "Alive " + Application.ProductVersion, "");
+            _updateRect = Rectangle.Empty;
+            if (_updateNote.Length > 0)
+            {
+                _updateRect = new Rectangle(x, y - Sc(8), w - _update.Width - Sc(16), Sc(24));
+                y += Sc(22);
+            }
+
+            Line(x, ref y, w, h, _autoUpdate,
+                 "Check automatically",
+                 "Once a day, asks GitHub for the newest release. Nothing about you, your "
+                 + "library or this machine is sent.");
+
             Line(x, ref y, w, h, _openCache,
                  "Temporary files",
                  Settings.Dir);
@@ -458,7 +550,7 @@ namespace AbletonManager
             finally { _sizing = false; }
         }
 
-        Rectangle _statusRect;
+        Rectangle _statusRect, _updateRect;
 
         /// <summary>The rail to the left of the plugin source's child rows.</summary>
         Rectangle _rail;
@@ -553,6 +645,7 @@ namespace AbletonManager
             }
 
             Chrome.DrawText(g, _inventory, Theme.FSmall, _statusRect, Theme.TextDim, leftFlags);
+            Chrome.DrawText(g, _updateNote, Theme.FSmall, _updateRect, Theme.TextDim, leftFlags);
         }
 
         /// <summary>The wheel over the heading or the close button scrolls too.</summary>
