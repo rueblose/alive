@@ -46,6 +46,7 @@ namespace AliveTools
             if (cmd == "real") { Real(args); return 0; }
             if (cmd == "all" || cmd == "index") Index();
             if (cmd == "all" || cmd == "walk") Walk();
+            if (cmd == "all" || cmd == "usage") Usage();
 
             if (_checks == 0)
             {
@@ -302,6 +303,92 @@ namespace AliveTools
                   && loaded.DisabledSampleRoots.Count == 1, "walk: sample folders did not survive settings.cfg");
         }
 
+        // ------------------------------------------------------------------ usage
+
+        static SetEntry Set(string path, DateTime modified, params object[] samplesAndSizes)
+        {
+            SetEntry s = new SetEntry();
+            s.Path = path;
+            s.Name = Path.GetFileNameWithoutExtension(path);
+            s.Modified = modified;
+            int n = samplesAndSizes.Length / 2;
+            s.Samples = new string[n];
+            s.SampleSizes = new long[n];
+            for (int i = 0; i < n; i++)
+            {
+                s.Samples[i] = (string)samplesAndSizes[i * 2];
+                s.SampleSizes[i] = (long)samplesAndSizes[i * 2 + 1];
+            }
+            return s;
+        }
+
+        static SampleFile FileNamed(SampleIndex idx, string name)
+        {
+            foreach (SampleFile f in idx.Files) if (Same(f.Name, name)) return f;
+            return null;
+        }
+
+        static SampleFolder FolderNamed(SampleIndex idx, string name)
+        {
+            foreach (SampleFolder f in idx.Folders) if (Same(f.Name, name)) return f;
+            return null;
+        }
+
+        static void Usage()
+        {
+            string root = Fresh("usage");
+            string lib = Path.Combine(root, "lib");
+            string kick = Path.Combine(lib, @"drums\kick.wav");
+            string snare = Path.Combine(lib, @"drums\snare.wav");
+            long kickSize = WriteWav(kick, 100), snareSize = WriteWav(snare, 200);
+            WriteWav(Path.Combine(lib, @"fx\riser.wav"), 300);
+            WriteWav(Path.Combine(lib, @"fx\sub\boom.wav"), 400);
+
+            SampleIndex idx = SampleIndex.Build(new List<string> { lib }, new List<string>(), null, CancellationToken.None);
+
+            string copyOfSnare = Path.Combine(root, @"B Project\Samples\Imported\snare.wav");
+            DateTime jan = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+            List<SetEntry> sets = new List<SetEntry>
+            {
+                Set(Path.Combine(root, @"A Project\a.als"), jan, kick, kickSize),
+                Set(Path.Combine(root, @"A Project\a v2.als"), jan.AddMonths(1), kick, kickSize),       // the same project
+                Set(Path.Combine(root, @"B Project\b.als"), jan.AddMonths(2), copyOfSnare, snareSize),  // a copy
+                Set(Path.Combine(root, @"C Project\c.als"), jan.AddMonths(3),
+                    Path.Combine(root, @"C Project\Samples\snare.wav"), snareSize + 1),                   // same name, other size
+            };
+
+            SampleUsage u = SampleUsage.Compute(idx, sets);
+            SampleFile k = FileNamed(idx, "kick.wav"), sn = FileNamed(idx, "snare.wav");
+            SampleFolder drums = FolderNamed(idx, "drums"), fx = FolderNamed(idx, "fx"), sub = FolderNamed(idx, "sub");
+
+            SampleUse ku = u.Of(k);
+            Check(ku != null && ku.Projects == 1 && ku.Sets.Count == 2,
+                  "usage: two versions of one project are one project and two sets");
+            Check(ku != null && ku.LastUsed == jan.AddMonths(1), "usage: LastUsed is not the newest set");
+            SampleUse su = u.Of(sn);
+            Check(su != null && su.Projects == 1 && su.Sets.Count == 1 && su.Sets[0].Name == "b",
+                  "usage: the copy Collect All left in B Project was not recognised");
+
+            FolderUse du = u.Of(drums);
+            Check(du != null && du.Used == 2 && du.Projects == 2 && du.LastUsed == jan.AddMonths(2),
+                  "usage: the drums folder should have 2 used, 2 projects, last in March");
+            FolderUse ru = u.Of(idx.Roots[0]);
+            Check(ru != null && ru.Used == 2, "usage: the root does not add up its folders");
+            Check(u.Of(fx) == null && u.Of(sub) == null, "usage: fx is not used by anybody");
+
+            List<SampleFolder> never = u.NeverUsed(idx);
+            Check(never.Count == 1 && never[0] == fx, "usage: NeverUsed must give the topmost unused folder only");
+
+            List<SampleFile> under = u.UsedUnder(drums);
+            Check(under.Count == 2 && under[0] == sn && under[1] == k,
+                  "usage: equal projects - the more recently used goes first");
+
+            List<SetEntry> newest = SampleUsage.Newest(ku != null ? ku.Sets : new List<SetEntry>());
+            Check(newest.Count == 1 && newest[0].Name == "a v2", "usage: Newest keeps the newest set of a project");
+
+            Check(SampleUsage.Compute(idx, new List<SetEntry>()).UsedFiles.Count == 0, "usage: no sets - no usage");
+        }
+
         // ------------------------------------------------------------------- real
 
         /// <summary>No checks — numbers to look at on a real library: how long the walk and
@@ -313,7 +400,32 @@ namespace AliveTools
                 Console.WriteLine("usage: LibraryTest.exe real <projects folder> <sample folder> [more sample folders]");
                 return;
             }
-            Console.WriteLine("real: added in Task 3");
+            Settings s = new Settings();
+            s.Roots.Add(args[1]);
+            Stopwatch sw = Stopwatch.StartNew();
+            ProjectIndex sets = new ProjectIndex();
+            sets.Scan(s, null, CancellationToken.None);
+            Console.WriteLine("sets: " + sets.Sets.Count + " in " + sw.ElapsedMilliseconds + " ms");
+
+            List<string> roots = new List<string>();
+            for (int i = 2; i < args.Length; i++) roots.Add(args[i]);
+            sw.Restart();
+            SampleIndex idx = SampleIndex.Build(roots, new List<string>(), null, CancellationToken.None);
+            Console.WriteLine("walk: " + idx.TotalSamples + " samples, " + idx.Folders.Count + " folders, "
+                              + MainForm.SizeMB(idx.TotalBytes) + " in " + sw.ElapsedMilliseconds + " ms");
+
+            sw.Restart();
+            idx.SaveCache();
+            long save = sw.ElapsedMilliseconds;
+            sw.Restart();
+            SampleIndex.LoadCache();
+            Console.WriteLine("cache: save " + save + " ms, load " + sw.ElapsedMilliseconds + " ms, "
+                              + new FileInfo(Path.Combine(Settings.Dir, "samples.cache")).Length / 1024 + " KB");
+
+            sw.Restart();
+            SampleUsage u = SampleUsage.Compute(idx, sets.Sets);
+            Console.WriteLine("usage: " + u.UsedFiles.Count + " files used, " + u.NeverUsed(idx).Count
+                              + " never-used folders, in " + sw.ElapsedMilliseconds + " ms");
         }
     }
 }
