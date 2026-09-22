@@ -24,7 +24,11 @@ namespace Alive
             // Before anything else, and before the log in particular: Diag.Start() truncates
             // alive.log, and a second copy doing that would wipe the running one's log — the
             // very file we ask people to send when something goes wrong.
-            if (!SingleInstance.Claim())
+            // A run with its own ALIVE_HOME (see Settings.Dir) is a separate program as far as
+            // the owner is concerned: it must neither hand its arguments to the copy they have
+            // open nor be turned away by it.
+            bool isolated = !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("ALIVE_HOME"));
+            if (!isolated && !SingleInstance.Claim())
             {
                 SingleInstance.HandOver(args);
                 return;

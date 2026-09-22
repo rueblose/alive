@@ -137,10 +137,17 @@ namespace AbletonManager
         /// settings are opened, and opening them writes this down.</summary>
         public string SeenUpdate = "";
 
+        /// <summary>
+        /// Where everything the program keeps lives. ALIVE_HOME moves all of it at once — every
+        /// file goes through this one property — so a test bench or a screenshot session works
+        /// on settings, a catalog and caches of its own and never touches the owner's.
+        /// </summary>
         public static string Dir
         {
             get
             {
+                string home = Environment.GetEnvironmentVariable("ALIVE_HOME");
+                if (!string.IsNullOrEmpty(home)) return home;
                 return Path.Combine(
                     Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
                     "Alive");
