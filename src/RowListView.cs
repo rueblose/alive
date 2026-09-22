@@ -26,6 +26,11 @@ namespace AbletonManager
         /// </summary>
         public bool Chips;
 
+        /// <summary>The cell is a path: shortened in the middle, as Explorer does, so the last
+        /// folder stays readable — "E:\…\Factory Packs" rather than "E:\Music\Fact…". See
+        /// RowListView.FitPath.</summary>
+        public bool PathEllipsis;
+
         public Column(string title, int width) { Title = title; Width = width; }
     }
 
@@ -1688,10 +1693,30 @@ namespace AbletonManager
                 }
                 else
                 {
-                    Chrome.DrawText(g, row.Cells[c], f, cr, color,
-                                   col.Right ? Chrome.CellRight : Chrome.CellLeft);
+                    string text = col.PathEllipsis ? FitPath(row.Cells[c], f, cr.Width) : row.Cells[c];
+                    Chrome.DrawText(g, text, f, cr, color, col.Right ? Chrome.CellRight : Chrome.CellLeft);
                 }
             }
+        }
+
+        /// <summary>
+        /// A path shortened in the middle: the first folder and as many of the last ones as fit
+        /// — "Unison Beatmaker Blueprint\…\Rage". GDI's own DT_PATH_ELLIPSIS was tried: a path
+        /// with no backslash it clips mid-word without a mark, and so does it the last folder
+        /// when that alone is too long. What is returned here is drawn with the ordinary end
+        /// ellipsis, so every cut shows.
+        /// </summary>
+        static string FitPath(string path, Font f, int width)
+        {
+            if (string.IsNullOrEmpty(path) || TextRenderer.MeasureText(path, f).Width <= width) return path;
+            string[] parts = path.Split('\\');
+            if (parts.Length < 3) return path;
+            for (int keep = parts.Length - 2; keep >= 1; keep--)
+            {
+                string s = parts[0] + "\\…\\" + string.Join("\\", parts, parts.Length - keep, keep);
+                if (TextRenderer.MeasureText(s, f).Width <= width) return s;
+            }
+            return "…\\" + parts[parts.Length - 1];
         }
 
         int ColX(int[] widths, int col)

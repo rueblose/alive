@@ -11,7 +11,7 @@ using System.Windows.Forms;
 
 namespace AbletonManager
 {
-    public sealed class MainForm : Form
+    public sealed partial class MainForm : Form
     {
         readonly Segmented _mode = new Segmented();
         readonly FieldBox _search = new FieldBox();
@@ -817,6 +817,7 @@ namespace AbletonManager
             {
                 if (SetsDomain) EditFilters();
                 else if (PluginsDomain) EditPluginFilters();
+                else ShowSampleLens();
             };
             Controls.Add(_filtersBtn);
 
@@ -827,7 +828,7 @@ namespace AbletonManager
             Controls.Add(_resetBtn);
 
             _newProject.Click += delegate { NewProject(); };
-            _folders.Click += delegate { EditRoots(); };
+            _folders.Click += delegate { if (SamplesDomain) EditSampleRoots(false); else EditRoots(); };
 
             _list.SelectionChanged += delegate { OnSelectionChanged(); };
             _list.ItemActivated += delegate { ActivateSelected(); };
@@ -891,6 +892,8 @@ namespace AbletonManager
             Controls.Add(_help);
             Controls.Add(_home);
 
+            BuildSamples();
+
             // A message over the content — we add it last and keep it in front, so that neither
             // the list nor the tiles cover it.
             Controls.Add(_toast);
@@ -914,7 +917,7 @@ namespace AbletonManager
 
         void ApplyTexts()
         {
-            _mode.SetItems("Home", "Sets", "Plugins");
+            _mode.SetItems("Home", "Sets", "Plugins", "Samples");
             _filtersBtn.Text = "Filters";
             _filtersBtn.Count = _filter.ActiveCount;
             _newProject.Text = "New Live Set";
@@ -928,6 +931,8 @@ namespace AbletonManager
                 _filtersBtn.Count = _filter.ActiveCount;
             else if (PluginsDomain)
                 _filtersBtn.Count = _pluginFilterObj.ActiveCount;
+            else
+                _filtersBtn.Count = _lens != SampleLens.All ? 1 : 0;
             // With a counter the pill is wider — and behind it stands the whole right half of
             // the panel.
             if (_filtersBtn.Width != Math.Max(Sc(140), _filtersBtn.PreferredWidth)) LayoutAll();
@@ -941,13 +946,17 @@ namespace AbletonManager
             get
             {
                 if (_search.Box.Text.Trim().Length > 0) return true;
-                return SetsDomain ? !_filter.IsEmpty : PluginsDomain && !_pluginFilterObj.IsEmpty;
+                return SetsDomain ? !_filter.IsEmpty
+                     : PluginsDomain ? !_pluginFilterObj.IsEmpty
+                     : _lens != SampleLens.All;
             }
         }
 
         void ResetSearchAndFilters()
         {
-            if (SetsDomain) _filter.Clear(); else if (PluginsDomain) _pluginFilterObj.Clear();
+            if (SetsDomain) _filter.Clear();
+            else if (PluginsDomain) _pluginFilterObj.Clear();
+            else { _lens = SampleLens.All; _sampleSortId = null; }
             UpdateFiltersButton();
             // The field's text calls Refill itself through TextChanged — but only if it
             // actually changed.
@@ -958,7 +967,9 @@ namespace AbletonManager
         void SetSearchCue()
         {
             string cue;
-            if (PluginsDomain)
+            if (SamplesDomain)
+                cue = "Search in samples…";
+            else if (PluginsDomain)
                 cue = "Search in plugins…";
             else
                 cue = "Search in sets…";
@@ -1149,9 +1160,15 @@ namespace AbletonManager
 
             _summary.Visible = false;
 
+            // The Samples tab with no folder chosen yet shows what it is for instead of an
+            // empty table.
+            bool emptySamples = SamplesDomain && !HasSampleRoots;
             _home.Visible = Tiles;
-            _list.Visible = !Tiles;
-            _detail.Visible = !Tiles;
+            _list.Visible = !Tiles && !emptySamples;
+            _detail.Visible = !Tiles && !emptySamples;
+            _samplesEmpty.Visible = emptySamples;
+            if (emptySamples)
+                _samplesEmpty.SetBounds(left, top, Math.Max(Sc(200), right - left), Math.Max(Sc(80), listBottom - top));
 
             if (Tiles)
                 _home.SetBounds(left, top, Math.Max(Sc(200), right - left),
@@ -1234,12 +1251,16 @@ namespace AbletonManager
                 RefreshVersions();
                 Refill();
             }
+            LoadSamplesFromCache();
 
             Invalidate(true);
             _shown = true;
 
             if (_settings.IsFirstRun) { if (EditRoots()) { FlushPending(); return; } }
             StartScan(false);
+            // No project folders means no scan of the sets to wait for — the library is walked
+            // right away.
+            if (!_scanning && !_samplesWalked) { _samplesWalked = true; StartSampleScan(false); }
             Rewatch();
             // If there was nothing to scan, the paths we were started with are all we have to
             // go on — otherwise they wait for the scan to finish.
@@ -1555,6 +1576,11 @@ namespace AbletonManager
                 _mode.SelectedIndex = ModePlugins;
                 return true;
             }
+            if (keyData == (Keys.Control | Keys.D4) || keyData == (Keys.Control | Keys.NumPad4))
+            {
+                _mode.SelectedIndex = ModeSamples;
+                return true;
+            }
             return base.ProcessCmdKey(ref msg, keyData);
         }
 
@@ -1575,13 +1601,14 @@ namespace AbletonManager
             else if (e.Control && e.KeyCode == Keys.F) { _search.Box.Focus(); e.Handled = true; }
             else if (e.KeyCode == Keys.F && e.Shift && !e.Control && !e.Alt && !typing)
             {
-                EditRoots();
+                if (SamplesDomain) EditSampleRoots(false); else EditRoots();
                 e.Handled = e.SuppressKeyPress = true;
             }
             else if (e.KeyCode == Keys.F && !e.Control && !e.Alt && !e.Shift && !typing)
             {
                 if (SetsDomain) EditFilters();
                 else if (PluginsDomain) EditPluginFilters();
+                else ShowSampleLens();
                 e.Handled = e.SuppressKeyPress = true;
             }
             else if (e.KeyCode == Keys.F1) { ShowHelp(); e.Handled = true; }
@@ -1613,7 +1640,11 @@ namespace AbletonManager
                 WindowState = FormWindowState.Minimized;
                 e.Handled = true;
             }
-            else if (e.KeyCode == Keys.F5) { StartScan(true); e.Handled = true; }
+            else if (e.KeyCode == Keys.F5)
+            {
+                if (SamplesDomain) RescanSamples(); else StartScan(true);
+                e.Handled = true;
+            }
             else if (e.KeyCode == Keys.F11) { ToggleMaximize(); e.Handled = true; }
             else if (e.KeyCode == Keys.Apps && !typing)
             {
@@ -1708,7 +1739,12 @@ namespace AbletonManager
                 Chrome.DrawText(g, StatusText(), Theme.FLabel, _rStatus, Theme.TextDim, Chrome.Left);
             }
 
-            if (_scanning && _manualScan && _scanTotal > 0)
+            // Each tab shows the progress of its own walk: the sets' on Home, Sets and Plugins,
+            // the library's on Samples.
+            float share = SamplesDomain ? SampleProgressShare
+                        : _scanning && _manualScan && _scanTotal > 0
+                          ? Math.Max(0.01f, Math.Min(1.0f, (float)_scanDone / _scanTotal)) : -1f;
+            if (share >= 0f)
             {
                 int pad = Sc(Theme.Pad);
                 int left = pad;
@@ -1722,8 +1758,7 @@ namespace AbletonManager
                 Rectangle barRect = new Rectangle(barX, barY, barW, barH);
                 Theme.FillRound(g, barRect, barH / 2f, Color.FromArgb(0x30, 0xFF, 0xFF, 0xFF));
 
-                float pct = Math.Max(0.01f, Math.Min(1.0f, (float)_scanDone / _scanTotal));
-                int fillW = (int)(barW * pct);
+                int fillW = (int)(barW * share);
                 if (fillW > 0)
                 {
                     Rectangle fillRect = new Rectangle(barX, barY, fillW, barH);
@@ -1737,7 +1772,7 @@ namespace AbletonManager
         /// and anew after every rebuild, when the number may have changed.</summary>
         void LayoutReset()
         {
-            bool on = Filtering && !_scanning;
+            bool on = Filtering && !(SamplesDomain ? _sampleScanning : _scanning);
             _resetBtn.Visible = on;
             if (!on) return;
 
@@ -1753,7 +1788,7 @@ namespace AbletonManager
         /// there is one.</summary>
         int CountRoom()
         {
-            bool on = Filtering && !_scanning;
+            bool on = Filtering && !(SamplesDomain ? _sampleScanning : _scanning);
             return _rCount.Width - (on ? Sc(Theme.IconSize) + Sc(6) : 0);
         }
 
@@ -1772,6 +1807,7 @@ namespace AbletonManager
 
         string[] CountVariants()
         {
+            if (SamplesDomain) return SampleCountVariants();
             string t = CountText();
             return t.EndsWith(" shown")
                  ? new string[] { t, t.Substring(0, t.Length - " shown".Length) }
@@ -1816,6 +1852,7 @@ namespace AbletonManager
         /// </summary>
         void RefillPreservingView()
         {
+            if (SamplesDomain) { RefillSamplesKeeping(SelectedSamplePath()); return; }
             SetEntry keep = SelectedSet();
             string keepPath = keep != null ? keep.Path : null;
             int scroll = _list.ScrollOffset;
@@ -1875,12 +1912,16 @@ namespace AbletonManager
             {
                 FillPlugins(animate);
             }
+            else FillSamples(animate);
             LayoutReset();
             Invalidate();
         }
 
         void FillSets(bool animate)
         {
+            _list.IndentColumn = "Set";
+            _list.DragFilePath = null;
+
             // The visible columns, in the order the user arranged them in.
             _setVisible = new List<ColDef>();
             foreach (string id in _setOrder)
@@ -2087,6 +2128,11 @@ namespace AbletonManager
         /// again.</summary>
         void OnRowCountClicked(int idx)
         {
+            if (SamplesDomain)
+            {
+                if (idx >= 0 && idx < _list.Rows.Count) ToggleSampleFolder(_list.Rows[idx].Tag as SampleFolder);
+                return;
+            }
             if (!SetsDomain) return;
             if (idx < 0 || idx >= _list.Rows.Count) return;
             SetEntry s = _list.Rows[idx].Tag as SetEntry;
@@ -2116,6 +2162,8 @@ namespace AbletonManager
 
         void FillPlugins(bool animate)
         {
+            _list.IndentColumn = "Set";
+            _list.DragFilePath = null;
             _list.ColumnsConfigurable = true;
             _list.ShowPlayButton = false;
             _list.ShowPinIndicator = false;
@@ -2267,6 +2315,7 @@ namespace AbletonManager
         /// </summary>
         void OnHeaderClicked(int column)
         {
+            if (SamplesDomain) { SortSamplesBy(column); return; }
             SetEntry keepSet = SelectedSet();
             string keepSetPath = keepSet != null ? keepSet.Path : null;
             PluginStat keepPlugin = SelectedPlugin();
@@ -2518,7 +2567,7 @@ namespace AbletonManager
 
         void OnSelectionChanged()
         {
-            if (SamplesDomain) return;
+            if (SamplesDomain) { ShowSampleDetails(); return; }
             if (PluginsDomain)
             {
                 RowData sel = _list.Selected;
@@ -2554,6 +2603,7 @@ namespace AbletonManager
             // There is nothing to activate on a plugin: a double click used to carry one off to
             // the Sets tab filtered by that plugin — an unexpected jump instead of an action on
             // what was clicked. A plugin's sets are listed in the details panel as it is.
+            if (SamplesDomain) { ActivateSample(); return; }
             if (!SetsDomain) return;
             OpenSelected();
         }
@@ -2876,7 +2926,7 @@ namespace AbletonManager
 
         void RevealSelected()
         {
-            if (SamplesDomain) return;
+            if (SamplesDomain) { RevealSample(); return; }
             if (PluginsDomain)
             {
                 PluginStat st = SelectedPlugin();
@@ -2952,6 +3002,8 @@ namespace AbletonManager
                 return false;
             }
 
+            if (SamplesDomain && (k == Keys.Left || k == Keys.Right)) return SampleTreeKey(k == Keys.Right);
+
             switch (k)
             {
                 case Keys.Up: return _list.MoveSelection(-1);
@@ -2966,6 +3018,12 @@ namespace AbletonManager
         /// button.</summary>
         void ShowMenuForSelection()
         {
+            if (SamplesDomain)
+            {
+                int i = _list.SelectedIndex;
+                if (i >= 0) SampleRowMenu(i, _list.RowMenuPoint(i));
+                return;
+            }
             if (!SetsDomain) return;
             if (Tiles) { _home.ShowMenuForSelected(); return; }
 
@@ -3156,6 +3214,7 @@ namespace AbletonManager
         /// so that projects can be pinned without leaving the main catalog.</summary>
         void OnListRowRightClick(int idx, Point at)
         {
+            if (SamplesDomain) { SampleRowMenu(idx, at); return; }
             if (!SetsDomain) return;
             if (idx < 0 || idx >= _list.Rows.Count) return;
             SetEntry s = _list.Rows[idx].Tag as SetEntry;
@@ -3493,7 +3552,11 @@ namespace AbletonManager
             Invalidate();
 
             string[] paths = e.Data.GetData(DataFormats.FileDrop) as string[];
-            if (paths != null) AddRoots(paths);
+            if (paths != null)
+            {
+                if (SamplesDomain) AddSampleRoots(paths);
+                else AddRoots(paths);
+            }
         }
 
         /// <summary>
@@ -3690,6 +3753,10 @@ namespace AbletonManager
                         FlushPending();
                         CheckUpdatesInBackground();
 
+                        // The library is walked once per session, after the sets: two walks on
+                        // one disk at once only slow each other down.
+                        if (!_samplesWalked) { _samplesWalked = true; StartSampleScan(false); }
+
                         // Something else on disk changed while we were scanning — we go round
                         // once more, or those edits would wait for the next occasion.
                         if (_rescanPending) { _rescanPending = false; StartScan(false); }
@@ -3836,6 +3903,7 @@ namespace AbletonManager
             }
             Settings.RootsChanged -= OnGlobalRootsChanged;
             if (_cancel != null) { try { _cancel.Cancel(); } catch { } }
+            if (_sampleCancel != null) { try { _sampleCancel.Cancel(); } catch { } }
             if (_watch != null) { try { _watch.Dispose(); } catch { } _watch = null; }
             if (_player != null && !_player.IsDisposed) { try { _player.Close(); } catch { } }
             base.OnFormClosing(e);

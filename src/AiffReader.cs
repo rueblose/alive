@@ -39,12 +39,16 @@ namespace AbletonManager
         }
 
         /// <summary>null — not an AIFF, broken, or a compression we do not read.</summary>
-        public static AiffReader Open(string path)
+        public static AiffReader Open(string path) { return Open(path, 64 * 1024); }
+
+        /// <summary>buffer — how much the stream reads ahead: a lot for playing, a little for a
+        /// look at the header, which is all CanRead needs.</summary>
+        static AiffReader Open(string path, int buffer)
         {
             FileStream fs = null;
             try
             {
-                fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite, 64 * 1024);
+                fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite, buffer);
                 AiffReader a = new AiffReader(fs);
                 if (a.ReadHeader()) return a;
             }
@@ -61,7 +65,7 @@ namespace AbletonManager
         /// </summary>
         public static bool CanRead(string path)
         {
-            using (AiffReader a = Open(path)) return a != null;
+            using (AiffReader a = Open(path, 512)) return a != null;
         }
 
         bool ReadHeader()

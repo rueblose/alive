@@ -84,7 +84,33 @@ namespace AliveTools
         /// DBLCLK, UP. The second press arrives as its own message, not as a second DOWN, and
         /// a control that miscounts it can only be caught by sending the genuine sequence.
         /// </summary>
-        enum Kind { Left, Right, Double }
+        enum Kind { Left, Right, Double, Text }
+
+        [DllImport("user32.dll")] static extern bool EnumChildWindows(IntPtr parent, EnumProc cb, IntPtr param);
+        [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int GetClassName(IntPtr hWnd, System.Text.StringBuilder name, int max);
+        [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern IntPtr SendMessage(IntPtr hWnd, uint msg, IntPtr wp, string lp);
+        const uint WM_SETTEXT = 0x000C;
+
+        /// <summary>
+        /// Type into the window's text field without a keyboard: the first EDIT child gets the
+        /// text by WM_SETTEXT, which a WinForms TextBox answers with TextChanged — the search in
+        /// the catalog rebuilds exactly as it does under typing.
+        /// </summary>
+        static void SetText(IntPtr window, string text)
+        {
+            IntPtr edit = IntPtr.Zero;
+            EnumChildWindows(window, delegate(IntPtr h, IntPtr param)
+            {
+                System.Text.StringBuilder name = new System.Text.StringBuilder(256);
+                GetClassName(h, name, name.Capacity);
+                if (name.ToString().IndexOf("EDIT", StringComparison.OrdinalIgnoreCase) < 0) return true;
+                edit = h;
+                return false;
+            }, IntPtr.Zero);
+            if (edit == IntPtr.Zero) { Console.WriteLine("no text field to type into"); return; }
+            SendMessage(edit, WM_SETTEXT, IntPtr.Zero, text);
+            Console.WriteLine("typed \"" + text + "\"");
+        }
 
         static void Click(IntPtr window, int x, int y, Kind kind)
         {
@@ -123,7 +149,7 @@ namespace AliveTools
         {
             if (args.Length < 2)
             {
-                Console.WriteLine("usage: Shot.exe <exe> <out.png> [--wait S] [--size W,H] [--click X,Y] [--rclick X,Y] [--dbl X,Y] [args...]");
+                Console.WriteLine("usage: Shot.exe <exe> <out.png> [--wait S] [--size W,H] [--click X,Y] [--rclick X,Y] [--dbl X,Y] [--settext TEXT] [args...]");
                 return 2;
             }
 
@@ -134,6 +160,7 @@ namespace AliveTools
             string rest = "";
             List<Point> clicks = new List<Point>();
             List<Kind> kinds = new List<Kind>();
+            List<string> texts = new List<string>();
             Size size = Size.Empty;
             int settle = 6000;
 
@@ -149,6 +176,15 @@ namespace AliveTools
                     string[] xy = args[++i].Split(',');
                     clicks.Add(new Point(int.Parse(xy[0]), int.Parse(xy[1])));
                     kinds.Add(kind);
+                    texts.Add(null);
+                    continue;
+                }
+                // --settext TEXT - put TEXT into the window's text field, in order with the clicks
+                if (args[i] == "--settext" && i + 1 < args.Length)
+                {
+                    clicks.Add(Point.Empty);
+                    kinds.Add(Kind.Text);
+                    texts.Add(args[++i]);
                     continue;
                 }
                 // --size W,H - resize the window before capturing, in physical pixels. A
@@ -206,7 +242,8 @@ namespace AliveTools
 
                 for (int i = 0; i < clicks.Count; i++)
                 {
-                    Click(hwnd, clicks[i].X, clicks[i].Y, kinds[i]);
+                    if (kinds[i] == Kind.Text) SetText(hwnd, texts[i]);
+                    else Click(hwnd, clicks[i].X, clicks[i].Y, kinds[i]);
                     Thread.Sleep(900);      // the window gets time to rebuild the list
                 }
 

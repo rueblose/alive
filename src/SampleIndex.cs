@@ -188,17 +188,28 @@ namespace AbletonManager
         /// <summary>
         /// Every switched-on root, side by side: they do not overlap (see Effective) and usually
         /// sit on different drives, so walking them at once halves the wait on two disks.
+        ///
+        /// previous — the index this one replaces. An AIFF it already looked into, with the same
+        /// path and size, keeps its Silent flag without being opened again: opening the thirty
+        /// thousand AIFFs of Live's packs took a minute of the first walk on the development
+        /// machine, and a file that has not changed has nothing new to say.
         /// </summary>
         public static SampleIndex Build(IList<string> roots, IList<string> disabled,
-                                        SampleProgress progress, CancellationToken cancel)
+                                        SampleProgress progress, CancellationToken cancel,
+                                        SampleIndex previous = null)
         {
             List<string> walk = Effective(roots, disabled);
             List<SampleFolder>[] trees = new List<SampleFolder>[walk.Count];
             int total = 0;
 
+            Dictionary<string, SampleFile> known = new Dictionary<string, SampleFile>(StringComparer.OrdinalIgnoreCase);
+            if (previous != null)
+                foreach (SampleFile f in previous.Files)
+                    if (AiffReader.IsAiffName(f.Name)) known[f.Path] = f;
+
             Parallel.For(0, walk.Count, delegate (int i)
             {
-                trees[i] = Walk(walk[i], true, delegate (int n)
+                trees[i] = Walk(walk[i], known, delegate (int n)
                 {
                     int now = Interlocked.Add(ref total, n);
                     if (progress != null) progress(now);
@@ -223,7 +234,7 @@ namespace AbletonManager
         /// in the folders dialog must agree with the tab. -1: the folder would not open.</summary>
         public static int CountIn(string folder, Func<bool> cancelled)
         {
-            List<SampleFolder> tree = Walk(folder, false, null, cancelled);
+            List<SampleFolder> tree = Walk(folder, null, null, cancelled);
             return tree == null ? -1 : tree[0].TotalSamples;
         }
 
@@ -232,10 +243,12 @@ namespace AbletonManager
         /// the root first and then every kept folder, a parent always before its children. null:
         /// the root itself would not open, or the walk was called off.
         ///
-        /// probe — look into the header of every AIFF (see SampleFile.Silent). The index wants
-        /// it; the count in the folders dialog does not.
+        /// known — AIFFs looked into before (see Build); null — do not look into AIFFs at all
+        /// (SampleFile.Silent): the index wants it, the count in the folders dialog does not.
+        /// Only read here, so the parallel walks can share it.
         /// </summary>
-        static List<SampleFolder> Walk(string root, bool probe, SampleProgress found, Func<bool> cancelled)
+        static List<SampleFolder> Walk(string root, Dictionary<string, SampleFile> known,
+                                       SampleProgress found, Func<bool> cancelled)
         {
             string top;
             try { top = System.IO.Path.GetFullPath(root); }
@@ -282,8 +295,14 @@ namespace AbletonManager
                     f.Name = name;
                     f.Size = size;
                     f.Folder = p.Folder;
-                    if (probe && AiffReader.IsAiffName(name))
-                        f.Silent = !AiffReader.CanRead(FolderScan.Combine(p.Path, name));
+                    if (known != null && AiffReader.IsAiffName(name))
+                    {
+                        string full = FolderScan.Combine(p.Path, name);
+                        SampleFile was;
+                        f.Silent = known.TryGetValue(full, out was) && was.Size == size
+                                 ? was.Silent
+                                 : !AiffReader.CanRead(full);
+                    }
                     p.Folder.Files.Add(f);
                     if (++batch == 256)
                     {

@@ -529,6 +529,16 @@ namespace AliveTools
             SampleFile back = FileNamed(SampleIndex.LoadCache(), "live.aif");
             Check(back != null && back.Silent, "aiff: Silent did not survive the cache");
 
+            // A file with the same path and size is not opened again: its flag comes from the
+            // index being replaced. Spoil plain.aif without changing its size — a fresh look
+            // would call it silent, the remembered one still plays.
+            string spoiled = Path.Combine(dir, "plain.aif");
+            File.WriteAllBytes(spoiled, new byte[new FileInfo(spoiled).Length]);
+            SampleIndex again = SampleIndex.Build(new List<string> { dir }, new List<string>(), null, CancellationToken.None, idx);
+            SampleIndex fresh = SampleIndex.Build(new List<string> { dir }, new List<string>(), null, CancellationToken.None);
+            Check(!FileNamed(again, "plain.aif").Silent && FileNamed(fresh, "plain.aif").Silent,
+                  "aiff: an unchanged AIFF must keep its flag from the previous index instead of being opened");
+
             // Real ones, when this machine has them: a plain AIFF from a sample library plays,
             // an Ableton-compressed one from Live's packs is refused.
             string real = FirstAiff(@"E:\Music\Samples", true) ?? FirstAiff(@"D:\Music\Samples", true);

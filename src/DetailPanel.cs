@@ -22,6 +22,9 @@ namespace AbletonManager
         SetEntry _set;
         PluginStat _plugin;
         bool _pluginMode;
+
+        // Set: the panel shows only this — a tab with nothing to detail yet (see ShowEmpty).
+        string _emptyTitle, _emptyHint;
         int _scroll;
         int _contentHeight;
         float _scrollTarget, _scrollCurrent;
@@ -127,6 +130,7 @@ namespace AbletonManager
 
         public void Show(SetEntry s)
         {
+            _emptyTitle = null;
             bool same = _set != null && s != null && _set.Path == s.Path;
             _plugin = null;
             _pluginMode = false;
@@ -162,6 +166,7 @@ namespace AbletonManager
 
         public void ShowPlugin(PluginStat p)
         {
+            _emptyTitle = null;
             _plugin = p;
             _pluginMode = true;
             _set = null;
@@ -182,6 +187,22 @@ namespace AbletonManager
                         if (string.Equals(n, p.Name, StringComparison.OrdinalIgnoreCase))
                         { _users.Add(s); break; }
 
+            ApplyAction();
+            Invalidate();
+        }
+
+        /// <summary>Nothing selected on a tab that has no details of its own yet — the Samples
+        /// tab until something is picked in its tree.</summary>
+        public void ShowEmpty(string title, string hint)
+        {
+            _set = null;
+            _plugin = null;
+            _pluginMode = true;          // no buttons at the bottom
+            _emptyTitle = title;
+            _emptyHint = hint;
+            _scroll = 0;
+            _scrollTarget = _scrollCurrent = 0;
+            if (_scroller != null) _scroller.SyncPosition(0);
             ApplyAction();
             Invalidate();
         }
@@ -416,6 +437,14 @@ namespace AbletonManager
             // tiles.
             int over = _scroller != null ? (int)Math.Round(_scroller.Overscroll) : 0;
             int y = Pad - _scroll - over;
+
+            if (_emptyTitle != null)
+            {
+                _thumbRect = _linkRect = _topRect = Rectangle.Empty;
+                _setRowRects.Clear(); _setRowSets.Clear(); _pluginRowRects.Clear(); _pluginRowNames.Clear();
+                PaintEmpty(g, Pad, w, _emptyTitle, _emptyHint);
+                return;
+            }
 
             if (_pluginMode) { PaintPlugin(g, Pad, y, w, over); return; }
             _setRowRects.Clear();
