@@ -14,6 +14,7 @@ namespace AliveTools
     ///     Shot.exe DialogShow.exe out.png settings-folders
     ///     Shot.exe DialogShow.exe out.png export  "set.als"
     ///     Shot.exe DialogShow.exe out.png preview "set.als"
+    ///     Shot.exe DialogShow.exe out.png samples
     ///
     /// Build: tools\build-rescue-test.cmd. Does not go into bin.
     /// </summary>
@@ -61,6 +62,13 @@ namespace AliveTools
                     IntPtr unused = host.Handle;
                     f = new PreviewDialog(set, new ArrangementLoader(host));
                 }
+            }
+            else if (which == "samples")
+            {
+                // The sample folders dialog, with Live's Places behind its From Live button.
+                Settings sst = Settings.Load();
+                f = new RootsDialog(sst.SampleRoots, sst.DisabledSampleRoots,
+                                    RootsDialog.Samples(LiveEnvironment.Detect(), sst.Roots));
             }
             else
             {

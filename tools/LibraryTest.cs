@@ -48,6 +48,7 @@ namespace AliveTools
             if (cmd == "all" || cmd == "walk") Walk();
             if (cmd == "all" || cmd == "usage") Usage();
             if (cmd == "all" || cmd == "aiff") Aiff();
+            if (cmd == "all" || cmd == "sources") Sources();
 
             if (_checks == 0)
             {
@@ -561,6 +562,46 @@ namespace AliveTools
             }
             catch { }
             return null;
+        }
+
+        // ---------------------------------------------------------------- sources
+
+        static void Sources()
+        {
+            string root = Fresh("sources");
+            string samples = Path.Combine(root, "Samples"), projects = Path.Combine(root, "Projects");
+            string series = Path.Combine(projects, "Series 1"), packs = Path.Combine(root, "Packs");
+            foreach (string d in new string[] { samples, series, packs }) Directory.CreateDirectory(d);
+
+            string cfg = Path.Combine(root, "Library.cfg");
+            File.WriteAllText(cfg,
+                "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<Ableton><ContentLibrary>\n"
+              + "<UserFolderInfoList>\n"
+              + "<UserFolderInfo Id=\"1\" Path=\"" + samples + "\" DisplayName=\"Samples E:\\\" IconName=\"\" />\n"
+              + "<UserFolderInfo Id=\"2\" Path=\"" + series + "\" DisplayName=\"Series 1\" IconName=\"\" />\n"
+              + "<UserFolderInfo Id=\"3\" Path=\"" + Path.Combine(root, "gone") + "\" DisplayName=\"Gone\" IconName=\"\" />\n"
+              + "</UserFolderInfoList>\n"
+              + "<PreferredFactoryPacksInstallationPath Value=\"" + packs + "\" />\n"
+              + "</ContentLibrary></Ableton>\n", Encoding.UTF8);
+
+            LiveEnvironment env = new LiveEnvironment();
+            env.ReadLibraryConfig(cfg);
+            Check(env.Places.Count == 2, "sources: a Place whose folder is gone must be left out, got " + env.Places.Count);
+            Check(env.Places.Count > 0 && env.Places[0].Key == "Samples E:\\" && Same(env.Places[0].Value, samples),
+                  "sources: the Place keeps Live's own name");
+            Check(Same(env.PacksFolder, packs), "sources: PreferredFactoryPacksInstallationPath was not read");
+
+            List<RootsDialog.Suggestion> s = RootsDialog.LiveSuggestions(env, new List<string> { projects });
+            RootsDialog.Suggestion sam = null, ser = null, pk = null;
+            foreach (RootsDialog.Suggestion x in s)
+            {
+                if (Same(x.Path, samples)) sam = x;
+                if (Same(x.Path, series)) ser = x;
+                if (Same(x.Path, packs)) pk = x;
+            }
+            Check(sam != null && !sam.Projects, "sources: a sample Place is offered as samples");
+            Check(ser != null && ser.Projects, "sources: a Place inside a project root is marked as projects");
+            Check(pk != null && pk.Title == "Packs" && pk.StartsGroup, "sources: the packs folder opens the second group");
         }
 
         // ------------------------------------------------------------------- real

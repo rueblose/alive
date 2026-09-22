@@ -42,8 +42,11 @@ rem RescueShow just opens the window so Shot.exe can photograph it - winexe, no 
   /out:"%OUT%\RescueShow.exe" %REFS% @"%LIST%" "%ROOT%\tools\RescueShow.cs"
 if errorlevel 1 goto fail
 
-rem DialogShow opens Settings / Options the same way, for the same reason.
+rem DialogShow opens Settings / Options the same way, for the same reason. It carries the
+rem app's manifest: without dpiAware Windows stretches the window as a bitmap on a scaled
+rem screen, the shot shows the unscaled layout, and clicks land beside the controls.
 "%CSC%" /nologo /target:winexe /platform:anycpu /codepage:65001 /main:AliveTools.DialogShow ^
+  /win32manifest:"%ROOT%\src\app.manifest" ^
   /out:"%OUT%\DialogShow.exe" %REFS% @"%LIST%" "%ROOT%\tools\DialogShow.cs"
 if errorlevel 1 goto fail
 

@@ -23,6 +23,16 @@ namespace AbletonManager
         public readonly Dictionary<string, string> Packs =
             new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 
+        /// <summary>
+        /// The Places of Live's browser — its name for the folder and the folder itself — over
+        /// every installed Live, without repeats. They mix sample folders with project ones:
+        /// the Samples tab offers them, and the person picks.
+        /// </summary>
+        public readonly List<KeyValuePair<string, string>> Places = new List<KeyValuePair<string, string>>();
+
+        /// <summary>Where Live installs packs (Preferences → Library); empty if it was never set.</summary>
+        public string PacksFolder = "";
+
         public static LiveEnvironment Detect()
         {
             LiveEnvironment e = new LiveEnvironment();
@@ -151,7 +161,7 @@ namespace AbletonManager
             }
         }
 
-        void ReadLibraryConfig(string path)
+        internal void ReadLibraryConfig(string path)
         {
             try
             {
@@ -172,6 +182,18 @@ namespace AbletonManager
                             if (!string.IsNullOrEmpty(p) && !string.IsNullOrEmpty(n) && Directory.Exists(p))
                                 Packs[n] = p;
                         }
+                        else if (r.Name == "UserFolderInfo")
+                        {
+                            string p = r.GetAttribute("Path");
+                            string n = r.GetAttribute("DisplayName");
+                            if (!string.IsNullOrEmpty(p) && Directory.Exists(p))
+                                AddPlace(string.IsNullOrEmpty(n) ? Path.GetFileName(p.TrimEnd('\\')) : n, p);
+                        }
+                        else if (r.Name == "PreferredFactoryPacksInstallationPath")
+                        {
+                            string p = r.GetAttribute("Value");
+                            if (!string.IsNullOrEmpty(p) && Directory.Exists(p)) PacksFolder = p;
+                        }
                         else if (r.Name == "ProjectName") projectName = r.GetAttribute("Value");
                         else if (r.Name == "ProjectPath") projectPath = r.GetAttribute("Value");
                     }
@@ -184,6 +206,19 @@ namespace AbletonManager
                 }
             }
             catch { /* broken config - we make do with what the defaults found */ }
+        }
+
+        /// <summary>A Place seen in several versions keeps the name the last read one gives it —
+        /// configs are read oldest first, so the newest Live has the last word.</summary>
+        void AddPlace(string name, string path)
+        {
+            for (int i = 0; i < Places.Count; i++)
+                if (string.Equals(Places[i].Value.TrimEnd('\\'), path.TrimEnd('\\'), StringComparison.OrdinalIgnoreCase))
+                {
+                    Places[i] = new KeyValuePair<string, string>(name, Places[i].Value);
+                    return;
+                }
+            Places.Add(new KeyValuePair<string, string>(name, path));
         }
     }
 }

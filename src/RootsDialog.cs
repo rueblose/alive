@@ -13,10 +13,105 @@ namespace AbletonManager
     /// button.</summary>
     public sealed class RootsDialog : GlassDialog
     {
+        /// <summary>
+        /// What the dialog is about. The project folders and the sample folders are one and the
+        /// same list — only the counter, the words and the Live suggestions differ.
+        /// </summary>
+        public sealed class Kind
+        {
+            public string Caption = "";
+            public string CountTitle = "";
+            public string PickTitle = "";
+
+            /// <summary>What a folder holds, -1 when it will not open. The second argument says
+            /// the dialog has closed and the counting can stop.</summary>
+            public Func<string, Func<bool>, int> Count;
+
+            /// <summary>A folder inside another folder of the list belongs to that one's tree
+            /// and is not counted separately — the sample walk skips it the same way.</summary>
+            public bool NestedInside;
+
+            /// <summary>Folders Live itself knows about; null — no From Live button.</summary>
+            public List<Suggestion> FromLive;
+        }
+
+        public sealed class Suggestion
+        {
+            public string Title = "";
+            public string Path = "";
+            public bool Projects;        // a project folder: offered, but marked, and not ticked by "Add from Live"
+            public bool StartsGroup;     // a separator above it in the menu
+        }
+
+        public static readonly Kind Projects = new Kind
+        {
+            Caption = "Where to look for projects",
+            CountTitle = "sets",
+            PickTitle = "Pick a folder with Ableton projects",
+            Count = CountSets
+        };
+
+        /// <summary>The sample folders: counted by the walk's own rules, with Live's Places,
+        /// the User Library, the packs and the Core Library on offer.</summary>
+        public static Kind Samples(LiveEnvironment env, IList<string> projectRoots)
+        {
+            Kind k = new Kind();
+            k.Caption = "Sample folders";
+            k.CountTitle = "samples";
+            k.PickTitle = "Pick a folder with samples";
+            k.Count = SampleIndex.CountIn;
+            k.NestedInside = true;
+            k.FromLive = LiveSuggestions(env, projectRoots);
+            return k;
+        }
+
+        public static List<Suggestion> LiveSuggestions(LiveEnvironment env, IList<string> projectRoots)
+        {
+            List<Suggestion> list = new List<Suggestion>();
+            if (env == null) return list;
+
+            foreach (KeyValuePair<string, string> p in env.Places)
+            {
+                Suggestion s = new Suggestion();
+                s.Title = p.Key;
+                s.Path = p.Value;
+                foreach (string r in projectRoots)
+                    if (SampleIndex.ContainsPath(new string[] { r }, p.Value) || SampleIndex.Inside(p.Value, r))
+                    { s.Projects = true; break; }
+                list.Add(s);
+            }
+
+            int group = list.Count;
+            AddLibrary(list, "User Library", env.UserLibrary);
+            if (env.PacksFolder.Length > 0) AddLibrary(list, "Packs", env.PacksFolder);
+            else
+                foreach (KeyValuePair<string, string> pack in env.Packs)
+                {
+                    if (pack.Key == "Core Library") continue;
+                    AddLibrary(list, "Packs", System.IO.Path.GetDirectoryName(pack.Value));
+                }
+            AddLibrary(list, "Core Library", env.CoreLibrary);
+            if (group < list.Count) list[group].StartsGroup = true;
+            return list;
+        }
+
+        static void AddLibrary(List<Suggestion> list, string title, string path)
+        {
+            if (string.IsNullOrEmpty(path) || !Directory.Exists(path)) return;
+            foreach (Suggestion s in list)
+                if (string.Equals(s.Path.TrimEnd('\\'), path.TrimEnd('\\'), StringComparison.OrdinalIgnoreCase)) return;
+            Suggestion n = new Suggestion();
+            n.Title = title;
+            n.Path = path;
+            list.Add(n);
+        }
+
         readonly RowListView _list = new RowListView();
         readonly GlassButton _remove = new GlassButton();
         readonly GlassButton _ok = new GlassButton();
         readonly GlassButton _cancel = new GlassButton();
+        readonly GlassButton _fromLive = new GlassButton();
+        readonly Kind _kind;
         readonly List<string> _roots = new List<string>();
         // The folder stays in the list but is temporarily left out of scanning — not the same
         // as "remove": its settings (filters and so on) need not be rebuilt from scratch.
@@ -26,15 +121,19 @@ namespace AbletonManager
         public List<string> DisabledRoots { get { return new List<string>(_disabled); } }
 
         public RootsDialog(IEnumerable<string> current, IEnumerable<string> disabledRoots)
+            : this(current, disabledRoots, Projects) { }
+
+        public RootsDialog(IEnumerable<string> current, IEnumerable<string> disabledRoots, Kind kind)
         {
-            Caption = "Where to look for projects";
+            _kind = kind;
+            Caption = kind.Caption;
             ClientSize = new Size(820, 470);
 
             foreach (string r in current) if (!_roots.Contains(r)) _roots.Add(r);
             if (disabledRoots != null) foreach (string r in disabledRoots) _disabled.Add(r);
 
             _list.SetColumns(new Column("Folder", 0),
-                             new Column("sets", 150) { Right = true });
+                             new Column(kind.CountTitle, 150) { Right = true });
             _list.ShowCheckboxes = true;
             _list.RowCheckedChanged += OnRowCheckedChanged;
             Controls.Add(_list);
@@ -54,6 +153,14 @@ namespace AbletonManager
             _cancel.FitToText(16);
             _cancel.Click += delegate { DialogResult = DialogResult.Cancel; Close(); };
             Controls.Add(_cancel);
+
+            if (kind.FromLive != null && kind.FromLive.Count > 0)
+            {
+                _fromLive.Text = "From Live";
+                _fromLive.FitToText(16);
+                _fromLive.Click += delegate { ShowFromLive(); };
+                Controls.Add(_fromLive);
+            }
 
             AllowDrop = true;
             _list.AllowDrop = true;
@@ -95,11 +202,12 @@ namespace AbletonManager
 
                 string cell;
                 if (missing) cell = "";
+                else if (_kind.NestedInside && !_disabled.Contains(r) && !IsWalked(r)) cell = "inside";
                 else
                 {
                     int n;
                     if (_counts.TryGetValue(CountKey(r), out n))
-                        cell = n < 0 ? "no access" : n.ToString();
+                        cell = n < 0 ? "no access" : n.ToString("N0", System.Globalization.CultureInfo.InvariantCulture);
                     else { cell = "…"; pending.Add(r); }
                 }
 
@@ -120,6 +228,14 @@ namespace AbletonManager
             foreach (string r in pending) StartCount(r);
         }
 
+        /// <summary>Switched on but lying inside another switched-on folder of the list — the
+        /// walk takes it as part of that one.</summary>
+        bool IsWalked(string root)
+        {
+            List<string> off = new List<string>(_disabled);
+            return SampleIndex.ContainsPath(SampleIndex.Effective(_roots, off), root);
+        }
+
         void StartCount(string root)
         {
             string key = CountKey(root);
@@ -127,7 +243,7 @@ namespace AbletonManager
 
             Thread t = new Thread(delegate ()
             {
-                int n = CountSets(root);
+                int n = _kind.Count(root, delegate { return _closed; });
                 if (_closed) return;
                 try
                 {
@@ -164,7 +280,7 @@ namespace AbletonManager
                 string path = r.Tag as string;
                 if (path == null || !string.Equals(path, root, StringComparison.OrdinalIgnoreCase)) continue;
                 if (r.Cells.Length > 1)
-                    r.Cells[1] = n < 0 ? "no access" : n.ToString();
+                    r.Cells[1] = n < 0 ? "no access" : n.ToString("N0", System.Globalization.CultureInfo.InvariantCulture);
                 break;
             }
             _list.Invalidate();
@@ -189,13 +305,13 @@ namespace AbletonManager
         /// a root like D:\ the projects lie deeper, and the column showed zero for a folder the
         /// scan then honestly parsed.
         ///
-        /// _closed — so a closed dialog stops hammering the disk in the background.
+        /// cancelled — so a closed dialog stops hammering the disk in the background.
         /// </summary>
-        int CountSets(string dir)
+        static int CountSets(string dir, Func<bool> cancelled)
         {
             if (!Directory.Exists(dir)) return -1;
             FolderScan.Result r = FolderScan.Find(dir, ".als", false, null,
-                                                  delegate { return _closed; });
+                                                  delegate { return cancelled(); });
             return r.RootFailed ? -1 : r.Files;
         }
 
@@ -207,7 +323,7 @@ namespace AbletonManager
 
         void AddFolder()
         {
-            string path = ModernFolderPicker.PickFolder(Handle, "Pick a folder with Ableton projects");
+            string path = ModernFolderPicker.PickFolder(Handle, _kind.PickTitle);
             if (string.IsNullOrEmpty(path)) return;
             if (!_roots.Contains(path))
             {
@@ -215,6 +331,57 @@ namespace AbletonManager
                 _disabled.Remove(path);
                 Refill();
             }
+        }
+
+        /// <summary>
+        /// Live's own folders as a menu of ticks: ticked is in the list. A click is a toggle
+        /// rather than a command, so the menu stays open for several in a row — the same as the
+        /// column menu of the tables.
+        /// </summary>
+        void ShowFromLive()
+        {
+            ContextMenuStrip menu = DarkMenu.Create();
+            menu.ShowCheckMargin = true;
+            menu.Closing += delegate (object s, ToolStripDropDownClosingEventArgs e)
+            {
+                if (e.CloseReason == ToolStripDropDownCloseReason.ItemClicked) e.Cancel = true;
+            };
+
+            foreach (Suggestion sg in _kind.FromLive)
+            {
+                if (sg.StartsGroup && menu.Items.Count > 0) menu.Items.Add(new ToolStripSeparator());
+                ToolStripMenuItem mi = new ToolStripMenuItem(sg.Title);
+                mi.ShortcutKeyDisplayString = sg.Projects ? "projects" : sg.Path;
+                mi.Checked = IndexOfRoot(sg.Path) >= 0;
+                Suggestion cur = sg;
+                ToolStripMenuItem box = mi;
+                mi.Click += delegate
+                {
+                    int at = IndexOfRoot(cur.Path);
+                    if (at >= 0)
+                    {
+                        _disabled.Remove(_roots[at]);
+                        _roots.RemoveAt(at);
+                    }
+                    else
+                    {
+                        _roots.Add(cur.Path);
+                        _disabled.Remove(cur.Path);
+                    }
+                    box.Checked = IndexOfRoot(cur.Path) >= 0;
+                    Refill();
+                };
+                menu.Items.Add(mi);
+            }
+            menu.Show(_fromLive, new Point(0, 0), ToolStripDropDownDirection.AboveRight);
+        }
+
+        int IndexOfRoot(string path)
+        {
+            for (int i = 0; i < _roots.Count; i++)
+                if (string.Equals(_roots[i].TrimEnd('\\'), path.TrimEnd('\\'), StringComparison.OrdinalIgnoreCase))
+                    return i;
+            return -1;
         }
 
         void RemoveSelected()
@@ -324,6 +491,7 @@ namespace AbletonManager
 
             int by = Card.Bottom - pad - _ok.Height;
             _remove.Location = new Point(Card.Left + pad, by);
+            _fromLive.Location = new Point(_remove.Right + Sc(10), by);
             _ok.Location = new Point(Card.Right - pad - _ok.Width, by);
             _cancel.Location = new Point(_ok.Left - Sc(10) - _cancel.Width, by);
         }
