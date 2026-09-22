@@ -238,6 +238,24 @@ fallback.
 and the location of the User Library through `ProjectPath` + `ProjectName`. This is the one trustworthy
 source: the paths inside sets go stale, while this file describes the machine's current state.
 
+The same file holds the **Places** of Live's browser — the folders added to its sidebar:
+
+```xml
+<UserFolderInfo Id="125114" Path="E:\Music\Samples" DisplayName="Samples E:\" IconName="" />
+<PreferredFactoryPacksInstallationPath Value="E:\Music\Factory Packs" />
+```
+
+They mix sample folders with project ones (on the development machine, ten Places, half of them
+project folders), so the Samples tab offers them and lets the person pick.
+`PreferredFactoryPacksInstallationPath` is where Live installs packs.
+
+**Two traps in the packs.** Every pack keeps browser previews in `Ableton Folder Info\Previews` —
+`.ogg` files named after the preset (`Hollow Point - 64 Pad Lab.adg.ogg`). They are not samples:
+9,491 files in the packs on the development machine are these, and a walk of the library has to skip
+that folder or the packs look far bigger than they are. And most of the `.aif` in the packs are not
+plain AIFF but AIFC compressed with Ableton's own codec (`able` in the `COMM` chunk — 2,480 of the
+first 3,000): only Live plays those. A sample library outside the packs holds ordinary AIFF.
+
 ## The result on a real library
 
 A sample of 366 sets, counting clip samples (`SampleRef`) only:

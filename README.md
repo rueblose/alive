@@ -4,7 +4,7 @@
 
 # Alive
 
-**A fast, portable catalog for your Ableton Live projects and plugins.**
+**A fast, portable catalog for your Ableton Live projects, plugins and samples.**
 
 One `.exe`. No installer, no external DLLs, no runtime to download.
 
@@ -74,6 +74,27 @@ sets use it, and whether it is still installed.
 The list comes from **Live's own database**, and from every installed version at once — plugins
 live in the system, while each Live install is only a snapshot of what it happened to scan. You
 can pin it to one specific install, or switch to walking your VST2/VST3 folders instead.
+
+### Samples
+
+A tab of its own (`Ctrl 4`) for the sample library: which packs and folders your sets actually use,
+and which have sat untouched since the day they were downloaded.
+
+Point it at your sample folders, or take the ones Live already knows — its browser Places, the User
+Library and the packs come straight from Live's own settings. The library is walked in the background
+and cached, so the tab opens at once even on a few hundred thousand files.
+
+**Usage is counted by projects, not by files.** Ten versions of one track are one use. A sample that
+Collect All copied into a project still counts for the pack it came from — the copy is recognised by
+its name and size.
+
+**Filters** here are three lenses: the folder tree, *Never used* — the biggest folders nothing was ever
+taken from, heaviest first — and *Most used*, your working sounds. Select a sample to see its waveform,
+format and the projects it plays in. `Space` plays it — and from then on the arrow keys play each
+sample they land on, as in Live's browser, until `Space` again. Any sample drags straight into Live.
+
+Nothing is ever deleted or moved from here: moving a sample breaks every set that uses it. The tab
+tells you what is safe to clear out; Explorer does the clearing.
 
 ### Rescue
 
@@ -159,8 +180,8 @@ Requires **.NET Framework 4.6+**, which ships with Windows 10 and 11.
 | | | | |
 |---|---|---|---|
 | `F1` | Help | `Enter` | Open set in Live |
-| `Ctrl 1` / `Ctrl 2` / `Ctrl 3` | Home / Sets / Plugins | `Shift Enter` | Show in Explorer |
-| `F` | Filters | `Space` | Play render |
+| `Ctrl 1` … `Ctrl 4` | Home / Sets / Plugins / Samples | `Shift Enter` | Show in Explorer |
+| `F` | Filters | `Space` | Play render or sample |
 | `Shift F` | Scan folders | `Ctrl Space` | Arrangement preview |
 | `Ctrl F` | Search | `Q` | Pin set |
 | `Ctrl ,` | Settings | `Ctrl T` | Tags and notes |
