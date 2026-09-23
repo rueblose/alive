@@ -499,6 +499,12 @@ namespace AbletonManager
         {
             LoadColumnSpec(_settings.SetColumns, _setOrder, _setColW, DefaultSetCols, "Set", true);
             LoadColumnSpec(_settings.PluginColumns, _pluginOrder, _pluginColW, DefaultPluginCols, "Plugin", false);
+            foreach (string tok in _settings.SampleColumns.Split(','))
+            {
+                int colon = tok.IndexOf(':'), w;
+                if (colon > 0 && int.TryParse(tok.Substring(colon + 1), out w) && w > 0)
+                    _sampleColW[tok.Substring(0, colon).Trim()] = w;
+            }
 
             // A one-off repair of old settings: before this a column switched on fell to the
             // end, and the saved order is merely a history of presses rather than anybody's
@@ -2510,7 +2516,23 @@ namespace AbletonManager
 
         void OnColumnsResized()
         {
-            if (SamplesDomain) return;
+            if (SamplesDomain)
+            {
+                // Only what differs from the default is kept, as for the sets: a default that
+                // changes in a later version then reaches the columns nobody has touched.
+                foreach (Column c in _list.ColumnList)
+                    foreach (SampleCol d in _sampleCols)
+                        if (d.Id == c.Id && c.Width > 0)
+                        {
+                            if (c.Width == d.Width) _sampleColW.Remove(c.Id);
+                            else _sampleColW[c.Id] = c.Width;
+                        }
+                List<string> toks = new List<string>();
+                foreach (KeyValuePair<string, int> kv in _sampleColW) toks.Add(kv.Key + ":" + kv.Value);
+                _settings.SampleColumns = string.Join(",", toks.ToArray());
+                _settings.Save();
+                return;
+            }
             Dictionary<string, int> widths = SetsDomain ? _setColW : _pluginColW;
             foreach (Column c in _list.ColumnList)
                 if (c.Width > 0 && !string.IsNullOrEmpty(c.Id)) widths[c.Id] = c.Width;
@@ -3160,9 +3182,8 @@ namespace AbletonManager
         /// </summary>
         void OnRowPlay(int idx)
         {
-            if (idx < 0 || idx >= _list.Rows.Count) return;
-            if (SamplesDomain) { ToggleSample(_list.Rows[idx].Tag as SampleFile); return; }
             if (!SetsDomain) return;
+            if (idx < 0 || idx >= _list.Rows.Count) return;
             SetEntry s = _list.Rows[idx].Tag as SetEntry;
             if (s == null) return;
 

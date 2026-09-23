@@ -31,6 +31,10 @@ namespace AbletonManager
         /// sets.</summary>
         public string PluginColumns = "";
 
+        /// <summary>The Samples tab's column widths, "Samples:130,Size:120". Only widths: its
+        /// columns change with the view and cannot be reordered.</summary>
+        public string SampleColumns = "";
+
         /// <summary>
         /// Column order has already been brought back to the catalog's. A column switched on
         /// used to go to the end, and the table stopped matching the menu. A one-off repair:
@@ -187,6 +191,7 @@ namespace AbletonManager
                         s.DisabledSampleRoots.Add(val);
                     else if (key == "setcolumns") s.SetColumns = val;
                     else if (key == "plugincolumns") s.PluginColumns = val;
+                    else if (key == "samplecolumns") s.SampleColumns = val;
                     else if (key == "columnssorted") s.ColumnsSorted = val == "1";
                     else if (key == "pinnedfirst") s.PinnedFirst = val == "1";
                     else if (key == "overviewopen") s.OverviewOpen = val == "1";
@@ -277,6 +282,7 @@ namespace AbletonManager
                 sb.Append("collecttozip=").AppendLine(CollectToZip ? "1" : "0");
                 if (SetColumns.Length > 0) sb.Append("setcolumns=").AppendLine(SetColumns);
                 if (PluginColumns.Length > 0) sb.Append("plugincolumns=").AppendLine(PluginColumns);
+                if (SampleColumns.Length > 0) sb.Append("samplecolumns=").AppendLine(SampleColumns);
                 sb.Append("columnssorted=").AppendLine(ColumnsSorted ? "1" : "0");
                 if (WindowBounds.Length > 0) sb.Append("window=").AppendLine(WindowBounds);
                 sb.Append("windowmax=").AppendLine(WindowMaximized ? "1" : "0");

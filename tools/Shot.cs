@@ -84,7 +84,7 @@ namespace AliveTools
         /// DBLCLK, UP. The second press arrives as its own message, not as a second DOWN, and
         /// a control that miscounts it can only be caught by sending the genuine sequence.
         /// </summary>
-        enum Kind { Left, Right, Double, Text }
+        enum Kind { Left, Right, Double, Text, Drag }
 
         [DllImport("user32.dll")] static extern bool EnumChildWindows(IntPtr parent, EnumProc cb, IntPtr param);
         [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int GetClassName(IntPtr hWnd, System.Text.StringBuilder name, int max);
@@ -145,11 +145,42 @@ namespace AliveTools
                             + (target == window ? " (the window itself, not a control)" : " (child control)"));
         }
 
+        /// <summary>A drag with the left button: press at the start, a few moves on the way —
+        /// all sent to the control under the start, as Windows does while the button is held —
+        /// and release at the end. A column edge in a table is taken hold of like this.</summary>
+        static void Drag(IntPtr window, Point from, Point to)
+        {
+            POINT screen = new POINT(from.X, from.Y);
+            ClientToScreen(window, ref screen);
+            IntPtr target = WindowFromPoint(screen);
+            if (target == IntPtr.Zero) target = window;
+
+            const int steps = 8;
+            for (int i = 0; i <= steps + 1; i++)
+            {
+                int k = Math.Min(i, steps);
+                POINT p = new POINT(from.X + (to.X - from.X) * k / steps, from.Y + (to.Y - from.Y) * k / steps);
+                ClientToScreen(window, ref p);
+                ScreenToClient(target, ref p);
+                IntPtr lp = (IntPtr)((p.Y << 16) | (p.X & 0xFFFF));
+                if (i == 0)
+                {
+                    PostMessage(target, WM_MOUSEMOVE, IntPtr.Zero, lp);
+                    Thread.Sleep(60);
+                    PostMessage(target, WM_LBUTTONDOWN, (IntPtr)1, lp);
+                }
+                else if (i <= steps) PostMessage(target, WM_MOUSEMOVE, (IntPtr)1, lp);
+                else PostMessage(target, WM_LBUTTONUP, IntPtr.Zero, lp);
+                Thread.Sleep(40);
+            }
+            Console.WriteLine("dragged " + from.X + "," + from.Y + " -> " + to.X + "," + to.Y + " in hwnd " + target.ToInt64());
+        }
+
         static int Main(string[] args)
         {
             if (args.Length < 2)
             {
-                Console.WriteLine("usage: Shot.exe <exe> <out.png> [--wait S] [--size W,H] [--click X,Y] [--rclick X,Y] [--dbl X,Y] [--settext TEXT] [args...]");
+                Console.WriteLine("usage: Shot.exe <exe> <out.png> [--wait S] [--size W,H] [--click X,Y] [--rclick X,Y] [--dbl X,Y] [--drag X1,Y1,X2,Y2] [--settext TEXT] [args...]");
                 return 2;
             }
 
@@ -161,6 +192,7 @@ namespace AliveTools
             List<Point> clicks = new List<Point>();
             List<Kind> kinds = new List<Kind>();
             List<string> texts = new List<string>();
+            List<Point> ends = new List<Point>();       // where a drag lets go; empty for the rest
             Size size = Size.Empty;
             int settle = 6000;
 
@@ -177,6 +209,17 @@ namespace AliveTools
                     clicks.Add(new Point(int.Parse(xy[0]), int.Parse(xy[1])));
                     kinds.Add(kind);
                     texts.Add(null);
+                    ends.Add(Point.Empty);
+                    continue;
+                }
+                // --drag X1,Y1,X2,Y2 - hold the left button at one point and let go at another
+                if (args[i] == "--drag" && i + 1 < args.Length)
+                {
+                    string[] q = args[++i].Split(',');
+                    clicks.Add(new Point(int.Parse(q[0]), int.Parse(q[1])));
+                    kinds.Add(Kind.Drag);
+                    texts.Add(null);
+                    ends.Add(new Point(int.Parse(q[2]), int.Parse(q[3])));
                     continue;
                 }
                 // --settext TEXT - put TEXT into the window's text field, in order with the clicks
@@ -185,6 +228,7 @@ namespace AliveTools
                     clicks.Add(Point.Empty);
                     kinds.Add(Kind.Text);
                     texts.Add(args[++i]);
+                    ends.Add(Point.Empty);
                     continue;
                 }
                 // --size W,H - resize the window before capturing, in physical pixels. A
@@ -243,6 +287,7 @@ namespace AliveTools
                 for (int i = 0; i < clicks.Count; i++)
                 {
                     if (kinds[i] == Kind.Text) SetText(hwnd, texts[i]);
+                    else if (kinds[i] == Kind.Drag) Drag(hwnd, clicks[i], ends[i]);
                     else Click(hwnd, clicks[i].X, clicks[i].Y, kinds[i]);
                     Thread.Sleep(900);      // the window gets time to rebuild the list
                 }

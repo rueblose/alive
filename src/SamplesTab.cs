@@ -67,6 +67,9 @@ namespace AbletonManager
 
         List<SampleCol> _sampleCols = new List<SampleCol>();
 
+        // Widths the person dragged the columns to, by id — kept in the settings like the sets'.
+        readonly Dictionary<string, int> _sampleColW = new Dictionary<string, int>();
+
         static readonly CultureInfo Inv = CultureInfo.InvariantCulture;
 
         bool HasSampleRoots { get { return _settings.SampleRoots.Count > 0; } }
@@ -225,7 +228,9 @@ namespace AbletonManager
             // the layout is in logical pixels while the type follows the screen's scale, and at
             // 125% narrower columns cut "2026-09-22" to "2026-0…". A sorted column's header
             // carries its arrow too: "Samples" needs 113 with it and "Projects" 109, measured.
-            c.Add(new SampleCol { Id = "Name", Title = first, Width = 0, Font = Theme.FTitle, Color = Theme.Text });
+            // A long name is cut in its middle: what tells two samples apart is at the end of
+            // the name — "(7).wav", "Loop 02" — and so is the extension.
+            c.Add(new SampleCol { Id = "Name", Title = first, Width = 0, Font = Theme.FTitle, Color = Theme.Text, Path = true });
             // Location stretches together with the name: the two share whatever is left, and a
             // path gets as much room as a name does.
             if (flat) c.Add(new SampleCol { Id = "Location", Title = "Location", Width = 0, Path = true });
@@ -244,24 +249,27 @@ namespace AbletonManager
         {
             SampleUsage use = Usage();
             _list.ColumnsConfigurable = false;
+            _list.ColumnsResizable = true;
             _list.ShowPinIndicator = false;
-            _list.ShowPlayButton = true;
+            // No play button: a sample plays when it is selected (AuditionSelection).
+            _list.ShowPlayButton = false;
             _list.IndentColumn = "Name";
             _list.DragFilePath = delegate (RowData r)
             {
                 SampleFile f = r.Tag as SampleFile;
                 return f != null ? f.Path : null;
             };
-            _list.PlayingTag = _previewing;
-            _list.Playing = _previewing != null;
-
             _sampleCols = SampleColumns();
             Column[] cols = new Column[_sampleCols.Count];
             int si = -1;
             for (int i = 0; i < _sampleCols.Count; i++)
             {
                 SampleCol d = _sampleCols[i];
-                cols[i] = new Column(d.Title, d.Width) { Id = d.Id, Right = d.Right, Font = d.Font, Color = d.Color, PathEllipsis = d.Path };
+                // A width the person dragged to stays — for the fixed columns; the name and the
+                // location keep sharing whatever is left.
+                int w = d.Width, ov;
+                if (w != 0 && _sampleColW.TryGetValue(d.Id, out ov) && ov > 0) w = ov;
+                cols[i] = new Column(d.Title, w) { Id = d.Id, Right = d.Right, Font = d.Font, Color = d.Color, PathEllipsis = d.Path };
                 if (d.Id == _sampleSortId) si = i;
             }
             _list.SetColumns(cols);
@@ -353,7 +361,7 @@ namespace AbletonManager
                                   fu != null ? fu.LastUsed : default(DateTime), d.TotalBytes, true);
             r.Tag = d;
             r.Indent = depth;
-            r.CanPlay = false;
+            r.Icon = Glyph.Folder;
             r.Dim = fu == null && !UsageUnknown;
             return r;
         }
@@ -366,7 +374,8 @@ namespace AbletonManager
                                   u != null ? u.LastUsed : default(DateTime), f.Size, false);
             r.Tag = f;
             r.Indent = depth;
-            r.CanPlay = f.CanPreview;
+            r.Icon = Glyph.Wave;
+            r.NameFont = Theme.FBody;
             r.Dim = u == null && !UsageUnknown;
             return r;
         }
@@ -554,9 +563,6 @@ namespace AbletonManager
             _previewing = f;
             _auditioned = f.Path;
             _previewStarted = Environment.TickCount;
-            _list.PlayingTag = f;
-            _list.Playing = true;
-            _list.Invalidate();
             _previewTimer.Start();
             UpdatePlayerTransport();
         }
@@ -567,12 +573,11 @@ namespace AbletonManager
             _preview.Close();
             _previewing = null;
             _previewTimer.Stop();
-            if (SamplesDomain) { _list.PlayingTag = null; _list.Playing = false; _list.Invalidate(); }
             _detail.StopWave();
         }
 
-        /// <summary>▶ and Space: the playing one stops, any other starts. A file only Live plays
-        /// silences whatever was playing.</summary>
+        /// <summary>Space and the row menu: the playing one stops, any other starts. A file
+        /// only Live plays silences whatever was playing.</summary>
         void ToggleSample(SampleFile f)
         {
             if (f == null) return;

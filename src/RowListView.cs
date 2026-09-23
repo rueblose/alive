@@ -26,8 +26,9 @@ namespace AbletonManager
         /// </summary>
         public bool Chips;
 
-        /// <summary>The cell is a path: shortened in the middle, as Explorer does, so the last
-        /// folder stays readable — "E:\…\Factory Packs" rather than "E:\Music\Fact…". See
+        /// <summary>The cell is a path or a file name: shortened in the middle, as Explorer
+        /// does, so the last folder stays readable — "E:\…\Factory Packs" rather than
+        /// "E:\Music\Fact…" — and a name keeps its end, "Kick 0…ped 02.wav". See
         /// RowListView.FitPath.</summary>
         public bool PathEllipsis;
 
@@ -65,12 +66,19 @@ namespace AbletonManager
         public bool Pinned;
 
         /// <summary>
-        /// How deep the row sits in a tree: the name column is indented by this many steps with
-        /// a rail in the last one — a version under its project (1), a folder or a sample under
-        /// its folder on the Samples tab (any depth). Which column is "the name" is said by
-        /// RowListView.IndentColumn.
+        /// How deep the row sits in a tree: the name column is indented by this many steps — a
+        /// version under its project (1), a folder or a sample under its folder on the Samples
+        /// tab (any depth). Which column is "the name" is said by RowListView.IndentColumn.
         /// </summary>
         public int Indent;
+
+        /// <summary>A glyph before the name (in IndentColumn): on the Samples tab a folder and
+        /// an audio file look different at a glance.</summary>
+        public Glyph? Icon;
+
+        /// <summary>The name (in IndentColumn) in this font instead of the column's — a sample
+        /// in regular weight under its semibold folders.</summary>
+        public Font NameFont;
 
         /// <summary>The whole row in the dim colour — on the Samples tab, what no set uses.</summary>
         public bool Dim;
@@ -178,6 +186,13 @@ namespace AbletonManager
         /// <summary>Whether column widths can be changed and the column menu called with the
         /// right button.</summary>
         public bool ColumnsConfigurable;
+
+        /// <summary>Column edges can be dragged, with no column menu and no moving of headings —
+        /// the Samples tab, whose set of columns changes with the view. The first column keeps
+        /// stretching: the edge after it moves the next column instead.</summary>
+        public bool ColumnsResizable;
+
+        bool CanResize { get { return ColumnsConfigurable || ColumnsResizable; } }
 
         /// <summary>
         /// A checkbox before the first column — "is this row on" (a folder temporarily excluded
@@ -962,8 +977,8 @@ namespace AbletonManager
         /// </summary>
         int GripAt(int px, int[] widths)
         {
-            if (!ColumnsConfigurable) return -1;
-            if (_columns.Count > 0)
+            if (!CanResize) return -1;
+            if (ColumnsConfigurable && _columns.Count > 0)
             {
                 int edge0 = LeftX + widths[0];
                 if (Math.Abs(px - edge0) <= Sc(4)) return 0;
@@ -1622,31 +1637,35 @@ namespace AbletonManager
         {
             Column col = _columns[c];
             Font f = col.Font ?? Theme.FBody;
+            if (col.Id == IndentColumn && row.NameFont != null) f = row.NameFont;
             Color color = dim ? Theme.TextDim
                               : (col.Color ?? (c == 0 || bright ? Theme.Text : Theme.TextDim));
             if (entrance < 1.0f) color = Color.FromArgb((int)Math.Round(color.A * entrance), color);
 
-            // A version under an expanded row is indented in the name column, and in that indent
-            // runs a rail — like the guide lines of a file tree. Full row height and on every
-            // level: short dashes with gaps between the rows looked cluttered, and a rail drawn
-            // only on a row's own level broke its parent's line wherever a deeper folder was
-            // open. On the Samples tab the same rails mark the whole folder tree.
-            int level = col.Id == IndentColumn ? row.Indent : 0;
+            // A version under an expanded row, a folder or a sample inside its folder: the name
+            // is indented, and the indent alone says the level. Guide rails were tried, short
+            // and full-height — both only cluttered the tree.
+            bool nameCol = col.Id == IndentColumn;
+            int level = nameCol ? row.Indent : 0;
             int indent = level * Sc(20);
             int x = ColX(widths, c);
 
-            if (level > 0)
-            {
-                Color railColor = Color.FromArgb((int)Math.Round(120 * entrance), Theme.TextDim);
-                for (int l = 1; l <= level; l++)
-                    g.FillRectangle(Theme.GetBrush(railColor),
-                                    new Rectangle(x + (l - 1) * Sc(20) + Sc(6), topAnim, Sc(2), rowH));
-            }
             int maxRight = Width - PadRight;
             int cellX = x + indent;
             int cellW = Math.Max(0, widths[c] - Sc(10) - indent);
             if (cellX + cellW > maxRight) cellW = Math.Max(0, maxRight - cellX);
             if (cellW <= 0 && cellX >= maxRight) return;
+
+            // The row's glyph stands before the name and takes its room from it.
+            if (nameCol && row.Icon.HasValue && cellW > Sc(40))
+            {
+                int icon = Sc(16);
+                Color ic = Theme.TextDim;
+                if (entrance < 1.0f) ic = Color.FromArgb((int)Math.Round(ic.A * entrance), ic);
+                Icons.Draw(g, row.Icon.Value, new RectangleF(cellX, topAnim + (rowH - icon) / 2f, icon, icon), ic, 1.4f);
+                cellX += icon + Sc(10);
+                cellW -= icon + Sc(10);
+            }
             Rectangle cr = new Rectangle(cellX, topAnim, cellW, rowH);
             // The last argument is the left boundary of the clickable zone: a scrolling column
             // can slide under the pinned first one, where the drawing is cut off by the clip,
@@ -2102,7 +2121,7 @@ namespace AbletonManager
         /// </summary>
         void PaintGrip(Graphics g, int[] widths)
         {
-            if (_gripAlpha <= 0.001f || !ColumnsConfigurable) return;
+            if (_gripAlpha <= 0.001f || !CanResize) return;
 
             int top = Sc(13), bottom = HeaderHeight - Sc(13);
             if (bottom <= top) return;
@@ -2110,7 +2129,7 @@ namespace AbletonManager
             int a = (int)(180 * Math.Min(1f, Math.Max(0f, _gripAlpha)));
             using (Pen p = new Pen(Color.FromArgb(a, Theme.TextDim)))
             {
-                if (_columns.Count > 0)
+                if (ColumnsConfigurable && _columns.Count > 0)
                 {
                     int x0 = LeftX + widths[0];
                     if (x0 < Width - PadRight)

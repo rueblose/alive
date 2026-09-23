@@ -17,7 +17,7 @@ namespace AbletonManager
         Volume1_50 = VolumeLow, Volume51_100 = VolumeHigh,
         Star, StarFill, Plus,
         NextSet, PrevSet, NextTrack, PrevTrack, OpenPlaylist, ViewList,
-        Note, Tag, Nebula, Keyboard, Calendar, HiddenBtnsOpen, HiddenBtnsClose,
+        Note, Tag, Nebula, Keyboard, Calendar, HiddenBtnsOpen, HiddenBtnsClose, Wave,
         // Die faces run consecutively: MainForm picks a random one as Dice1 + n.
         Dice1, Dice2, Dice3, Dice4, Dice5, Dice6, Dice = Dice1
     }
@@ -139,6 +139,21 @@ namespace AbletonManager
                     g.DrawLine(p, lx, box.Top + box.Height * 0.53f, rx, box.Top + box.Height * 0.53f);
                     g.DrawLine(p, lx, box.Top + box.Height * 0.76f,
                                   lx + (rx - lx) * 0.55f, box.Top + box.Height * 0.76f);
+                    break;
+                }
+
+                // An audio file: five bars of a level, the way a sample is drawn in any
+                // browser — next to the folder glyph it says "a sound, not a folder" at once.
+                case Glyph.Wave:
+                {
+                    float[] bars = { 0.38f, 0.8f, 0.54f, 1f, 0.46f };
+                    float step = w / bars.Length;
+                    for (int i = 0; i < bars.Length; i++)
+                    {
+                        float bx = x + step * (i + 0.5f);
+                        float half = h * 0.4f * bars[i];
+                        g.DrawLine(p, bx, cy - half, bx, cy + half);
+                    }
                     break;
                 }
 
