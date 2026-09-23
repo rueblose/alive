@@ -9,8 +9,8 @@ using System.Windows.Forms;
 
 namespace AbletonManager
 {
-    /// <summary>Choosing the folders to look for projects in. Shown on first run and from the
-    /// button.</summary>
+    /// <summary>Choosing the folders to look in: for projects and for samples, a tab each.
+    /// Shown on first run and from the folder button.</summary>
     public sealed class RootsDialog : GlassDialog
     {
         /// <summary>
@@ -20,8 +20,13 @@ namespace AbletonManager
         public sealed class Kind
         {
             public string Caption = "";
+            public string Tab = "";          // the tab's name when the dialog holds several kinds
             public string CountTitle = "";
             public string PickTitle = "";
+
+            /// <summary>Scan may be pressed with nothing in the list: no sample folders is a
+            /// state, while no project folders is only a first run not finished yet.</summary>
+            public bool AllowEmpty;
 
             /// <summary>What a folder holds, -1 when it will not open. The second argument says
             /// the dialog has closed and the counting can stop.</summary>
@@ -46,6 +51,7 @@ namespace AbletonManager
         public static readonly Kind Projects = new Kind
         {
             Caption = "Where to look for projects",
+            Tab = "Projects",
             CountTitle = "sets",
             PickTitle = "Pick a folder with Ableton projects",
             Count = CountSets
@@ -57,6 +63,8 @@ namespace AbletonManager
         {
             Kind k = new Kind();
             k.Caption = "Sample folders";
+            k.Tab = "Samples";
+            k.AllowEmpty = true;
             k.CountTitle = "samples";
             k.PickTitle = "Pick a folder with samples";
             k.Count = SampleIndex.CountIn;
@@ -106,34 +114,92 @@ namespace AbletonManager
             list.Add(n);
         }
 
+        /// <summary>
+        /// One tab of the dialog: a kind of folders and the list being edited. The counts live
+        /// here too, so switching tabs back and forth does not walk the same trees again.
+        /// </summary>
+        public sealed class Page
+        {
+            public readonly Kind Kind;
+            public readonly List<string> Roots = new List<string>();
+            // The folder stays in the list but is temporarily left out of scanning — not the
+            // same as "remove": its settings (filters and so on) need not be rebuilt from
+            // scratch.
+            public readonly HashSet<string> Disabled = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            internal readonly Dictionary<string, int> Counts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+            internal readonly HashSet<string> Counting = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            public Page(Kind kind, IEnumerable<string> roots, IEnumerable<string> disabled)
+            {
+                Kind = kind;
+                foreach (string r in roots) if (!Roots.Contains(r)) Roots.Add(r);
+                if (disabled != null) foreach (string r in disabled) Disabled.Add(r);
+            }
+
+            public List<string> DisabledList { get { return new List<string>(Disabled); } }
+
+            /// <summary>Whether the list is still exactly what it was given — then there is
+            /// nothing new to scan for.</summary>
+            public bool Same(IList<string> roots, IEnumerable<string> disabled)
+            {
+                if (roots.Count != Roots.Count) return false;
+                for (int i = 0; i < roots.Count; i++)
+                    if (!string.Equals(roots[i], Roots[i], StringComparison.OrdinalIgnoreCase)) return false;
+                HashSet<string> off = new HashSet<string>(disabled, StringComparer.OrdinalIgnoreCase);
+                return off.SetEquals(Disabled);
+            }
+        }
+
         readonly RowListView _list = new RowListView();
+        readonly Segmented _tabs = new Segmented();
         readonly GlassButton _remove = new GlassButton();
         readonly GlassButton _ok = new GlassButton();
         readonly GlassButton _cancel = new GlassButton();
         readonly GlassButton _fromLive = new GlassButton();
-        readonly Kind _kind;
-        readonly List<string> _roots = new List<string>();
-        // The folder stays in the list but is temporarily left out of scanning — not the same
-        // as "remove": its settings (filters and so on) need not be rebuilt from scratch.
-        readonly HashSet<string> _disabled = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        readonly Page[] _pages;
+        Page _page;
 
-        public List<string> Result { get { return _roots; } }
-        public List<string> DisabledRoots { get { return new List<string>(_disabled); } }
+        // The size the person stretched the window to — kept for as long as the program runs,
+        // like the player's place: a list that needed a taller window will need it next time.
+        static Size _lastSize;
+
+        public List<string> Result { get { return _pages[0].Roots; } }
+        public List<string> DisabledRoots { get { return _pages[0].DisabledList; } }
+
+        /// <summary>Which tab is shown — set before ShowDialog, read after it.</summary>
+        public int Tab
+        {
+            get { return Array.IndexOf(_pages, _page); }
+            set { _tabs.SelectedIndex = Math.Max(0, Math.Min(_pages.Length - 1, value)); }
+        }
 
         public RootsDialog(IEnumerable<string> current, IEnumerable<string> disabledRoots)
-            : this(current, disabledRoots, Projects) { }
+            : this(new Page(Projects, current, disabledRoots)) { }
 
         public RootsDialog(IEnumerable<string> current, IEnumerable<string> disabledRoots, Kind kind)
+            : this(new Page(kind, current, disabledRoots)) { }
+
+        /// <summary>Several kinds of folders in one window, a tab each — the project folders
+        /// and the sample folders are edited in the same place.</summary>
+        public RootsDialog(params Page[] pages)
         {
-            _kind = kind;
-            Caption = kind.Caption;
-            ClientSize = new Size(820, 470);
+            _pages = pages;
+            _page = pages[0];
+            Caption = pages.Length > 1 ? "Folders" : _page.Kind.Caption;
+            ClientSize = _lastSize.IsEmpty ? new Size(820, 470) : _lastSize;
+            Resizable = true;
+            MinimumSize = new Size(Sc(640), Sc(380));
 
-            foreach (string r in current) if (!_roots.Contains(r)) _roots.Add(r);
-            if (disabledRoots != null) foreach (string r in disabledRoots) _disabled.Add(r);
+            if (pages.Length > 1)
+            {
+                string[] names = new string[pages.Length];
+                for (int i = 0; i < pages.Length; i++) names[i] = pages[i].Kind.Tab;
+                _tabs.SetItems(names);
+                _tabs.SelectedChanged += delegate { ShowPage(_pages[_tabs.SelectedIndex]); };
+                Controls.Add(_tabs);
+            }
 
-            _list.SetColumns(new Column("Folder", 0),
-                             new Column(kind.CountTitle, 150) { Right = true });
             _list.ShowCheckboxes = true;
             _list.RowCheckedChanged += OnRowCheckedChanged;
             Controls.Add(_list);
@@ -154,13 +220,10 @@ namespace AbletonManager
             _cancel.Click += delegate { DialogResult = DialogResult.Cancel; Close(); };
             Controls.Add(_cancel);
 
-            if (kind.FromLive != null && kind.FromLive.Count > 0)
-            {
-                _fromLive.Text = "From Live";
-                _fromLive.FitToText(16);
-                _fromLive.Click += delegate { ShowFromLive(); };
-                Controls.Add(_fromLive);
-            }
+            _fromLive.Text = "From Live";
+            _fromLive.FitToText(16);
+            _fromLive.Click += delegate { ShowFromLive(); };
+            Controls.Add(_fromLive);
 
             AllowDrop = true;
             _list.AllowDrop = true;
@@ -168,6 +231,15 @@ namespace AbletonManager
             _list.DragLeave += delegate (object s, EventArgs e) { OnDragLeave(e); };
             _list.DragDrop += delegate (object s, DragEventArgs e) { OnDragDrop(e); };
 
+            ShowPage(_page);
+        }
+
+        void ShowPage(Page page)
+        {
+            _page = page;
+            _list.SetColumns(new Column("Folder", 0),
+                             new Column(page.Kind.CountTitle, 150) { Right = true });
+            _fromLive.Visible = page.Kind.FromLive != null && page.Kind.FromLive.Count > 0;
             Refill();
         }
 
@@ -179,12 +251,7 @@ namespace AbletonManager
         // seconds when the folder list opens" came from.
         //
         // Now we count in the background and remember the answer: the dialog opens instantly
-        // and the numbers arrive after it. The key includes the Backup flag — the answer
-        // differs with it.
-        readonly Dictionary<string, int> _counts =
-            new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
-        readonly HashSet<string> _counting =
-            new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        // and the numbers arrive after it. A tab counts only when it is shown.
         volatile bool _closed;
 
         // the Backup flag is gone — the switch was removed, sets in Backup are always excluded
@@ -195,18 +262,18 @@ namespace AbletonManager
             List<RowData> rows = new List<RowData>();
             List<string> pending = new List<string>();
 
-            foreach (string r in _roots)
+            foreach (string r in _page.Roots)
             {
                 RowData row = new RowData();
                 bool missing = !Directory.Exists(r);
 
                 string cell;
                 if (missing) cell = "";
-                else if (_kind.NestedInside && !_disabled.Contains(r) && !IsWalked(r)) cell = "inside";
+                else if (_page.Kind.NestedInside && !_page.Disabled.Contains(r) && !IsWalked(r)) cell = "inside";
                 else
                 {
                     int n;
-                    if (_counts.TryGetValue(CountKey(r), out n))
+                    if (_page.Counts.TryGetValue(CountKey(r), out n))
                         cell = n < 0 ? "no access" : n.ToString("N0", System.Globalization.CultureInfo.InvariantCulture);
                     else { cell = "…"; pending.Add(r); }
                 }
@@ -216,43 +283,46 @@ namespace AbletonManager
                 // top of it.
                 row.Cells = new string[] { r, cell };
                 row.Tag = r;
-                row.Checked = !_disabled.Contains(r);
+                row.Checked = !_page.Disabled.Contains(r);
                 if (missing)
                     row.Marks.Add(new CellMark(1, Theme.Red, "not found"));
                 rows.Add(row);
             }
 
             _list.SetRows(rows);
-            _ok.Enabled = _roots.Count > 0;
+            // An empty list of project folders would scan nothing into the catalog; an empty
+            // list of sample folders is a way to clear the Samples tab.
+            _ok.Enabled = _page.Roots.Count > 0 || _page.Kind.AllowEmpty;
 
-            foreach (string r in pending) StartCount(r);
+            foreach (string r in pending) StartCount(_page, r);
         }
 
         /// <summary>Switched on but lying inside another switched-on folder of the list — the
         /// walk takes it as part of that one.</summary>
         bool IsWalked(string root)
         {
-            List<string> off = new List<string>(_disabled);
-            return SampleIndex.ContainsPath(SampleIndex.Effective(_roots, off), root);
+            return SampleIndex.ContainsPath(SampleIndex.Effective(_page.Roots, _page.DisabledList), root);
         }
 
-        void StartCount(string root)
+        void StartCount(Page page, string root)
         {
             string key = CountKey(root);
-            if (!_counting.Add(key)) return;          // this count is already running
+            if (!page.Counting.Add(key)) return;          // this count is already running
 
             Thread t = new Thread(delegate ()
             {
-                int n = _kind.Count(root, delegate { return _closed; });
+                int n = page.Kind.Count(root, delegate { return _closed; });
                 if (_closed) return;
                 try
                 {
                     BeginInvoke((MethodInvoker)delegate
                     {
                         if (IsDisposed) return;
-                        _counts[key] = n;
-                        _counting.Remove(key);
-                        ShowCount(root, key);
+                        page.Counts[key] = n;
+                        page.Counting.Remove(key);
+                        // The answer is kept either way; it is written into the list only if
+                        // its tab is the one on screen.
+                        if (page == _page) ShowCount(root, key);
                     });
                 }
                 catch { /* the window closed while we counted - nobody needs the answer now */ }
@@ -269,12 +339,7 @@ namespace AbletonManager
         /// </summary>
         void ShowCount(string root, string key)
         {
-            // While we were counting, "Include Backup" may have been toggled — then this is an
-            // answer to a question that no longer applies and must not be shown (it stays in
-            // _counts and comes in handy if the box is switched back).
-            if (key != CountKey(root)) return;
-
-            int n = _counts[key];
+            int n = _page.Counts[key];
             foreach (RowData r in _list.Rows)
             {
                 string path = r.Tag as string;
@@ -291,7 +356,7 @@ namespace AbletonManager
             RowData row = idx >= 0 && idx < _list.Rows.Count ? _list.Rows[idx] : null;
             if (row == null) return;
             string path = (string)row.Tag;
-            if (row.Checked) _disabled.Remove(path); else _disabled.Add(path);
+            if (row.Checked) _page.Disabled.Remove(path); else _page.Disabled.Add(path);
             // Refill() used to sit here for "recount the sets without the folder that was
             // switched off", but there is nothing to recount: the number shown is each folder's
             // own and does not depend on the neighbours' checkboxes — Refill simply walked
@@ -318,17 +383,18 @@ namespace AbletonManager
         protected override void OnFormClosed(FormClosedEventArgs e)
         {
             _closed = true;
+            if (WindowState == FormWindowState.Normal) _lastSize = ClientSize;
             base.OnFormClosed(e);
         }
 
         void AddFolder()
         {
-            string path = ModernFolderPicker.PickFolder(Handle, _kind.PickTitle);
+            string path = ModernFolderPicker.PickFolder(Handle, _page.Kind.PickTitle);
             if (string.IsNullOrEmpty(path)) return;
-            if (!_roots.Contains(path))
+            if (!_page.Roots.Contains(path))
             {
-                _roots.Add(path);
-                _disabled.Remove(path);
+                _page.Roots.Add(path);
+                _page.Disabled.Remove(path);
                 Refill();
             }
         }
@@ -347,7 +413,8 @@ namespace AbletonManager
                 if (e.CloseReason == ToolStripDropDownCloseReason.ItemClicked) e.Cancel = true;
             };
 
-            foreach (Suggestion sg in _kind.FromLive)
+            Page page = _page;
+            foreach (Suggestion sg in page.Kind.FromLive)
             {
                 if (sg.StartsGroup && menu.Items.Count > 0) menu.Items.Add(new ToolStripSeparator());
                 ToolStripMenuItem mi = new ToolStripMenuItem(sg.Title);
@@ -360,13 +427,13 @@ namespace AbletonManager
                     int at = IndexOfRoot(cur.Path);
                     if (at >= 0)
                     {
-                        _disabled.Remove(_roots[at]);
-                        _roots.RemoveAt(at);
+                        page.Disabled.Remove(page.Roots[at]);
+                        page.Roots.RemoveAt(at);
                     }
                     else
                     {
-                        _roots.Add(cur.Path);
-                        _disabled.Remove(cur.Path);
+                        page.Roots.Add(cur.Path);
+                        page.Disabled.Remove(cur.Path);
                     }
                     box.Checked = IndexOfRoot(cur.Path) >= 0;
                     Refill();
@@ -378,8 +445,8 @@ namespace AbletonManager
 
         int IndexOfRoot(string path)
         {
-            for (int i = 0; i < _roots.Count; i++)
-                if (string.Equals(_roots[i].TrimEnd('\\'), path.TrimEnd('\\'), StringComparison.OrdinalIgnoreCase))
+            for (int i = 0; i < _page.Roots.Count; i++)
+                if (string.Equals(_page.Roots[i].TrimEnd('\\'), path.TrimEnd('\\'), StringComparison.OrdinalIgnoreCase))
                     return i;
             return -1;
         }
@@ -389,8 +456,8 @@ namespace AbletonManager
             RowData sel = _list.Selected;
             if (sel == null) return;
             string path = (string)sel.Tag;
-            _roots.Remove(path);
-            _disabled.Remove(path);
+            _page.Roots.Remove(path);
+            _page.Disabled.Remove(path);
             Refill();
         }
 
@@ -462,10 +529,10 @@ namespace AbletonManager
                 {
                     string folder = path;
                     if (File.Exists(path)) folder = Path.GetDirectoryName(path);
-                    if (!string.IsNullOrEmpty(folder) && Directory.Exists(folder) && !_roots.Contains(folder))
+                    if (!string.IsNullOrEmpty(folder) && Directory.Exists(folder) && !_page.Roots.Contains(folder))
                     {
-                        _roots.Add(folder);
-                        _disabled.Remove(folder);
+                        _page.Roots.Add(folder);
+                        _page.Disabled.Remove(folder);
                         added = true;
                     }
                 }
@@ -476,12 +543,23 @@ namespace AbletonManager
         protected override void OnResize(EventArgs e)
         {
             base.OnResize(e);
-            if (_list == null) return;
+            if (_list == null || _pages == null) return;
             int pad = Sc(Theme.Pad);
             int w = Card.Width - pad * 2;
 
-            int dropH = Sc(42);
+            // The tabs stand beside the heading, on its middle line; the list then starts a
+            // little lower than under a bare heading.
             int top = Card.Top + Sc(56);
+            if (_pages.Length > 1)
+            {
+                int h = Sc(Theme.ControlH);
+                int captionW = TextRenderer.MeasureText(Caption, Theme.FTitle).Width;
+                _tabs.Height = h;
+                _tabs.Location = new Point(Card.Left + pad + captionW + Sc(16), Card.Top + Sc(38) - h / 2);
+                top = _tabs.Bottom + Sc(12);
+            }
+
+            int dropH = Sc(42);
             int bottom = Card.Bottom - pad - _ok.Height - Sc(18) - dropH - Sc(10);
             _list.SetBounds(Card.Left + pad - Sc(Theme.CellPadX), top,
                             w + Sc(Theme.CellPadX) * 2, Math.Max(Sc(80), bottom - top));

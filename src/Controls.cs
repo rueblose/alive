@@ -213,6 +213,26 @@ namespace AbletonManager
             return true;
         }
 
+        /// <summary>
+        /// Which resize edge of a borderless window a point of its client area is on — the
+        /// WM_NCHITTEST code (HTLEFT … HTBOTTOMRIGHT), or 0 when it is on none. border — how
+        /// thick the grabbing strip is. Shared by the main window and the resizable dialogs.
+        /// </summary>
+        public static int EdgeHit(Point p, Size client, int border)
+        {
+            bool l = p.X <= border, r = p.X >= client.Width - border;
+            bool t = p.Y <= border, d = p.Y >= client.Height - border;
+            if (t && l) return 13;
+            if (t && r) return 14;
+            if (d && l) return 16;
+            if (d && r) return 17;
+            if (l) return 10;
+            if (r) return 11;
+            if (t) return 12;
+            if (d) return 15;
+            return 0;
+        }
+
         public static void Chevron(Graphics g, float cx, float cy, float size, Color color)
         {
             Icons.Draw(g, Glyph.ChevronDown,

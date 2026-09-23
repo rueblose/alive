@@ -14,7 +14,8 @@ namespace AliveTools
     ///     Shot.exe DialogShow.exe out.png settings-folders
     ///     Shot.exe DialogShow.exe out.png export  "set.als"
     ///     Shot.exe DialogShow.exe out.png preview "set.als"
-    ///     Shot.exe DialogShow.exe out.png samples
+    ///     Shot.exe DialogShow.exe out.png samples     (the folders window on Samples)
+    ///     Shot.exe DialogShow.exe out.png folders     (the folders window on Projects)
     ///     Shot.exe DialogShow.exe out.png player  "set.als"
     ///
     /// Build: tools\build-rescue-test.cmd. Does not go into bin.
@@ -75,12 +76,17 @@ namespace AliveTools
                 p.Shown += delegate { p.LoadSet(set, null, -1, false); };
                 f = p;
             }
-            else if (which == "samples")
+            else if (which == "samples" || which == "folders")
             {
-                // The sample folders dialog, with Live's Places behind its From Live button.
+                // The folders window as the program opens it: both tabs, on Samples ("samples",
+                // with Live's Places behind From Live) or on Projects ("folders").
                 Settings sst = Settings.Load();
-                f = new RootsDialog(sst.SampleRoots, sst.DisabledSampleRoots,
-                                    RootsDialog.Samples(LiveEnvironment.Detect(), sst.Roots));
+                RootsDialog d = new RootsDialog(
+                    new RootsDialog.Page(RootsDialog.Projects, sst.Roots, sst.DisabledRoots),
+                    new RootsDialog.Page(RootsDialog.Samples(LiveEnvironment.Detect(), sst.Roots),
+                                         sst.SampleRoots, sst.DisabledSampleRoots));
+                d.Tab = which == "samples" ? 1 : 0;
+                f = d;
             }
             else
             {

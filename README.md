@@ -90,8 +90,8 @@ its name and size.
 
 **Filters** here are three lenses: the folder tree, *Never used* — the biggest folders nothing was ever
 taken from, heaviest first — and *Most used*, your working sounds. Select a sample to see its waveform,
-format and the projects it plays in. `Space` plays it — and from then on the arrow keys play each
-sample they land on, as in Live's browser, until `Space` again. Any sample drags straight into Live.
+format and the projects it plays in — it plays the moment it is selected, by a click or an arrow
+key, as in Live's browser, and `Space` stops it. Any sample drags straight into Live.
 
 Nothing is ever deleted or moved from here: moving a sample breaks every set that uses it. The tab
 tells you what is safe to clear out; Explorer does the clearing.

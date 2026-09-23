@@ -222,8 +222,17 @@ namespace AbletonManager
             if (m.Msg != 0x0084 || (int)m.Result != 1) return;
             int raw = m.LParam.ToInt32();
             Point p = PointToClient(new Point((short)(raw & 0xFFFF), (short)((raw >> 16) & 0xFFFF)));
+            if (Resizable)
+            {
+                int edge = Chrome.EdgeHit(p, ClientSize, Sc(6));
+                if (edge != 0) { m.Result = (IntPtr)edge; return; }
+            }
             if (p.Y < Card.Top + Sc(62)) m.Result = (IntPtr)2;   // HTCAPTION
         }
+
+        /// <summary>The edges resize the window, as on the main one. Off by default: most
+        /// dialogs are laid out for one size.</summary>
+        protected bool Resizable;
 
         protected override void OnKeyDown(KeyEventArgs e)
         {

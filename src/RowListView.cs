@@ -170,6 +170,7 @@ namespace AbletonManager
         public event Action<int, Point> RowRightClicked;
         public event Action<int> RowCountClicked;      // a click on the "+3" / "−3" tail
         public event Action<int> RowTagsClicked;       // a click on a row's tags (or on the "+" in an empty cell)
+        public event Action<int> SelectedRowClicked;   // a left click on the row already selected — SelectionChanged stays silent
 
         public int SortColumn = -1;
         public bool SortDescending;
@@ -1201,6 +1202,8 @@ namespace AbletonManager
                 Invalidate();
                 if (SelectionChanged != null) SelectionChanged(this, EventArgs.Empty);
             }
+            else if (idx >= 0 && e.Button == MouseButtons.Left && SelectedRowClicked != null)
+                SelectedRowClicked(idx);
 
             // Dragging outwards is only possible when the row has a file at all — the cursor
             // confirms that before the mouse movement decides whether this is a click or a
@@ -1623,19 +1626,21 @@ namespace AbletonManager
                               : (col.Color ?? (c == 0 || bright ? Theme.Text : Theme.TextDim));
             if (entrance < 1.0f) color = Color.FromArgb((int)Math.Round(color.A * entrance), color);
 
-            // A version under an expanded row is indented in the name column, and right in that
-            // indent sits a short rail: only on child rows and only next to the text rather
-            // than across the whole row — like the "|" before a name in a file tree. On the
-            // Samples tab the same rail marks every level of the folder tree.
+            // A version under an expanded row is indented in the name column, and in that indent
+            // runs a rail — like the guide lines of a file tree. Full row height and on every
+            // level: short dashes with gaps between the rows looked cluttered, and a rail drawn
+            // only on a row's own level broke its parent's line wherever a deeper folder was
+            // open. On the Samples tab the same rails mark the whole folder tree.
             int level = col.Id == IndentColumn ? row.Indent : 0;
             int indent = level * Sc(20);
             int x = ColX(widths, c);
 
             if (level > 0)
             {
-                Rectangle rail = new Rectangle(x + (level - 1) * Sc(20) + Sc(6), topAnim + Sc(4), Sc(2), rowH - Sc(8));
                 Color railColor = Color.FromArgb((int)Math.Round(120 * entrance), Theme.TextDim);
-                g.FillRectangle(Theme.GetBrush(railColor), rail);
+                for (int l = 1; l <= level; l++)
+                    g.FillRectangle(Theme.GetBrush(railColor),
+                                    new Rectangle(x + (l - 1) * Sc(20) + Sc(6), topAnim, Sc(2), rowH));
             }
             int maxRight = Width - PadRight;
             int cellX = x + indent;

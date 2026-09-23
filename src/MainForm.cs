@@ -16,7 +16,7 @@ namespace AbletonManager
         readonly Segmented _mode = new Segmented();
         readonly FieldBox _search = new FieldBox();
         readonly FiltersButton _filtersBtn = new FiltersButton();
-        readonly IconButton _resetBtn = new IconButton();
+        readonly GlassButton _resetBtn = new GlassButton();
 
         // Actions as round glyphs: folder, settings, new project.
         readonly IconButton _folders = new IconButton();
@@ -823,14 +823,18 @@ namespace AbletonManager
             };
             Controls.Add(_filtersBtn);
 
-            _resetBtn.Icon = Glyph.Refresh;
+            // A word rather than a glyph: the circling arrow read as "rescan", not as "take the
+            // filters off". Quiet — dim text that only lights up under the cursor.
+            _resetBtn.Text = "reset";
+            _resetBtn.Font = Theme.FButton;
             _resetBtn.Quiet = true;
+            _resetBtn.FitToText(10);
             _resetBtn.Visible = false;
             _resetBtn.Click += delegate { ResetSearchAndFilters(); };
             Controls.Add(_resetBtn);
 
             _newProject.Click += delegate { NewProject(); };
-            _folders.Click += delegate { if (SamplesDomain) EditSampleRoots(false); else EditRoots(); };
+            _folders.Click += delegate { EditFolders(SamplesDomain, false); };
 
             _list.SelectionChanged += delegate { OnSelectionChanged(); };
             _list.ItemActivated += delegate { ActivateSelected(); };
@@ -840,6 +844,7 @@ namespace AbletonManager
             _list.RowPlayClicked += OnRowPlay;
             _list.RowRightClicked += OnListRowRightClick;
             _list.RowCountClicked += OnRowCountClicked;
+            _list.SelectedRowClicked += delegate (int idx) { if (SamplesDomain) OnSelectedRowClicked(idx); };
             _list.RowTagsClicked += delegate (int idx)
             {
                 if (idx >= 0 && idx < _list.Rows.Count) EditNotes(_list.Rows[idx].Tag as SetEntry);
@@ -1260,7 +1265,7 @@ namespace AbletonManager
             Invalidate(true);
             _shown = true;
 
-            if (_settings.IsFirstRun) { if (EditRoots()) { FlushPending(); return; } }
+            if (_settings.IsFirstRun) { if (EditFolders(false, false)) { FlushPending(); return; } }
             StartScan(false);
             // No project folders means no scan of the sets to wait for — the library is walked
             // right away.
@@ -1460,18 +1465,8 @@ namespace AbletonManager
             // bring the window back to its former size.
             if (WindowState != FormWindowState.Maximized)
             {
-                int b = Sc(6);
-                bool l = p.X <= b, r = p.X >= ClientSize.Width - b;
-                bool t = p.Y <= b, d = p.Y >= ClientSize.Height - b;
-
-                if (t && l) { m.Result = (IntPtr)13; return; }
-                if (t && r) { m.Result = (IntPtr)14; return; }
-                if (d && l) { m.Result = (IntPtr)16; return; }
-                if (d && r) { m.Result = (IntPtr)17; return; }
-                if (l) { m.Result = (IntPtr)10; return; }
-                if (r) { m.Result = (IntPtr)11; return; }
-                if (t) { m.Result = (IntPtr)12; return; }
-                if (d) { m.Result = (IntPtr)15; return; }
+                int edge = Chrome.EdgeHit(p, ClientSize, Sc(6));
+                if (edge != 0) { m.Result = (IntPtr)edge; return; }
             }
 
             // The window is dragged by the toolbar strip: everything above the content, minus a
@@ -1605,7 +1600,7 @@ namespace AbletonManager
             else if (e.Control && e.KeyCode == Keys.F) { _search.Box.Focus(); e.Handled = true; }
             else if (e.KeyCode == Keys.F && e.Shift && !e.Control && !e.Alt && !typing)
             {
-                if (SamplesDomain) EditSampleRoots(false); else EditRoots();
+                EditFolders(SamplesDomain, false);
                 e.Handled = e.SuppressKeyPress = true;
             }
             else if (e.KeyCode == Keys.F && !e.Control && !e.Alt && !e.Shift && !typing)
@@ -1785,12 +1780,13 @@ namespace AbletonManager
             _resetBtn.Visible = on;
             if (!on) return;
 
-            int icon = Sc(Theme.IconSize);
+            int h = Sc(Theme.ControlH);
             int w = TextRenderer.MeasureText(CountLabel(CountRoom()), Theme.FButton).Width;
             // The strip for the counter ends where the panel buttons begin: without a stop the
-            // reset button drove straight onto them on a narrow window.
-            int x = Math.Min(_rCount.X + w + Sc(6), Math.Max(_rCount.X, _rCount.Right - icon));
-            _resetBtn.SetBounds(x, _rCount.Y + (_rCount.Height - icon) / 2, icon, icon);
+            // reset button drove straight onto them on a narrow window. The button's own inner
+            // padding already keeps the word apart from the count.
+            int x = Math.Min(_rCount.X + w + Sc(2), Math.Max(_rCount.X, _rCount.Right - _resetBtn.Width));
+            _resetBtn.SetBounds(x, _rCount.Y + (_rCount.Height - h) / 2, _resetBtn.Width, h);
         }
 
         /// <summary>How much room is left for the counter: the strip minus the reset button, if
@@ -1798,7 +1794,7 @@ namespace AbletonManager
         int CountRoom()
         {
             bool on = Filtering && !(SamplesDomain ? _sampleScanning : _scanning);
-            return _rCount.Width - (on ? Sc(Theme.IconSize) + Sc(6) : 0);
+            return _rCount.Width - (on ? _resetBtn.Width + Sc(2) : 0);
         }
 
         /// <summary>
@@ -3424,7 +3420,7 @@ namespace AbletonManager
             bool playing = _player != null && !_player.IsDisposed && _player.IsPlaying;
             // A render started from the footer or a media key silences the sample preview: two
             // sounds at once are never wanted.
-            if (playing && _previewing != null) StopSample(true);
+            if (playing && _previewing != null) StopSample();
             Glyph want = playing ? Glyph.Pause : Glyph.Play;
             if (_playerPlayPause.Icon != want) { _playerPlayPause.Icon = want; _playerPlayPause.Invalidate(); }
 
@@ -3654,19 +3650,60 @@ namespace AbletonManager
             return false;
         }
 
-        bool EditRoots()
+        /// <summary>
+        /// The folders window: where the projects are and where the samples are, a tab each. It
+        /// opens on the tab of what is being looked at. Scan rescans what changed, and the tab
+        /// it was pressed on even unchanged — the button has always meant "scan these".
+        /// fromLive — the empty Samples tab's "Add from Live": Live's own sample folders come
+        /// already in the list, so what is left is to look and press Scan.
+        /// </summary>
+        bool EditFolders(bool samplesTab, bool fromLive)
         {
-            using (RootsDialog d = new RootsDialog(_settings.Roots, _settings.DisabledRoots))
+            RootsDialog.Kind sampleKind = RootsDialog.Samples(LiveEnvironment.Detect(), _settings.Roots);
+            List<string> sampleStart = new List<string>(_settings.SampleRoots);
+            if (fromLive)
+                foreach (RootsDialog.Suggestion s in sampleKind.FromLive)
+                    if (!s.Projects && !SampleIndex.ContainsPath(sampleStart, s.Path)) sampleStart.Add(s.Path);
+
+            RootsDialog.Page projects = new RootsDialog.Page(RootsDialog.Projects, _settings.Roots, _settings.DisabledRoots);
+            RootsDialog.Page samples = new RootsDialog.Page(sampleKind, sampleStart, _settings.DisabledSampleRoots);
+            using (RootsDialog d = new RootsDialog(projects, samples))
             {
+                d.Tab = samplesTab ? 1 : 0;
                 if (d.ShowDialog(this) != DialogResult.OK) return false;
-                _settings.Roots.Clear();
-                _settings.Roots.AddRange(d.Result);
-                _settings.DisabledRoots.Clear();
-                _settings.DisabledRoots.AddRange(d.DisabledRoots);
+
+                bool scanProjects = d.Tab == 0 || !projects.Same(_settings.Roots, _settings.DisabledRoots);
+                bool scanSamples = d.Tab == 1 || !samples.Same(_settings.SampleRoots, _settings.DisabledSampleRoots);
+                if (scanProjects)
+                {
+                    _settings.Roots.Clear();
+                    _settings.Roots.AddRange(projects.Roots);
+                    _settings.DisabledRoots.Clear();
+                    _settings.DisabledRoots.AddRange(projects.DisabledList);
+                }
+                if (scanSamples)
+                {
+                    _settings.SampleRoots.Clear();
+                    _settings.SampleRoots.AddRange(samples.Roots);
+                    _settings.DisabledSampleRoots.Clear();
+                    _settings.DisabledSampleRoots.AddRange(samples.DisabledList);
+                }
                 _settings.Save();
-                Settings.NotifyRootsChanged(this);
-                StartScan(true);
-                Rewatch();          // the set of roots is different — we re-point the watch
+
+                if (scanProjects)
+                {
+                    Settings.NotifyRootsChanged(this);
+                    StartScan(true);
+                    Rewatch();          // the set of roots is different — we re-point the watch
+                }
+                if (scanSamples)
+                {
+                    // A folder taken out leaves the tree now rather than after the walk.
+                    _samples = _samples.Only(_settings.SampleRoots, _settings.DisabledSampleRoots);
+                    LayoutAll();
+                    if (SamplesDomain) Refill();
+                    RescanSamples();
+                }
                 return true;
             }
         }
