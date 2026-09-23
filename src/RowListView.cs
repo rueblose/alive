@@ -1663,22 +1663,22 @@ namespace AbletonManager
                     Color countColor = countHot ? Theme.Text : Theme.TextDim;
                     if (entrance < 1.0f) countColor = Color.FromArgb((int)Math.Round(countColor.A * entrance), countColor);
 
-                    Size countSz = TextRenderer.MeasureText(countText, f);
-                    Size mainSz = TextRenderer.MeasureText(mainText, f);
+                    int countW = TextW(countText, f);
+                    int mainW = TextW(mainText, f);
 
-                    int countX = cr.X + mainSz.Width - Sc(4);
-                    if (countX + countSz.Width <= cr.Right)
+                    int countX = cr.X + mainW - Sc(4);
+                    if (countX + countW <= cr.Right)
                     {
-                        Rectangle mainR = new Rectangle(cr.X, cr.Y, mainSz.Width, cr.Height);
+                        Rectangle mainR = new Rectangle(cr.X, cr.Y, mainW, cr.Height);
                         Chrome.DrawText(g, mainText, f, mainR, color, Chrome.CellLeft);
 
                         Rectangle countR = new Rectangle(countX, cr.Y, Math.Max(0, cr.Right - countX), cr.Height);
                         Chrome.DrawText(g, countText, f, countR, countColor, Chrome.CellLeft);
-                        RememberCount(rowIndex, countX, cr.Y, countSz.Width, cr.Height);
+                        RememberCount(rowIndex, countX, cr.Y, countW, cr.Height);
                     }
                     else
                     {
-                        int maxMainW = Math.Max(0, cr.Width - countSz.Width - Sc(4));
+                        int maxMainW = Math.Max(0, cr.Width - countW - Sc(4));
                         Rectangle mainR = new Rectangle(cr.X, cr.Y, maxMainW, cr.Height);
                         Chrome.DrawText(g, mainText, f, mainR, color, Chrome.CellLeft);
 
@@ -1687,7 +1687,7 @@ namespace AbletonManager
                         {
                             Rectangle countR = new Rectangle(cX, cr.Y, Math.Max(0, cr.Right - cX), cr.Height);
                             Chrome.DrawText(g, countText, f, countR, countColor, Chrome.CellLeft);
-                            RememberCount(rowIndex, cX, cr.Y, Math.Min(countSz.Width, cr.Right - cX), cr.Height);
+                            RememberCount(rowIndex, cX, cr.Y, Math.Min(countW, cr.Right - cX), cr.Height);
                         }
                     }
                 }
@@ -1704,19 +1704,58 @@ namespace AbletonManager
         /// — "Unison Beatmaker Blueprint\…\Rage". GDI's own DT_PATH_ELLIPSIS was tried: a path
         /// with no backslash it clips mid-word without a mark, and so does it the last folder
         /// when that alone is too long. What is returned here is drawn with the ordinary end
-        /// ellipsis, so every cut shows.
+        /// ellipsis, so every cut shows. When even that is too long, the first folder is cut in
+        /// its middle and the last one kept whole: with an end ellipsis "[SAOL] ASCENDING DRUM
+        /// KIT VOL.1\[S] FX" and "…VOL.2\[S] FX" read the same.
         /// </summary>
-        static string FitPath(string path, Font f, int width)
+        internal static string FitPath(string path, Font f, int width)
         {
-            if (string.IsNullOrEmpty(path) || TextRenderer.MeasureText(path, f).Width <= width) return path;
+            if (string.IsNullOrEmpty(path) || TextW(path, f) <= width) return path;
             string[] parts = path.Split('\\');
-            if (parts.Length < 3) return path;
             for (int keep = parts.Length - 2; keep >= 1; keep--)
             {
                 string s = parts[0] + "\\…\\" + string.Join("\\", parts, parts.Length - keep, keep);
-                if (TextRenderer.MeasureText(s, f).Width <= width) return s;
+                if (TextW(s, f) <= width) return s;
             }
-            return "…\\" + parts[parts.Length - 1];
+            if (parts.Length == 1) return FitMiddle(path, f, width);
+
+            string tail = (parts.Length > 2 ? "\\…\\" : "\\") + parts[parts.Length - 1];
+            int room = width - TextW(tail, f);
+            // The first folder gets a piece only if the piece can still be read.
+            if (room >= width / 3) return FitMiddle(parts[0], f, room) + tail;
+            return FitMiddle("…\\" + parts[parts.Length - 1], f, width);
+        }
+
+        /// <summary>
+        /// The width a cell's text gets when drawn — measured with NoPrefix, as it is drawn.
+        /// Without it "&" is taken for a mnemonic and left out: "FX & PERCS" came out 18 px
+        /// short, a cut path overflowed its cell, and the "+N" after such a name sat on top of
+        /// the name's end.
+        /// </summary>
+        internal static int TextW(string s, Font f)
+        {
+            return TextRenderer.MeasureText(s, f, Size.Empty, TextFormatFlags.SingleLine | TextFormatFlags.NoPrefix).Width;
+        }
+
+        /// <summary>
+        /// A name shortened in the middle — "[SAOL] ASCENDI…KIT VOL.1". What tells two names
+        /// in a sample library apart is usually at their end (VOL.1 and VOL.2, Kick 01 and
+        /// Kick 02), and an end ellipsis made them look the same.
+        /// </summary>
+        internal static string FitMiddle(string s, Font f, int width)
+        {
+            if (string.IsNullOrEmpty(s) || TextW(s, f) <= width) return s;
+            string best = "…";
+            int lo = 1, hi = s.Length - 1;
+            while (lo <= hi)
+            {
+                int keep = (lo + hi) / 2;
+                int tail = keep * 2 / 5;
+                string t = s.Substring(0, keep - tail).TrimEnd() + "…" + s.Substring(s.Length - tail).TrimStart();
+                if (TextW(t, f) <= width) { best = t; lo = keep + 1; }
+                else hi = keep - 1;
+            }
+            return best;
         }
 
         int ColX(int[] widths, int col)

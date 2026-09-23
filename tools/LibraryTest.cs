@@ -20,6 +20,7 @@ namespace AliveTools
     ///     LibraryTest.exe usage      which samples the sets use, copies included
     ///     LibraryTest.exe aiff       the AIFF reader
     ///     LibraryTest.exe sources    Live's Places and the From Live suggestions
+    ///     LibraryTest.exe fit        names and paths cut to their cell
     ///     LibraryTest.exe real &lt;projects&gt; &lt;samples...&gt;   timings on a real library, no checks
     ///
     /// Runs with its own ALIVE_HOME under %TEMP% — the owner's settings and caches are never
@@ -49,10 +50,11 @@ namespace AliveTools
             if (cmd == "all" || cmd == "usage") Usage();
             if (cmd == "all" || cmd == "aiff") Aiff();
             if (cmd == "all" || cmd == "sources") Sources();
+            if (cmd == "all" || cmd == "fit") Fit();
 
             if (_checks == 0)
             {
-                Console.WriteLine("usage: LibraryTest.exe all | index | walk | usage | aiff | sources | real <projects> <samples...>");
+                Console.WriteLine("usage: LibraryTest.exe all | index | walk | usage | aiff | sources | fit | real <projects> <samples...>");
                 return 2;
             }
 
@@ -612,6 +614,32 @@ namespace AliveTools
             Check(sam != null && !sam.Projects, "sources: a sample Place is offered as samples");
             Check(ser != null && ser.Projects, "sources: a Place inside a project root is marked as projects");
             Check(pk != null && pk.Title == "Packs" && pk.StartsGroup, "sources: the packs folder opens the second group");
+        }
+
+        // -------------------------------------------------------------------- fit
+
+        /// <summary>Names and paths too long for their cell keep what tells them apart: the
+        /// end of a name, the last folder of a path.</summary>
+        static void Fit()
+        {
+            System.Drawing.Font f = Theme.FBody;
+            string vol1 = "[SAOL] ASCENDING DRUM KIT VOL.1", vol2 = "[SAOL] ASCENDING DRUM KIT VOL.2";
+            int w = RowListView.TextW(vol1, f) * 2 / 3;
+            string a = RowListView.FitMiddle(vol1, f, w), b = RowListView.FitMiddle(vol2, f, w);
+            Check(a.EndsWith("VOL.1") && a.Contains("…") && a != b && RowListView.TextW(a, f) <= w,
+                  "fit: a name cut in the middle keeps its end, got '" + a + "'");
+            Check(RowListView.FitMiddle("Kick.wav", f, 1000) == "Kick.wav", "fit: a name that fits is left alone");
+
+            // "&" is a character here, not a mnemonic: measured the default way it vanished,
+            // and a path with it overflowed the cell it had been cut for.
+            Check(RowListView.TextW("FX & PERCS", f) > System.Windows.Forms.TextRenderer.MeasureText("FX & PERCS", f).Width,
+                  "fit: '&' must count in a cell's width");
+
+            string path = vol1 + @"\[S] FX & PERCS";
+            int pw = RowListView.TextW(path, f) * 7 / 10;
+            string p = RowListView.FitPath(path, f, pw);
+            Check(p.EndsWith(@"\[S] FX & PERCS") && p.Contains("VOL.1") && RowListView.TextW(p, f) <= pw,
+                  "fit: a two-folder path keeps the last folder and the end of the first, got '" + p + "'");
         }
 
         // ------------------------------------------------------------------- real

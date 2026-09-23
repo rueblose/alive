@@ -1004,8 +1004,10 @@ namespace AbletonManager
                     Chrome.DrawText(g, count, Theme.FLabel, rr, Theme.TextDim, PanelRight);
                     int cw = TextRenderer.MeasureText(g, count, Theme.FLabel, rr.Size, PanelRight).Width;
                     Rectangle nr = new Rectangle(rr.X, rr.Y, Math.Max(0, rr.Width - cw - Sc(8)), rr.Height);
-                    Chrome.DrawText(g, f.Name, Theme.FLabel, nr, hot ? Color.White : Theme.Text, PanelLeft);
-                    if (hot) Underline(g, f.Name, Theme.FLabel, nr, Color.White);
+                    // Cut in the middle: "Kick 01.wav" and "Kick 02.wav" must not look alike.
+                    string name = RowListView.FitMiddle(f.Name, Theme.FLabel, nr.Width);
+                    Chrome.DrawText(g, name, Theme.FLabel, nr, hot ? Color.White : Theme.Text, PanelLeft);
+                    if (hot) Underline(g, name, Theme.FLabel, nr, Color.White);
                     _fileRowRects.Add(rr);
                     y += Sc(28);
                 }
