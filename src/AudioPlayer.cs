@@ -306,6 +306,7 @@ namespace AbletonManager
             Run r = (Run)arg;
             bool mfStarted = false;
             IMFSourceReader reader = null;
+            AiffReader aiff = null;
             byte[] staging = new byte[BufferBytes];
 
             try
@@ -316,7 +317,16 @@ namespace AbletonManager
 
                 long durationMs;
                 if (!Mf.OpenPcm(r.Path, out reader, out r.Channels, out r.Bits, out r.Rate, out durationMs))
-                { r.Error = "No decoder for this file"; return; }
+                {
+                    // Windows has no AIFF source, and the packs Live ships are mostly AIFF — see
+                    // AiffReader. It hands out the same float32 frames MF would.
+                    aiff = AiffReader.IsAiffName(r.Path) ? AiffReader.Open(r.Path) : null;
+                    if (aiff == null) { r.Error = "No decoder for this file"; return; }
+                    r.Channels = aiff.Channels;
+                    r.Bits = 32;
+                    r.Rate = aiff.Rate;
+                    durationMs = aiff.DurationMs;
+                }
 
                 // Some WAVs (single samples, files with no index) do not report a duration — we
                 // then take it straight from the header. If that is empty too, the length grows
@@ -354,7 +364,7 @@ namespace AbletonManager
                     if (seek >= 0)
                     {
                         r.SeekRequest = -1;
-                        DoSeek(r, reader, seek);
+                        DoSeek(r, reader, aiff, seek);
                         if (r.Paused) waveOutPause(hwo); else waveOutRestart(hwo);
                         devicePaused = r.Paused;
                     }
@@ -375,7 +385,7 @@ namespace AbletonManager
                     int slot = FreeSlot(r);
                     if (slot < 0) { Thread.Sleep(6); continue; }
 
-                    int n = ReadPcm(r, reader, staging);
+                    int n = aiff != null ? ReadAiff(r, aiff, staging) : ReadPcm(r, reader, staging);
                     if (n <= 0) { r.Eof = true; continue; }
                     Submit(r, slot, staging, n);
                 }
@@ -399,17 +409,19 @@ namespace AbletonManager
                     catch { }
                 }
                 Mf.Release(reader);
+                if (aiff != null) aiff.Dispose();
                 if (mfStarted) { try { Mf.MFShutdown(); } catch { } }
                 r.Opening = false;   // in case of a crash before readiness — otherwise we would wait forever
             }
         }
 
-        static void DoSeek(Run r, IMFSourceReader reader, int ms)
+        static void DoSeek(Run r, IMFSourceReader reader, AiffReader aiff, int ms)
         {
             waveOutReset(r.Hwo);                // drops the queue and zeroes the position
             for (int i = 0; i < Buffers; i++) r.Queued[i] = false;
             r.PendingLen = r.PendingOff = 0;
-            Mf.SetPosition(reader, ms);
+            if (aiff != null) aiff.Seek((long)ms * r.Rate / 1000);
+            else Mf.SetPosition(reader, ms);
             r.SeekBaseFrames = (long)ms * r.Rate / 1000;
             r.DecodedFrames = 0;
             r.Eof = false;
@@ -560,6 +572,14 @@ namespace AbletonManager
             return written;
         }
 
+        /// <summary>The AIFF twin of ReadPcm: the reader already hands out whole float32 frames.</summary>
+        static int ReadAiff(Run r, AiffReader aiff, byte[] dst)
+        {
+            int n = aiff.Read(dst);
+            if (r.FrameSize > 0) n -= n % r.FrameSize;
+            return n;
+        }
+
         public void Dispose() { Close(); }
     }
 
@@ -583,6 +603,12 @@ namespace AbletonManager
         {
             if (buckets < 16) buckets = 16;
 
+            if (AiffReader.IsAiffName(path))
+            {
+                Waveform a = AiffReader.Envelope(path, buckets);
+                if (a.Ok) return a;
+            }
+
             if (!path.EndsWith(".wav", StringComparison.OrdinalIgnoreCase))
                 return MediaDecoder.Read(path, buckets);
 
@@ -598,17 +624,31 @@ namespace AbletonManager
         /// </summary>
         public static int RiffDurationMs(string path)
         {
-            if (!path.EndsWith(".wav", StringComparison.OrdinalIgnoreCase)) return 0;
+            int channels, rate, bits, ms;
+            return RiffFormat(path, out channels, out rate, out bits, out ms) ? ms : 0;
+        }
+
+        /// <summary>
+        /// A WAV's format straight from the header — for the duration Media Foundation does not
+        /// report for some files, and for the details panel's "44.1 kHz · 24-bit · stereo".
+        /// </summary>
+        public static bool RiffFormat(string path, out int channels, out int rate, out int bits, out int durationMs)
+        {
+            channels = rate = bits = durationMs = 0;
+            if (!path.EndsWith(".wav", StringComparison.OrdinalIgnoreCase)) return false;
             try
             {
                 using (FileStream fs = File.OpenRead(path))
                 using (BinaryReader r = new BinaryReader(fs))
                 {
-                    if (Tag(r) != "RIFF") return 0;
+                    if (Tag(r) != "RIFF") return false;
                     r.ReadInt32();
-                    if (Tag(r) != "WAVE") return 0;
+                    if (Tag(r) != "WAVE") return false;
 
-                    int rate = 0, blockAlign = 0;
+                    int blockAlign = 0;
+                    // Every pass eats the eight bytes of a chunk header, so the walk always moves
+                    // on. There used to be a "next <= Position -> stop" guard here, and it stopped
+                    // exactly after a plain 16-byte "fmt " read to its end — before "data".
                     while (fs.Position + 8 <= fs.Length)
                     {
                         string id = Tag(r);
@@ -618,25 +658,26 @@ namespace AbletonManager
                         if (id == "fmt ")
                         {
                             r.ReadInt16();                 // format
-                            r.ReadInt16();                 // channels
+                            channels = r.ReadInt16();
                             rate = r.ReadInt32();
                             r.ReadInt32();                 // byte rate
                             blockAlign = r.ReadInt16();
+                            bits = r.ReadInt16();
                         }
                         else if (id == "data")
                         {
                             long dataLen = Math.Min(size, fs.Length - fs.Position);
-                            if (rate <= 0 || blockAlign <= 0) return 0;
-                            return (int)(dataLen / blockAlign * 1000L / rate);
+                            if (rate <= 0 || blockAlign <= 0) return false;
+                            durationMs = (int)(dataLen / blockAlign * 1000L / rate);
+                            return true;
                         }
 
-                        if (next <= fs.Position) break;
                         fs.Position = next;
                     }
                 }
             }
             catch { }
-            return 0;
+            return false;
         }
 
         static Waveform ReadRiff(string path, int buckets)
@@ -662,7 +703,9 @@ namespace AbletonManager
 
                         if (id == "fmt ")
                         {
-                            format = r.ReadInt16();
+                            // Unsigned: WAVE_FORMAT_EXTENSIBLE is 0xFFFE, which a signed read
+                            // turns into -2 and the check below never matched.
+                            format = r.ReadUInt16();
                             channels = r.ReadInt16();
                             r.ReadInt32();                 // sample rate
                             r.ReadInt32();                 // byte rate
@@ -673,7 +716,7 @@ namespace AbletonManager
                                 r.ReadInt16();             // cbSize
                                 r.ReadInt16();             // valid bits
                                 r.ReadInt32();             // channel mask
-                                format = r.ReadInt16();    // the real format out of the GUID
+                                format = r.ReadUInt16();   // the real format out of the GUID
                             }
                         }
                         else if (id == "data")
@@ -683,7 +726,9 @@ namespace AbletonManager
                             break;
                         }
 
-                        if (next <= fs.Position) break;
+                        // No "next <= Position -> stop" guard: it fired right after a plain
+                        // 16-byte "fmt " read to its end, and every ordinary WAV went to the
+                        // slow path through Media Foundation. The header read moves the walk on.
                         fs.Position = next;
                     }
 

@@ -4,7 +4,7 @@
 
 # Alive
 
-**A fast, portable catalog for your Ableton Live projects and plugins.**
+**A fast, portable catalog for your Ableton Live projects, plugins and samples.**
 
 One `.exe`. No installer, no external DLLs, no runtime to download.
 
@@ -75,6 +75,34 @@ The list comes from **Live's own database**, and from every installed version at
 live in the system, while each Live install is only a snapshot of what it happened to scan. You
 can pin it to one specific install, or switch to walking your VST2/VST3 folders instead.
 
+### Samples
+
+A tab of its own (`Ctrl 4`) for the sample library: which packs and folders your sets actually use,
+and which have sat untouched since the day they were downloaded.
+
+Point it at your sample folders, or take the ones Live already knows — its browser Places, the User
+Library and the packs come straight from Live's own settings. The library is walked in the background
+and cached, so the tab opens at once even on a few hundred thousand files.
+
+**Usage is counted by projects, not by files.** Ten versions of one track are one use. A sample that
+Collect All copied into a project still counts for the pack it came from — the copy is recognised by
+its name and size.
+
+**Filters** here are four lenses: the folder tree; *Never used* — the biggest folders nothing was ever
+taken from, heaviest first, with the day each landed on the disk; *Most used*, your working sounds; and
+*Duplicates* — the same file in several places (same name, size and content, so a pack's Dry and Wet
+takes of one sound are not mistaken for copies), the most wasted space first. Select a sample to see
+its waveform, format, the projects it plays in and how they spread over the months — it plays the
+moment it is selected, by a click or an arrow key, as in Live's browser, and `Space` stops it. Any
+sample drags straight into Live.
+
+The columns are yours, as on the other tabs: right-click the header to add Created, Modified or
+Copies, drag a heading to move it, drag an edge to resize. And the other way round: a set's panel on
+the Sets tab lists the sample folders it draws from — a click opens that folder here.
+
+Nothing is ever deleted or moved from here: moving a sample breaks every set that uses it. The tab
+tells you what is safe to clear out; Explorer does the clearing.
+
 ### Rescue
 
 <img src="docs/img/rescue.png" alt="Rescue — testing a set plugin by plugin" width="560">
@@ -126,19 +154,22 @@ tempo against track count against the year, or anything else the catalog knows.
 
 <img src="docs/img/settings.png" alt="Settings" width="560">
 
-`Ctrl ,` or the gear in the header. Smooth scrolling, a transparency switch
-(on Windows 10 the acrylic backdrop is recomputed on every window move, so the window lags behind
-the cursor), and where the plugin list comes from — Live's own database, or your VST2/VST3 folders.
+`Ctrl ,` or the gear in the header. Smooth scrolling, transparency (on Windows 10 the acrylic
+backdrop is recomputed on every window move, so the window lags behind the cursor), and where the
+plugin list comes from — Live's own database, or your VST2/VST3 folders. A fresh install starts with
+the update check, smooth scrolling and transparency all off; each is one switch away. The same
+window links to this repository and to the developer's Telegram channel,
+[t.me/RueBlose](https://t.me/RueBlose), and opens the [data folder](#data-folder).
 
-**Updates.** Once a day Alive asks GitHub whether a newer release exists, and says so with a dot
-on the gear. No popup, no window in your way: the dot waits until you look. Only a release that
-moves the major or the minor number lights it — a fix waits to be asked about. **Check for
-updates** in the same row asks on the spot and reports anything, fixes included.
+**Updates.** **Check for updates** asks GitHub on the spot whether a newer release exists and
+reports anything, fixes included. Switch on **Check updates once a day** and Alive asks by itself
+and says so with a dot on the gear. No popup, no window in your way: the dot waits until you look.
+Only a release that moves the major or the minor number lights it — a fix waits to be asked about.
 
-That request is the only one the program ever makes. Nothing about you, your library or your
-machine goes with it: it is a plain GET for a public page, and GitHub learns from it what any web
-server learns from anybody who opens one. The switch beside it turns even that off, and then Alive
-touches the network never.
+That request is the only one the program ever makes, and only when you ask for it: out of the box
+Alive never touches the network. Nothing about you, your library or your machine goes with it: it
+is a plain GET for a public page, and GitHub learns from it what any web server learns from anybody
+who opens one.
 
 ---
 
@@ -159,8 +190,8 @@ Requires **.NET Framework 4.6+**, which ships with Windows 10 and 11.
 | | | | |
 |---|---|---|---|
 | `F1` | Help | `Enter` | Open set in Live |
-| `Ctrl 1` / `Ctrl 2` / `Ctrl 3` | Home / Sets / Plugins | `Shift Enter` | Show in Explorer |
-| `F` | Filters | `Space` | Play render |
+| `Ctrl 1` … `Ctrl 4` | Home / Sets / Plugins / Samples | `Shift Enter` | Show in Explorer |
+| `F` | Filters | `Space` | Play render or sample |
 | `Shift F` | Scan folders | `Ctrl Space` | Arrangement preview |
 | `Ctrl F` | Search | `Q` | Pin set |
 | `Ctrl ,` | Settings | `Ctrl T` | Tags and notes |
@@ -193,6 +224,33 @@ Requires **.NET Framework 4.6+**, which ships with Windows 10 and 11.
 5. **Something else is wrong** — Alive writes a log of its last run to `%APPDATA%\Alive\alive.log`:
    Windows version, .NET version, where Live was found and what exactly failed. That file is the
    first thing to send.
+
+---
+
+## Data folder
+
+Everything Alive remembers lives in `%APPDATA%\Alive` (**Settings → Data folder → Open folder**).
+Nothing is written anywhere else — no installer, no registry entries — so deleting the folder resets
+the program completely. Mind the two files marked below before you do: they hold what cannot be
+rebuilt.
+
+| File | What it holds | If deleted |
+|---|---|---|
+| `settings.cfg` | Settings: project and sample folders, table columns, window size and place, switches | Back to defaults; the folders are asked for again |
+| `index.cache` | The parsed sets — tempo, key, plugins, files — so the catalog opens without reading every `.als` again | Rebuilt by the next scan |
+| `samples.cache` | The sample library: folders, files, dates, which AIFFs only Live can play, content hashes for Duplicates | Rebuilt by the next walk — a minute or two on a large library |
+| `activity.cache` | The year of work on Home: the days and hours projects were saved | **Lost for good** — Live keeps only the last ten backups of a set; the rest of the history is only here |
+| `notes.cfg` | Your tags and notes | **Lost for good** |
+| `home.cfg` | Projects pinned with the star | Pins are gone |
+| `previews.cfg` | Which render is a project's main preview | Back to the automatic pick |
+| `nebula.cfg` | What Stat's six channels show | Back to defaults |
+| `thumbs\` | Arrangement pictures for the Home tiles, 400 at most | Drawn again when needed |
+| `alive.log` | What happened during the last run; rewritten at every start | Nothing |
+| `probes.txt` | Rescue probe copies lying in project folders right now, so they are cleaned up after a crash | Leftover probes stay where they are (`*.alive-probe.als`) |
+
+`*.tmp` files appear for a moment while a cache is being saved. To keep all of this somewhere else —
+a portable setup, or a second catalog beside the first — set the `ALIVE_HOME` environment variable
+to a folder before starting Alive.
 
 ---
 

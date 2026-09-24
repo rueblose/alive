@@ -11,12 +11,12 @@ using System.Windows.Forms;
 
 namespace AbletonManager
 {
-    public sealed class MainForm : Form
+    public sealed partial class MainForm : Form
     {
         readonly Segmented _mode = new Segmented();
         readonly FieldBox _search = new FieldBox();
         readonly FiltersButton _filtersBtn = new FiltersButton();
-        readonly IconButton _resetBtn = new IconButton();
+        readonly GlassButton _resetBtn = new GlassButton();
 
         // Actions as round glyphs: folder, settings, new project.
         readonly IconButton _folders = new IconButton();
@@ -59,19 +59,26 @@ namespace AbletonManager
         // other things worth saying but not worth asking about.
         readonly Toast _toast = new Toast();
 
-        const int ModeHome = 0, ModeSets = 1, ModePlugins = 2;
+        const int ModeHome = 0, ModeSets = 1, ModePlugins = 2, ModeSamples = 3;
 
         /// <summary>
-        /// Three tabs are two questions rather than one: what we are looking at (sets or
-        /// plugins) and in what form (tiles or a table). Home and Sets are one and the same
-        /// catalog; they share the filters, the search and the hotkeys, and only the layout and
-        /// the selection are their own. So the code asks not for the tab number but for one of
-        /// three flags — that way the place that needs the view specifically is visible from
-        /// the place that needs the catalog specifically.
+        /// The tabs are two questions rather than one: which catalog we are looking at (sets,
+        /// plugins or samples) and in what form (tiles or a table). Home and Sets are one and
+        /// the same catalog; they share the filters, the search and the hotkeys, and only the
+        /// layout and the selection are their own. So the code asks not for the tab number but
+        /// for the catalog — SetsDomain, PluginsDomain, SamplesDomain — and for the view where
+        /// the view matters (Tiles, TableView). There used to be only "sets, or else plugins",
+        /// and every "else" had to be looked at again when the samples came.
         /// </summary>
-        bool _wasPlugins;    // which side we came from — see _mode.SelectedChanged
+        int _lastDomain;     // which catalog we came from — see _mode.SelectedChanged
 
-        bool SetsDomain { get { return _mode.SelectedIndex != ModePlugins; } }
+        bool SetsDomain    { get { return _mode.SelectedIndex == ModeHome || _mode.SelectedIndex == ModeSets; } }
+        bool PluginsDomain { get { return _mode.SelectedIndex == ModePlugins; } }
+        bool SamplesDomain { get { return _mode.SelectedIndex == ModeSamples; } }
+
+        /// <summary>0 — sets (Home and Sets), 1 — plugins, 2 — samples.</summary>
+        int Domain { get { return SetsDomain ? 0 : PluginsDomain ? 1 : 2; } }
+
         bool Tiles      { get { return _mode.SelectedIndex == ModeHome; } }
         bool TableView  { get { return _mode.SelectedIndex == ModeSets; } }
 
@@ -125,27 +132,63 @@ namespace AbletonManager
             return false;
         }
 
-        /// <summary>A column's place in the canonical catalog — which is also the order of the
+        // The three configurable tables go by Domain: 0 — sets, 1 — plugins, 2 — samples.
+
+        /// <summary>A table's catalog, in its canonical order — which is also the order of the
         /// menu items.</summary>
-        static int CatalogPos(bool sets, string id)
+        static List<string> CatalogIds(int domain)
         {
-            if (sets)
-            {
-                for (int i = 0; i < Catalog.Count; i++)
-                    if (string.Equals(Catalog[i].Id, id, StringComparison.OrdinalIgnoreCase)) return i;
-            }
-            else
-            {
-                for (int i = 0; i < PluginCatalog.Count; i++)
-                    if (string.Equals(PluginCatalog[i].Id, id, StringComparison.OrdinalIgnoreCase)) return i;
-            }
+            List<string> ids = new List<string>();
+            if (domain == 0) foreach (ColDef d in Catalog) ids.Add(d.Id);
+            else if (domain == 1) foreach (PluginColDef d in PluginCatalog) ids.Add(d.Id);
+            else foreach (SampleCol d in SampleCatalog) ids.Add(d.Id);
+            return ids;
+        }
+
+        static string CatalogTitle(int domain, string id)
+        {
+            if (domain == 0) { ColDef d = FindCol(id); return d != null ? d.En : id; }
+            if (domain == 1) { PluginColDef d = FindPluginCol(id); return d != null ? d.En : id; }
+            SampleCol s = FindSampleCol(id);
+            return s != null ? s.Title : id;
+        }
+
+        /// <summary>The default logical width; 0 — the column stretches, or there is no such
+        /// column.</summary>
+        static int CatalogWidth(int domain, string id)
+        {
+            if (domain == 0) return WidthOf(FindCol(id));
+            if (domain == 1) return WidthOf(FindPluginCol(id));
+            SampleCol s = FindSampleCol(id);
+            return s != null ? s.Width : 0;
+        }
+
+        static int CatalogPos(int domain, string id)
+        {
+            List<string> ids = CatalogIds(domain);
+            for (int i = 0; i < ids.Count; i++)
+                if (string.Equals(ids[i], id, StringComparison.OrdinalIgnoreCase)) return i;
             return int.MaxValue;
         }
 
-        static void SortByCatalog(List<string> order, bool sets)
+        static void SortByCatalog(List<string> order, int domain)
         {
             order.Sort(delegate (string a, string b)
-                { return CatalogPos(sets, a).CompareTo(CatalogPos(sets, b)); });
+                { return CatalogPos(domain, a).CompareTo(CatalogPos(domain, b)); });
+        }
+
+        List<string> OrderOf(int domain) { return domain == 0 ? _setOrder : domain == 1 ? _pluginOrder : _sampleOrder; }
+        Dictionary<string, int> WidthsOf(int domain) { return domain == 0 ? _setColW : domain == 1 ? _pluginColW : _sampleColW; }
+        static string MandatoryOf(int domain) { return domain == 0 ? "Set" : domain == 1 ? "Plugin" : "Name"; }
+        static string[] DefaultsOf(int domain) { return domain == 0 ? DefaultSetCols : domain == 1 ? DefaultPluginCols : DefaultSampleCols; }
+
+        /// <summary>The sort goes back to the table's own order when its column is hidden.</summary>
+        void DropHiddenSort(int domain)
+        {
+            List<string> order = OrderOf(domain);
+            if (domain == 0) { if (_setSortId != null && !HasCol(order, _setSortId)) _setSortId = null; }
+            else if (domain == 1) { if (_pluginSortId != null && !HasCol(order, _pluginSortId)) _pluginSortId = null; }
+            else if (_sampleSortId != null && !HasCol(order, _sampleSortId)) _sampleSortId = null;
         }
 
         string _setSortId;
@@ -490,16 +533,17 @@ namespace AbletonManager
 
         void LoadColumns()
         {
-            LoadColumnSpec(_settings.SetColumns, _setOrder, _setColW, DefaultSetCols, "Set", true);
-            LoadColumnSpec(_settings.PluginColumns, _pluginOrder, _pluginColW, DefaultPluginCols, "Plugin", false);
+            LoadColumnSpec(_settings.SetColumns, 0);
+            LoadColumnSpec(_settings.PluginColumns, 1);
+            LoadColumnSpec(_settings.SampleColumns, 2);
 
             // A one-off repair of old settings: before this a column switched on fell to the
             // end, and the saved order is merely a history of presses rather than anybody's
             // intent. From here on the order is the user's again and is not touched.
             if (!_settings.ColumnsSorted)
             {
-                SortByCatalog(_setOrder, true);
-                SortByCatalog(_pluginOrder, false);
+                SortByCatalog(_setOrder, 0);
+                SortByCatalog(_pluginOrder, 1);
                 _settings.ColumnsSorted = true;
                 SaveColumns();
             }
@@ -513,9 +557,11 @@ namespace AbletonManager
         /// mandatory is the column that cannot be removed (the set name, the plugin name):
         /// without it nothing is left in the row to recognise it by at all.
         /// </summary>
-        void LoadColumnSpec(string spec, List<string> order, Dictionary<string, int> widths,
-                            string[] defaults, string mandatory, bool sets)
+        void LoadColumnSpec(string spec, int domain)
         {
+            List<string> order = OrderOf(domain);
+            Dictionary<string, int> widths = WidthsOf(domain);
+            string mandatory = MandatoryOf(domain);
             order.Clear();
             widths.Clear();
 
@@ -534,34 +580,37 @@ namespace AbletonManager
                     }
                     // A column from another version of the program, or one already listed —
                     // skip it.
-                    if (sets ? FindCol(id) == null : FindPluginCol(id) == null) continue;
+                    if (CatalogPos(domain, id) == int.MaxValue) continue;
                     if (HasCol(order, id)) continue;
                     order.Add(id);
                     if (w > 0) widths[id] = w;
                 }
 
             if (!HasCol(order, mandatory)) order.Insert(0, mandatory);
-            if (order.Count <= 1) { order.Clear(); order.AddRange(defaults); }
+            if (order.Count <= 1) { order.Clear(); order.AddRange(DefaultsOf(domain)); }
         }
 
         void SaveColumns()
         {
-            _settings.SetColumns = ColumnSpec(_setOrder, _setColW, true);
-            _settings.PluginColumns = ColumnSpec(_pluginOrder, _pluginColW, false);
+            _settings.SetColumns = ColumnSpec(0);
+            _settings.PluginColumns = ColumnSpec(1);
+            _settings.SampleColumns = ColumnSpec(2);
             _settings.Save();
         }
 
-        string ColumnSpec(List<string> order, Dictionary<string, int> widths, bool sets)
+        string ColumnSpec(int domain)
         {
+            Dictionary<string, int> widths = WidthsOf(domain);
+            List<string> order = OrderOf(domain);
             List<string> toks = new List<string>();
             foreach (string id in order)
             {
                 // We do not write a width for a stretching column (Width == 0): it always takes
                 // the remainder, and a remembered number would have no effect on anything
                 // anyway.
-                int def = sets ? WidthOf(FindCol(id)) : WidthOf(FindPluginCol(id));
+                int def = CatalogWidth(domain, id);
                 int w;
-                if (def != 0 && widths.TryGetValue(id, out w) && w > 0) toks.Add(id + ":" + w);
+                if (def != 0 && widths.TryGetValue(id, out w) && w > 0 && w != def) toks.Add(id + ":" + w);
                 else toks.Add(id);
             }
             return string.Join(",", toks.ToArray());
@@ -755,10 +804,12 @@ namespace AbletonManager
                 // have to be reset when moving between them. Home and Sets, though, are one
                 // catalog in two views: there is nothing to knock the sort down for, and the
                 // person will come back to it.
-                bool domainChanged = _wasPlugins != !SetsDomain;
-                _wasPlugins = !SetsDomain;
+                bool domainChanged = _lastDomain != Domain;
+                int leaving = _lastDomain;
+                _lastDomain = Domain;
                 if (domainChanged)
                 {
+                    if (leaving == 2) LeaveSamples();
                     _pluginView = -1;
                     _summary.Selected = -1;
                     _setSortId = null; _pluginSortId = null; _sortDesc = false;
@@ -809,18 +860,23 @@ namespace AbletonManager
             _filtersBtn.Click += delegate
             {
                 if (SetsDomain) EditFilters();
-                else EditPluginFilters();
+                else if (PluginsDomain) EditPluginFilters();
+                else ShowSampleLens();
             };
             Controls.Add(_filtersBtn);
 
-            _resetBtn.Icon = Glyph.Refresh;
+            // A word rather than a glyph: the circling arrow read as "rescan", not as "take the
+            // filters off". Quiet — dim text that only lights up under the cursor.
+            _resetBtn.Text = "reset";
+            _resetBtn.Font = Theme.FButton;
             _resetBtn.Quiet = true;
+            _resetBtn.FitToText(10);
             _resetBtn.Visible = false;
             _resetBtn.Click += delegate { ResetSearchAndFilters(); };
             Controls.Add(_resetBtn);
 
             _newProject.Click += delegate { NewProject(); };
-            _folders.Click += delegate { EditRoots(); };
+            _folders.Click += delegate { EditFolders(SamplesDomain, false); };
 
             _list.SelectionChanged += delegate { OnSelectionChanged(); };
             _list.ItemActivated += delegate { ActivateSelected(); };
@@ -830,6 +886,7 @@ namespace AbletonManager
             _list.RowPlayClicked += OnRowPlay;
             _list.RowRightClicked += OnListRowRightClick;
             _list.RowCountClicked += OnRowCountClicked;
+            _list.SelectedRowClicked += delegate (int idx) { if (SamplesDomain) OnSelectedRowClicked(idx); };
             _list.RowTagsClicked += delegate (int idx)
             {
                 if (idx >= 0 && idx < _list.Rows.Count) EditNotes(_list.Rows[idx].Tag as SetEntry);
@@ -854,6 +911,10 @@ namespace AbletonManager
             _detail.CollectRequested += CollectSelected;
             _detail.SetRequested += OnSetRequested;
             _detail.PluginRequested += OnPluginRequested;
+            _detail.SampleRequested += OnSampleRequested;
+            _detail.LibraryFoldersOf = SampleFoldersOf;
+            _detail.LibraryFolderRequested += OnLibraryFolderRequested;
+            _detail.WaveClicked += OnWaveClicked;
             _detail.NotesRequested += EditNotes;
             Controls.Add(_detail);
 
@@ -884,6 +945,8 @@ namespace AbletonManager
             Controls.Add(_help);
             Controls.Add(_home);
 
+            BuildSamples();
+
             // A message over the content — we add it last and keep it in front, so that neither
             // the list nor the tiles cover it.
             Controls.Add(_toast);
@@ -907,7 +970,7 @@ namespace AbletonManager
 
         void ApplyTexts()
         {
-            _mode.SetItems("Home", "Sets", "Plugins");
+            _mode.SetItems("Home", "Sets", "Plugins", "Samples");
             _filtersBtn.Text = "Filters";
             _filtersBtn.Count = _filter.ActiveCount;
             _newProject.Text = "New Live Set";
@@ -919,8 +982,10 @@ namespace AbletonManager
         {
             if (SetsDomain)
                 _filtersBtn.Count = _filter.ActiveCount;
-            else
+            else if (PluginsDomain)
                 _filtersBtn.Count = _pluginFilterObj.ActiveCount;
+            else
+                _filtersBtn.Count = _lens != SampleLens.All ? 1 : 0;
             // With a counter the pill is wider — and behind it stands the whole right half of
             // the panel.
             if (_filtersBtn.Width != Math.Max(Sc(140), _filtersBtn.PreferredWidth)) LayoutAll();
@@ -934,13 +999,17 @@ namespace AbletonManager
             get
             {
                 if (_search.Box.Text.Trim().Length > 0) return true;
-                return SetsDomain ? !_filter.IsEmpty : !_pluginFilterObj.IsEmpty;
+                return SetsDomain ? !_filter.IsEmpty
+                     : PluginsDomain ? !_pluginFilterObj.IsEmpty
+                     : _lens != SampleLens.All;
             }
         }
 
         void ResetSearchAndFilters()
         {
-            if (SetsDomain) _filter.Clear(); else _pluginFilterObj.Clear();
+            if (SetsDomain) _filter.Clear();
+            else if (PluginsDomain) _pluginFilterObj.Clear();
+            else { _lens = SampleLens.All; _sampleSortId = null; }
             UpdateFiltersButton();
             // The field's text calls Refill itself through TextChanged — but only if it
             // actually changed.
@@ -951,7 +1020,9 @@ namespace AbletonManager
         void SetSearchCue()
         {
             string cue;
-            if (!SetsDomain)
+            if (SamplesDomain)
+                cue = "Search in samples…";
+            else if (PluginsDomain)
                 cue = "Search in plugins…";
             else
                 cue = "Search in sets…";
@@ -1011,8 +1082,11 @@ namespace AbletonManager
             int searchX = _filtersBtn.Right + Sc(15);
             // The search does not climb onto the panel buttons even when the window is already
             // at its minimum (the screen is small and the minimum has run into its width) — it
-            // then simply squeezes.
-            int searchW = Math.Max(Sc(120), Math.Min(Sc(315), panelX - Sc(10) - searchX));
+            // then simply squeezes. And it gives way before the counter does: the counter keeps
+            // room for a short caption with its reset button ("368 / 599", "150,212 samples"),
+            // or with four tabs the counter went off into an ellipsis in the middle of a number.
+            int countMin = Sc(150);
+            int searchW = Math.Max(Sc(120), Math.Min(Sc(315), panelX - Sc(10) - searchX - Sc(12) - countMin));
             _search.SetBounds(searchX, y, searchW, h);
             // The counter's strip takes the whole gap between the search and the panel buttons:
             // "368 / 599 shown" with the reset button did not fit into the former fields of 16
@@ -1139,9 +1213,15 @@ namespace AbletonManager
 
             _summary.Visible = false;
 
+            // The Samples tab with no folder chosen yet shows what it is for instead of an
+            // empty table.
+            bool emptySamples = SamplesDomain && !HasSampleRoots;
             _home.Visible = Tiles;
-            _list.Visible = !Tiles;
-            _detail.Visible = !Tiles;
+            _list.Visible = !Tiles && !emptySamples;
+            _detail.Visible = !Tiles && !emptySamples;
+            _samplesEmpty.Visible = emptySamples;
+            if (emptySamples)
+                _samplesEmpty.SetBounds(left, top, Math.Max(Sc(200), right - left), Math.Max(Sc(80), listBottom - top));
 
             if (Tiles)
                 _home.SetBounds(left, top, Math.Max(Sc(200), right - left),
@@ -1224,12 +1304,16 @@ namespace AbletonManager
                 RefreshVersions();
                 Refill();
             }
+            LoadSamplesFromCache();
 
             Invalidate(true);
             _shown = true;
 
-            if (_settings.IsFirstRun) { if (EditRoots()) { FlushPending(); return; } }
+            if (_settings.IsFirstRun) { if (EditFolders(false, false)) { FlushPending(); return; } }
             StartScan(false);
+            // No project folders means no scan of the sets to wait for — the library is walked
+            // right away.
+            if (!_scanning && !_samplesWalked) { _samplesWalked = true; StartSampleScan(false); }
             Rewatch();
             // If there was nothing to scan, the paths we were started with are all we have to
             // go on — otherwise they wait for the scan to finish.
@@ -1425,18 +1509,8 @@ namespace AbletonManager
             // bring the window back to its former size.
             if (WindowState != FormWindowState.Maximized)
             {
-                int b = Sc(6);
-                bool l = p.X <= b, r = p.X >= ClientSize.Width - b;
-                bool t = p.Y <= b, d = p.Y >= ClientSize.Height - b;
-
-                if (t && l) { m.Result = (IntPtr)13; return; }
-                if (t && r) { m.Result = (IntPtr)14; return; }
-                if (d && l) { m.Result = (IntPtr)16; return; }
-                if (d && r) { m.Result = (IntPtr)17; return; }
-                if (l) { m.Result = (IntPtr)10; return; }
-                if (r) { m.Result = (IntPtr)11; return; }
-                if (t) { m.Result = (IntPtr)12; return; }
-                if (d) { m.Result = (IntPtr)15; return; }
+                int edge = Chrome.EdgeHit(p, ClientSize, Sc(6));
+                if (edge != 0) { m.Result = (IntPtr)edge; return; }
             }
 
             // The window is dragged by the toolbar strip: everything above the content, minus a
@@ -1545,6 +1619,11 @@ namespace AbletonManager
                 _mode.SelectedIndex = ModePlugins;
                 return true;
             }
+            if (keyData == (Keys.Control | Keys.D4) || keyData == (Keys.Control | Keys.NumPad4))
+            {
+                _mode.SelectedIndex = ModeSamples;
+                return true;
+            }
             return base.ProcessCmdKey(ref msg, keyData);
         }
 
@@ -1565,13 +1644,14 @@ namespace AbletonManager
             else if (e.Control && e.KeyCode == Keys.F) { _search.Box.Focus(); e.Handled = true; }
             else if (e.KeyCode == Keys.F && e.Shift && !e.Control && !e.Alt && !typing)
             {
-                EditRoots();
+                EditFolders(SamplesDomain, false);
                 e.Handled = e.SuppressKeyPress = true;
             }
             else if (e.KeyCode == Keys.F && !e.Control && !e.Alt && !e.Shift && !typing)
             {
                 if (SetsDomain) EditFilters();
-                else EditPluginFilters();
+                else if (PluginsDomain) EditPluginFilters();
+                else ShowSampleLens();
                 e.Handled = e.SuppressKeyPress = true;
             }
             else if (e.KeyCode == Keys.F1) { ShowHelp(); e.Handled = true; }
@@ -1603,7 +1683,11 @@ namespace AbletonManager
                 WindowState = FormWindowState.Minimized;
                 e.Handled = true;
             }
-            else if (e.KeyCode == Keys.F5) { StartScan(true); e.Handled = true; }
+            else if (e.KeyCode == Keys.F5)
+            {
+                if (SamplesDomain) RescanSamples(); else StartScan(true);
+                e.Handled = true;
+            }
             else if (e.KeyCode == Keys.F11) { ToggleMaximize(); e.Handled = true; }
             else if (e.KeyCode == Keys.Apps && !typing)
             {
@@ -1616,6 +1700,11 @@ namespace AbletonManager
             else if (e.Control && e.KeyCode == Keys.Space && !typing && SetsDomain)
             {
                 OpenPreview();
+                e.Handled = e.SuppressKeyPress = true;
+            }
+            else if (e.KeyCode == Keys.Space && !e.Control && !typing && SamplesDomain)
+            {
+                ToggleSelectedSample();
                 e.Handled = e.SuppressKeyPress = true;
             }
             else if (e.KeyCode == Keys.Space && !typing && SetsDomain)
@@ -1698,7 +1787,12 @@ namespace AbletonManager
                 Chrome.DrawText(g, StatusText(), Theme.FLabel, _rStatus, Theme.TextDim, Chrome.Left);
             }
 
-            if (_scanning && _manualScan && _scanTotal > 0)
+            // Each tab shows the progress of its own walk: the sets' on Home, Sets and Plugins,
+            // the library's on Samples.
+            float share = SamplesDomain ? SampleProgressShare
+                        : _scanning && _manualScan && _scanTotal > 0
+                          ? Math.Max(0.01f, Math.Min(1.0f, (float)_scanDone / _scanTotal)) : -1f;
+            if (share >= 0f)
             {
                 int pad = Sc(Theme.Pad);
                 int left = pad;
@@ -1712,8 +1806,7 @@ namespace AbletonManager
                 Rectangle barRect = new Rectangle(barX, barY, barW, barH);
                 Theme.FillRound(g, barRect, barH / 2f, Color.FromArgb(0x30, 0xFF, 0xFF, 0xFF));
 
-                float pct = Math.Max(0.01f, Math.Min(1.0f, (float)_scanDone / _scanTotal));
-                int fillW = (int)(barW * pct);
+                int fillW = (int)(barW * share);
                 if (fillW > 0)
                 {
                     Rectangle fillRect = new Rectangle(barX, barY, fillW, barH);
@@ -1727,38 +1820,47 @@ namespace AbletonManager
         /// and anew after every rebuild, when the number may have changed.</summary>
         void LayoutReset()
         {
-            bool on = Filtering && !_scanning;
+            bool on = Filtering && !(SamplesDomain ? _sampleScanning : _scanning);
             _resetBtn.Visible = on;
             if (!on) return;
 
-            int icon = Sc(Theme.IconSize);
+            int h = Sc(Theme.ControlH);
             int w = TextRenderer.MeasureText(CountLabel(CountRoom()), Theme.FButton).Width;
             // The strip for the counter ends where the panel buttons begin: without a stop the
-            // reset button drove straight onto them on a narrow window.
-            int x = Math.Min(_rCount.X + w + Sc(6), Math.Max(_rCount.X, _rCount.Right - icon));
-            _resetBtn.SetBounds(x, _rCount.Y + (_rCount.Height - icon) / 2, icon, icon);
+            // reset button drove straight onto them on a narrow window. The button's own inner
+            // padding already keeps the word apart from the count.
+            int x = Math.Min(_rCount.X + w + Sc(2), Math.Max(_rCount.X, _rCount.Right - _resetBtn.Width));
+            _resetBtn.SetBounds(x, _rCount.Y + (_rCount.Height - h) / 2, _resetBtn.Width, h);
         }
 
         /// <summary>How much room is left for the counter: the strip minus the reset button, if
         /// there is one.</summary>
         int CountRoom()
         {
-            bool on = Filtering && !_scanning;
-            return _rCount.Width - (on ? Sc(Theme.IconSize) + Sc(6) : 0);
+            bool on = Filtering && !(SamplesDomain ? _sampleScanning : _scanning);
+            return _rCount.Width - (on ? _resetBtn.Width + Sc(2) : 0);
         }
 
         /// <summary>
-        /// The counter caption for the allotted width. If it does not fit whole we drop the
-        /// word "shown": a clipped "368 / 5…" reads as a completely different number, while a
-        /// short "368 / 599" reads as the same one.
+        /// The counter caption for the allotted width: the first of the variants that fits,
+        /// longest first. A clipped "368 / 5…" reads as a completely different number, while a
+        /// short "368 / 599" reads as the same one — so the words go before the digits do.
         /// </summary>
         string CountLabel(int room)
         {
+            string[] variants = CountVariants();
+            foreach (string v in variants)
+                if (room <= 0 || TextRenderer.MeasureText(v, Theme.FButton).Width <= room) return v;
+            return variants[variants.Length - 1];
+        }
+
+        string[] CountVariants()
+        {
+            if (SamplesDomain) return SampleCountVariants();
             string t = CountText();
-            if (room > 0 && t.EndsWith(" shown")
-                && TextRenderer.MeasureText(t, Theme.FButton).Width > room)
-                t = t.Substring(0, t.Length - " shown".Length);
-            return t;
+            return t.EndsWith(" shown")
+                 ? new string[] { t, t.Substring(0, t.Length - " shown".Length) }
+                 : new string[] { t };
         }
 
         string CountText()
@@ -1799,6 +1901,7 @@ namespace AbletonManager
         /// </summary>
         void RefillPreservingView()
         {
+            if (SamplesDomain) { RefillSamplesKeeping(SelectedSamplePath()); return; }
             SetEntry keep = SelectedSet();
             string keepPath = keep != null ? keep.Path : null;
             int scroll = _list.ScrollOffset;
@@ -1854,16 +1957,20 @@ namespace AbletonManager
                     FillSets(animate);
                 }
             }
-            else
+            else if (PluginsDomain)
             {
                 FillPlugins(animate);
             }
+            else FillSamples(animate);
             LayoutReset();
             Invalidate();
         }
 
         void FillSets(bool animate)
         {
+            _list.IndentColumn = "Set";
+            _list.DragFilePath = null;
+
             // The visible columns, in the order the user arranged them in.
             _setVisible = new List<ColDef>();
             foreach (string id in _setOrder)
@@ -2012,7 +2119,7 @@ namespace AbletonManager
         ///
         /// childRow — this is one of the versions shown under an expanded row rather than the
         /// project itself. RowListView indents its name so the nesting is visible even without
-        /// the group being highlighted — see RowData.ChildRow.
+        /// the group being highlighted — see RowData.Indent.
         /// </summary>
         RowData RowFor(SetEntry s, int pIdx, int fIdx, bool expanded, bool childRow)
         {
@@ -2032,7 +2139,7 @@ namespace AbletonManager
                 }
 
             r.Cells = cells;
-            r.ChildRow = childRow;
+            r.Indent = childRow ? 1 : 0;
             r.Tag = s;
             // We do not show the listen button on versions under an expanded row: what plays is
             // always the render of the project's principal version (see RenderScan.Find — it
@@ -2070,6 +2177,11 @@ namespace AbletonManager
         /// again.</summary>
         void OnRowCountClicked(int idx)
         {
+            if (SamplesDomain)
+            {
+                if (idx >= 0 && idx < _list.Rows.Count) ToggleSampleFolder(_list.Rows[idx].Tag as SampleFolder);
+                return;
+            }
             if (!SetsDomain) return;
             if (idx < 0 || idx >= _list.Rows.Count) return;
             SetEntry s = _list.Rows[idx].Tag as SetEntry;
@@ -2099,6 +2211,8 @@ namespace AbletonManager
 
         void FillPlugins(bool animate)
         {
+            _list.IndentColumn = "Set";
+            _list.DragFilePath = null;
             _list.ColumnsConfigurable = true;
             _list.ShowPlayButton = false;
             _list.ShowPinIndicator = false;
@@ -2250,6 +2364,7 @@ namespace AbletonManager
         /// </summary>
         void OnHeaderClicked(int column)
         {
+            if (SamplesDomain) { SortSamplesBy(column); return; }
             SetEntry keepSet = SelectedSet();
             string keepSetPath = keepSet != null ? keepSet.Path : null;
             PluginStat keepPlugin = SelectedPlugin();
@@ -2273,7 +2388,7 @@ namespace AbletonManager
                     });
                 }
             }
-            else
+            else if (PluginsDomain)
             {
                 if (column < 0 || column >= _pluginVisible.Count) return;
                 string pid = _pluginVisible[column].Id;
@@ -2303,7 +2418,8 @@ namespace AbletonManager
         /// </summary>
         void OnHeaderRightClick(Point pt)
         {
-            bool sets = SetsDomain;
+            int domain = Domain;
+            bool sets = domain == 0;
 
             ContextMenuStrip menu = DarkMenu.Create();
             menu.ShowCheckMargin = true;   // it is visible which columns are already on — as in Explorer
@@ -2336,25 +2452,24 @@ namespace AbletonManager
                 if (e.CloseReason == ToolStripDropDownCloseReason.ItemClicked) e.Cancel = true;
             };
 
-            List<string> order = sets ? _setOrder : _pluginOrder;
-            string mandatory = sets ? "Set" : "Plugin";
+            List<string> order = OrderOf(domain);
+            string mandatory = MandatoryOf(domain);
 
             // The items are in the catalog's canonical order rather than the user's: the menu
             // is a list of what there is at all, and reordering it after the table would mean
             // hunting for the right line in a new place every time.
-            List<string> ids = new List<string>();
-            List<string> titles = new List<string>();
-            if (sets)
-                foreach (ColDef d in Catalog) { ids.Add(d.Id); titles.Add(d.En); }
-            else
-                foreach (PluginColDef d in PluginCatalog) { ids.Add(d.Id); titles.Add(d.En); }
+            List<string> ids = CatalogIds(domain);
 
             List<ToolStripMenuItem> boxes = new List<ToolStripMenuItem>();
             for (int i = 0; i < ids.Count; i++)
             {
-                ToolStripMenuItem mi = new ToolStripMenuItem(titles[i]);
-                mi.Checked = HasCol(order, ids[i]);
-                if (ids[i] == mandatory) mi.Enabled = false;   // the principal column cannot be removed
+                ToolStripMenuItem mi = new ToolStripMenuItem(CatalogTitle(domain, ids[i]));
+                // On the Samples tab a view may decide a column by itself (the tree has no
+                // Location, Duplicates always shows Copies) — such an item shows what the view
+                // does, greyed out.
+                bool? fixedHere = domain == 2 ? SampleViewDecides(ids[i]) : null;
+                mi.Checked = fixedHere ?? HasCol(order, ids[i]);
+                if (ids[i] == mandatory || fixedHere.HasValue) mi.Enabled = false;   // the principal column cannot be removed
                 else
                 {
                     string id = ids[i];
@@ -2375,7 +2490,7 @@ namespace AbletonManager
             {
                 ResetColumns();
                 for (int i = 0; i < resetBoxes.Count; i++)
-                    resetBoxes[i].Checked = HasCol(resetOrder, resetIds[i]);
+                    if (resetBoxes[i].Enabled) resetBoxes[i].Checked = HasCol(resetOrder, resetIds[i]);
             };
             menu.Items.Add(reset);
 
@@ -2384,9 +2499,9 @@ namespace AbletonManager
 
         void ToggleColumn(string id)
         {
-            bool sets = SetsDomain;
-            List<string> order = sets ? _setOrder : _pluginOrder;
-            if (id == (sets ? "Set" : "Plugin")) return;
+            int domain = Domain;
+            List<string> order = OrderOf(domain);
+            if (id == MandatoryOf(domain)) return;
 
             if (HasCol(order, id))
             {
@@ -2399,15 +2514,14 @@ namespace AbletonManager
             // was just assembled from. The heading can still be dragged afterwards.
             else
             {
-                int pos = CatalogPos(sets, id), at = order.Count;
+                int pos = CatalogPos(domain, id), at = order.Count;
                 for (int i = 0; i < order.Count; i++)
-                    if (CatalogPos(sets, order[i]) > pos) { at = i; break; }
+                    if (CatalogPos(domain, order[i]) > pos) { at = i; break; }
                 order.Insert(at, id);
             }
 
             // The sort may have been on a hidden column — we go back to the default order.
-            if (sets) { if (_setSortId != null && !HasCol(order, _setSortId)) _setSortId = null; }
-            else { if (_pluginSortId != null && !HasCol(order, _pluginSortId)) _pluginSortId = null; }
+            DropHiddenSort(domain);
 
             SaveColumns();
             int sel = _list.SelectedIndex;
@@ -2421,14 +2535,14 @@ namespace AbletonManager
 
         void ResetColumns()
         {
-            bool sets = SetsDomain;
-            List<string> order = sets ? _setOrder : _pluginOrder;
-            Dictionary<string, int> widths = sets ? _setColW : _pluginColW;
-
+            int domain = Domain;
+            List<string> order = OrderOf(domain);
             order.Clear();
-            widths.Clear();
-            order.AddRange(sets ? DefaultSetCols : DefaultPluginCols);
-            if (sets) _setSortId = null; else _pluginSortId = null;
+            WidthsOf(domain).Clear();
+            order.AddRange(DefaultsOf(domain));
+            if (domain == 0) _setSortId = null;
+            else if (domain == 1) _pluginSortId = null;
+            else _sampleSortId = null;
 
             SaveColumns();
             Refill();
@@ -2436,7 +2550,7 @@ namespace AbletonManager
 
         void OnColumnsResized()
         {
-            Dictionary<string, int> widths = SetsDomain ? _setColW : _pluginColW;
+            Dictionary<string, int> widths = WidthsOf(Domain);
             foreach (Column c in _list.ColumnList)
                 if (c.Width > 0 && !string.IsNullOrEmpty(c.Id)) widths[c.Id] = c.Width;
             SaveColumns();
@@ -2448,14 +2562,30 @@ namespace AbletonManager
         /// </summary>
         void OnColumnsReordered(int from, int to)
         {
-            List<string> order = SetsDomain ? _setOrder : _pluginOrder;
-            if (from < 0 || from >= order.Count || to < 0 || to > order.Count || from == to) return;
-
-            string moved = order[from];
-            order.RemoveAt(from);
-            if (to > from) to--;                 // after the removal everything to the right has shifted
-            if (to > order.Count) to = order.Count;
-            order.Insert(to, moved);
+            List<string> order = OrderOf(Domain);
+            if (SamplesDomain)
+            {
+                // The table is not the order one to one here — a view hides some columns and
+                // adds its own — so the move goes by ids: the heading lands before the one it
+                // was dropped on.
+                List<Column> cols = _list.ColumnList;
+                if (from < 0 || from >= cols.Count || to < 0 || to > cols.Count || from == to) return;
+                string id = cols[from].Id;
+                if (!HasCol(order, id)) return;                 // a column the view adds by itself
+                string before = to < cols.Count ? cols[to].Id : null;
+                order.Remove(id);
+                int at = before != null ? order.IndexOf(before) : -1;
+                order.Insert(at >= 0 ? at : order.Count, id);
+            }
+            else
+            {
+                if (from < 0 || from >= order.Count || to < 0 || to > order.Count || from == to) return;
+                string moved = order[from];
+                order.RemoveAt(from);
+                if (to > from) to--;                 // after the removal everything to the right has shifted
+                if (to > order.Count) to = order.Count;
+                order.Insert(to, moved);
+            }
             SaveColumns();
 
             // The rows have not changed — only a column moved, so we put the selection and the
@@ -2496,7 +2626,10 @@ namespace AbletonManager
 
         void OnSelectionChanged()
         {
-            if (!SetsDomain)
+            // The audition follows the person's selection only — not the refill that clears the
+            // selection for a moment before putting it back.
+            if (SamplesDomain) { ShowSampleDetails(); AuditionSelection(); return; }
+            if (PluginsDomain)
             {
                 RowData sel = _list.Selected;
                 _detail.ShowPlugin(sel == null ? null : sel.Tag as PluginStat);
@@ -2531,6 +2664,7 @@ namespace AbletonManager
             // There is nothing to activate on a plugin: a double click used to carry one off to
             // the Sets tab filtered by that plugin — an unexpected jump instead of an action on
             // what was clicked. A plugin's sets are listed in the details panel as it is.
+            if (SamplesDomain) { ActivateSample(); return; }
             if (!SetsDomain) return;
             OpenSelected();
         }
@@ -2853,7 +2987,8 @@ namespace AbletonManager
 
         void RevealSelected()
         {
-            if (!SetsDomain)
+            if (SamplesDomain) { RevealSample(); return; }
+            if (PluginsDomain)
             {
                 PluginStat st = SelectedPlugin();
                 if (st == null || st.Installed == null || st.Installed.Path.Length == 0) return;
@@ -2928,6 +3063,8 @@ namespace AbletonManager
                 return false;
             }
 
+            if (SamplesDomain && (k == Keys.Left || k == Keys.Right)) return SampleTreeKey(k == Keys.Right);
+
             switch (k)
             {
                 case Keys.Up: return _list.MoveSelection(-1);
@@ -2942,6 +3079,12 @@ namespace AbletonManager
         /// button.</summary>
         void ShowMenuForSelection()
         {
+            if (SamplesDomain)
+            {
+                int i = _list.SelectedIndex;
+                if (i >= 0) SampleRowMenu(i, _list.RowMenuPoint(i));
+                return;
+            }
             if (!SetsDomain) return;
             if (Tiles) { _home.ShowMenuForSelected(); return; }
 
@@ -3132,6 +3275,7 @@ namespace AbletonManager
         /// so that projects can be pinned without leaving the main catalog.</summary>
         void OnListRowRightClick(int idx, Point at)
         {
+            if (SamplesDomain) { SampleRowMenu(idx, at); return; }
             if (!SetsDomain) return;
             if (idx < 0 || idx >= _list.Rows.Count) return;
             SetEntry s = _list.Rows[idx].Tag as SetEntry;
@@ -3225,7 +3369,8 @@ namespace AbletonManager
                 _player.Size = new Size(s0.Width + 1, s0.Height);
                 _player.Size = s0;
                 _player.SetChanged += delegate (SetEntry changed) {
-                    _list.PlayingTag = _home.PlayingTag = changed;
+                    _home.PlayingTag = changed;
+                    if (!SamplesDomain) _list.PlayingTag = changed;
                     UpdatePlayerTransport();   // the track changed — we re-check Playing
                     _list.Invalidate();
                     _home.Invalidate();
@@ -3240,8 +3385,9 @@ namespace AbletonManager
                     _playerVolPopup.Visible = false;
                     _volPopupTimer.Stop();
                     _playerSetLink.SetName = "";
-                    _list.PlayingTag = _home.PlayingTag = null;
-                    _list.Playing = _home.Playing = false;
+                    _home.PlayingTag = null;
+                    _home.Playing = false;
+                    if (!SamplesDomain) { _list.PlayingTag = null; _list.Playing = false; }
                     _list.Invalidate();
                     _home.Invalidate();
                     LayoutAll();       // hides the mini transport — there is nothing left to control
@@ -3325,10 +3471,14 @@ namespace AbletonManager
         void UpdatePlayerTransport()
         {
             bool playing = _player != null && !_player.IsDisposed && _player.IsPlaying;
+            // A render started from the footer or a media key silences the sample preview: two
+            // sounds at once are never wanted.
+            if (playing && _previewing != null) StopSample();
             Glyph want = playing ? Glyph.Pause : Glyph.Play;
             if (_playerPlayPause.Icon != want) { _playerPlayPause.Icon = want; _playerPlayPause.Invalidate(); }
 
-            if (_list.Playing != playing) { _list.Playing = playing; _list.Invalidate(); }
+            // On the Samples tab the list's pulse belongs to the preview.
+            if (!SamplesDomain && _list.Playing != playing) { _list.Playing = playing; _list.Invalidate(); }
             if (_home.Playing != playing) { _home.Playing = playing; _home.Invalidate(); }
 
             UpdatePlayerVolumeIcon();
@@ -3469,7 +3619,11 @@ namespace AbletonManager
             Invalidate();
 
             string[] paths = e.Data.GetData(DataFormats.FileDrop) as string[];
-            if (paths != null) AddRoots(paths);
+            if (paths != null)
+            {
+                if (SamplesDomain) AddSampleRoots(paths);
+                else AddRoots(paths);
+            }
         }
 
         /// <summary>
@@ -3549,19 +3703,60 @@ namespace AbletonManager
             return false;
         }
 
-        bool EditRoots()
+        /// <summary>
+        /// The folders window: where the projects are and where the samples are, a tab each. It
+        /// opens on the tab of what is being looked at. Scan rescans what changed, and the tab
+        /// it was pressed on even unchanged — the button has always meant "scan these".
+        /// fromLive — the empty Samples tab's "Add from Live": Live's own sample folders come
+        /// already in the list, so what is left is to look and press Scan.
+        /// </summary>
+        bool EditFolders(bool samplesTab, bool fromLive)
         {
-            using (RootsDialog d = new RootsDialog(_settings.Roots, _settings.DisabledRoots))
+            RootsDialog.Kind sampleKind = RootsDialog.Samples(LiveEnvironment.Detect(), _settings.Roots);
+            List<string> sampleStart = new List<string>(_settings.SampleRoots);
+            if (fromLive)
+                foreach (RootsDialog.Suggestion s in sampleKind.FromLive)
+                    if (!s.Projects && !SampleIndex.ContainsPath(sampleStart, s.Path)) sampleStart.Add(s.Path);
+
+            RootsDialog.Page projects = new RootsDialog.Page(RootsDialog.Projects, _settings.Roots, _settings.DisabledRoots);
+            RootsDialog.Page samples = new RootsDialog.Page(sampleKind, sampleStart, _settings.DisabledSampleRoots);
+            using (RootsDialog d = new RootsDialog(projects, samples))
             {
+                d.Tab = samplesTab ? 1 : 0;
                 if (d.ShowDialog(this) != DialogResult.OK) return false;
-                _settings.Roots.Clear();
-                _settings.Roots.AddRange(d.Result);
-                _settings.DisabledRoots.Clear();
-                _settings.DisabledRoots.AddRange(d.DisabledRoots);
+
+                bool scanProjects = d.Tab == 0 || !projects.Same(_settings.Roots, _settings.DisabledRoots);
+                bool scanSamples = d.Tab == 1 || !samples.Same(_settings.SampleRoots, _settings.DisabledSampleRoots);
+                if (scanProjects)
+                {
+                    _settings.Roots.Clear();
+                    _settings.Roots.AddRange(projects.Roots);
+                    _settings.DisabledRoots.Clear();
+                    _settings.DisabledRoots.AddRange(projects.DisabledList);
+                }
+                if (scanSamples)
+                {
+                    _settings.SampleRoots.Clear();
+                    _settings.SampleRoots.AddRange(samples.Roots);
+                    _settings.DisabledSampleRoots.Clear();
+                    _settings.DisabledSampleRoots.AddRange(samples.DisabledList);
+                }
                 _settings.Save();
-                Settings.NotifyRootsChanged(this);
-                StartScan(true);
-                Rewatch();          // the set of roots is different — we re-point the watch
+
+                if (scanProjects)
+                {
+                    Settings.NotifyRootsChanged(this);
+                    StartScan(true);
+                    Rewatch();          // the set of roots is different — we re-point the watch
+                }
+                if (scanSamples)
+                {
+                    // A folder taken out leaves the tree now rather than after the walk.
+                    _samples = _samples.Only(_settings.SampleRoots, _settings.DisabledSampleRoots);
+                    LayoutAll();
+                    if (SamplesDomain) Refill();
+                    RescanSamples();
+                }
                 return true;
             }
         }
@@ -3665,6 +3860,10 @@ namespace AbletonManager
                         // Now there is a catalog to look a path up in — see OpenPaths.
                         FlushPending();
                         CheckUpdatesInBackground();
+
+                        // The library is walked once per session, after the sets: two walks on
+                        // one disk at once only slow each other down.
+                        if (!_samplesWalked) { _samplesWalked = true; StartSampleScan(false); }
 
                         // Something else on disk changed while we were scanning — we go round
                         // once more, or those edits would wait for the next occasion.
@@ -3812,8 +4011,11 @@ namespace AbletonManager
             }
             Settings.RootsChanged -= OnGlobalRootsChanged;
             if (_cancel != null) { try { _cancel.Cancel(); } catch { } }
+            if (_sampleCancel != null) { try { _sampleCancel.Cancel(); } catch { } }
             if (_watch != null) { try { _watch.Dispose(); } catch { } _watch = null; }
             if (_player != null && !_player.IsDisposed) { try { _player.Close(); } catch { } }
+            _previewTimer.Stop();
+            _preview.Dispose();
             base.OnFormClosing(e);
         }
     }

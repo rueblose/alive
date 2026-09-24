@@ -7,9 +7,9 @@ using System.Windows.Forms;
 namespace AbletonManager
 {
     /// <summary>
-    /// The panel on the right: the details of the selected set or plugin. A card of one colour,
-    /// the primary action pinned to the bottom, and everything else a column of blocks with
-    /// identical insets.
+    /// The panel on the right: the details of the selected set, plugin, library folder or
+    /// sample. A card of one colour, the primary action pinned to the bottom, and everything
+    /// else a column of blocks with identical insets.
     /// </summary>
     public sealed class DetailPanel : GlassControl
     {
@@ -19,9 +19,51 @@ namespace AbletonManager
         ContextMenuStrip _openMenu;   // the popup of secondary actions, while it is open
         int _menuClosedTick;          // when it closed — see ShowActionMenu
 
+        enum PanelMode { Set, Plugin, Folder, Sample }
+        PanelMode _mode = PanelMode.Set;
+
         SetEntry _set;
         PluginStat _plugin;
-        bool _pluginMode;
+
+        // A folder or a sample of the library, and what the sets use of it. _unknown — the
+        // sets are still being read, and "never" would be a lie.
+        SampleFolder _folder;
+        SampleFile _sample;
+        SampleUsage _use = SampleUsage.Empty;
+        bool _unknown;
+        readonly List<SampleFile> _topFiles = new List<SampleFile>();
+        readonly List<SetEntry> _projects = new List<SetEntry>();
+        SampleCopies _copies = SampleCopies.Empty;
+        List<SampleFile> _others = new List<SampleFile>();       // the other places the shown sample lies in
+
+        // Rows that lead somewhere else — a sample of "Most used", another copy of a sample, a
+        // folder of the library a set takes samples from. Laid out anew by every paint, like
+        // the other clickable rows.
+        readonly List<Rectangle> _linkRects = new List<Rectangle>();
+        readonly List<Action> _linkClicks = new List<Action>();
+        int _linkRowHot = -1;
+
+        // Projects by month for a folder or a sample: a count a month from _monthsFrom up to
+        // this month; empty — nothing to draw. See CountMonths and UsageChart.
+        int[] _months = new int[0];
+        DateTime _monthsFrom;
+        Rectangle _chartRect;
+        int _chartHot = -1;
+
+        // The library folders the shown set takes its samples from, and how many from each.
+        List<KeyValuePair<SampleFolder, int>> _setFolders;
+
+        // The sample's picture and what it is — read in the background when it is picked, and
+        // kept for its path: the list re-selects the same row after every refill.
+        Waveform _wave;
+        string _waveFor = "";
+        string _format = "";
+        int _durationMs;
+        float _waveProgress;
+        bool _wavePlaying;
+        Rectangle _waveRect;
+        bool _waveHot;
+
         int _scroll;
         int _contentHeight;
         float _scrollTarget, _scrollCurrent;
@@ -76,6 +118,19 @@ namespace AbletonManager
         public event Action<SetEntry> SetRequested;
         public event Action<string> PluginRequested;
 
+        /// <summary>A sample picked in a folder's "Most used" list.</summary>
+        public event Action<SampleFile> SampleRequested;
+
+        /// <summary>A click on a sample's wave, 0..1 across it.</summary>
+        public event Action<float> WaveClicked;
+
+        /// <summary>The library folders a set takes its samples from, the most first — asked of
+        /// MainForm when a set is shown. null — the panel has no such section.</summary>
+        public Func<SetEntry, List<KeyValuePair<SampleFolder, int>>> LibraryFoldersOf;
+
+        /// <summary>A folder picked in a set's "Sample folders".</summary>
+        public event Action<SampleFolder> LibraryFolderRequested;
+
         public DetailPanel()
         {
             Cursor = Cursors.Default;
@@ -88,7 +143,7 @@ namespace AbletonManager
             _action.SurfaceOverlay = Theme.Surface;
             _action.Click += delegate
             {
-                if (_pluginMode) { if (RevealRequested != null) RevealRequested(); }
+                if (_mode != PanelMode.Set) { if (RevealRequested != null) RevealRequested(); }
                 else if (OpenRequested != null) OpenRequested();
             };
             Controls.Add(_action);
@@ -129,7 +184,9 @@ namespace AbletonManager
         {
             bool same = _set != null && s != null && _set.Path == s.Path;
             _plugin = null;
-            _pluginMode = false;
+            _folder = null;
+            _sample = null;
+            _mode = PanelMode.Set;
             _set = s;
             _scroll = 0;
             _scrollTarget = _scrollCurrent = 0;
@@ -137,6 +194,8 @@ namespace AbletonManager
             _topHot = false;
             _topRect = Rectangle.Empty;
             _pluginRowHot = -1;
+            _linkRowHot = -1;
+            _setFolders = s != null && LibraryFoldersOf != null ? LibraryFoldersOf(s) : null;
             if (!same)
             {
                 _arr = null;
@@ -163,7 +222,9 @@ namespace AbletonManager
         public void ShowPlugin(PluginStat p)
         {
             _plugin = p;
-            _pluginMode = true;
+            _folder = null;
+            _sample = null;
+            _mode = PanelMode.Plugin;
             _set = null;
             _arr = null;
             DropThumb();
@@ -186,6 +247,173 @@ namespace AbletonManager
             Invalidate();
         }
 
+        /// <summary>A folder of the sample library: its numbers and copies, its use by month,
+        /// its most used samples, the projects that use it. d == null — nothing is
+        /// selected.</summary>
+        public void ShowFolder(SampleFolder d, SampleUsage use, SampleCopies copies, bool unknown)
+        {
+            ShowLibrary(PanelMode.Folder, use, copies, unknown);
+            _folder = d;
+            if (d == null || unknown) return;
+
+            List<SetEntry> sets = new List<SetEntry>();
+            foreach (SampleFile x in _use.UsedUnder(d))
+            {
+                sets.AddRange(_use.Of(x).Sets);
+                if (_topFiles.Count < 10) _topFiles.Add(x);
+            }
+            _projects.AddRange(SampleUsage.Newest(sets));
+            CountMonths(sets);
+        }
+
+        /// <summary>One sample: its wave and format (read in the background), its path, its use
+        /// by month, its other copies, the projects that use it.</summary>
+        public void ShowSample(SampleFile f, SampleUsage use, SampleCopies copies, bool unknown)
+        {
+            ShowLibrary(PanelMode.Sample, use, copies, unknown);
+            _sample = f;
+            if (f == null) return;
+            if (!string.Equals(_waveFor, f.Path, StringComparison.OrdinalIgnoreCase)) LoadWave(f);
+            _others = _copies.Others(f);
+            SampleUse u = unknown ? null : _use.Of(f);
+            if (u == null) return;
+            _projects.AddRange(SampleUsage.Newest(u.Sets));
+            CountMonths(u.Sets);
+        }
+
+        /// <summary>
+        /// How many projects saved a set that uses it, month by month — what UsageChart draws. A
+        /// project counts once a month however many of its sets were saved then. The window ends
+        /// at this month and reaches back to the first use, a year at least and four at most:
+        /// past that a column would be too thin to read, and the older use is still in the
+        /// projects list.
+        /// </summary>
+        void CountMonths(IEnumerable<SetEntry> sets)
+        {
+            DateTime now = DateTime.Now;
+            int last = now.Year * 12 + now.Month - 1, first = last;
+            Dictionary<int, HashSet<string>> byMonth = new Dictionary<int, HashSet<string>>();
+            foreach (SetEntry s in sets)
+            {
+                if (s.Modified == default(DateTime)) continue;
+                DateTime m = s.Modified.ToLocalTime();
+                int key = m.Year * 12 + m.Month - 1;
+                if (key > last || key <= last - 48) continue;
+                HashSet<string> p;
+                if (!byMonth.TryGetValue(key, out p))
+                {
+                    p = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                    byMonth[key] = p;
+                }
+                p.Add(s.ProjectDir);
+                if (key < first) first = key;
+            }
+            if (byMonth.Count == 0) { _months = new int[0]; return; }
+            first = Math.Min(first, last - 11);
+            _months = new int[last - first + 1];
+            foreach (KeyValuePair<int, HashSet<string>> kv in byMonth) _months[kv.Key - first] = kv.Value.Count;
+            _monthsFrom = new DateTime(first / 12, first % 12 + 1, 1);
+        }
+
+        void ShowLibrary(PanelMode mode, SampleUsage use, SampleCopies copies, bool unknown)
+        {
+            _mode = mode;
+            _set = null;
+            _plugin = null;
+            _arr = null;
+            DropThumb();
+            _folder = null;
+            _sample = null;
+            _use = use ?? SampleUsage.Empty;
+            _copies = copies ?? SampleCopies.Empty;
+            _unknown = unknown;
+            _topFiles.Clear();
+            _projects.Clear();
+            _others = new List<SampleFile>();
+            _months = new int[0];
+            _chartHot = -1;
+            _linkRowHot = -1;
+            _scroll = 0;
+            _scrollTarget = _scrollCurrent = 0;
+            if (_scroller != null) _scroller.SyncPosition(0);
+            _topHot = _waveHot = false;
+            _topRect = Rectangle.Empty;
+            _setRowHot = _pluginRowHot = -1;
+            ApplyAction();
+            Invalidate();
+        }
+
+        public bool ShowsSample(SampleFile f)
+        {
+            return _mode == PanelMode.Sample && _sample != null && f != null
+                && string.Equals(_sample.Path, f.Path, StringComparison.OrdinalIgnoreCase);
+        }
+
+        public int SampleDurationMs { get { return _durationMs; } }
+
+        public void SetWaveProgress(float t)
+        {
+            if (_wavePlaying && Math.Abs(t - _waveProgress) < 0.001f) return;
+            _wavePlaying = true;
+            _waveProgress = t;
+            Invalidate(_waveRect);
+        }
+
+        public void StopWave()
+        {
+            if (!_wavePlaying) return;
+            _wavePlaying = false;
+            _waveProgress = 0f;
+            Invalidate(_waveRect);
+        }
+
+        /// <summary>The wave and the format line, off the UI thread. A file only Live plays gets
+        /// the format alone — there is no wave to read out of it.</summary>
+        void LoadWave(SampleFile f)
+        {
+            string path = f.Path;
+            bool wave = f.CanPreview;
+            _waveFor = path;
+            _wave = null;
+            _format = "";
+            _durationMs = 0;
+            _wavePlaying = false;
+            _waveProgress = 0f;
+            int buckets = Math.Max(120, Width - Pad * 2);
+            System.Threading.ThreadPool.QueueUserWorkItem(delegate
+            {
+                int ms = 0;
+                string fmt = "";
+                Waveform w = null;
+                // A drive that went away mid-read throws — on a pool thread that would take
+                // the whole program down.
+                try
+                {
+                    fmt = MediaDecoder.Describe(path, out ms);
+                    if (wave) w = WaveReader.Read(path, buckets);
+                }
+                catch (Exception ex)
+                {
+                    Diag.Line("samples: wave: " + ex.Message);
+                    w = new Waveform();
+                    w.Note = "cannot decode";
+                }
+                try
+                {
+                    BeginInvoke((MethodInvoker)delegate
+                    {
+                        // Another sample was picked meanwhile — this answer is nobody's now.
+                        if (!string.Equals(_waveFor, path, StringComparison.OrdinalIgnoreCase)) return;
+                        _wave = w;
+                        _format = fmt;
+                        _durationMs = ms;
+                        Invalidate();
+                    });
+                }
+                catch { }
+            });
+        }
+
         public void OnArrangement(Arrangement a)
         {
             if (a == null || _set == null || a.Path != _set.Path) return;
@@ -196,7 +424,7 @@ namespace AbletonManager
 
         void ApplyAction()
         {
-            if (_pluginMode)
+            if (_mode != PanelMode.Set)
             {
                 // The "Show in Explorer" button was removed: the plugin path became a link
                 // itself, and the button at the bottom repeated what one wants to click anyway.
@@ -218,7 +446,7 @@ namespace AbletonManager
         /// </summary>
         void ShowActionMenu()
         {
-            if (_set == null || _pluginMode) return;
+            if (_set == null || _mode != PanelMode.Set) return;
 
             // A click on the button while the popup is open closes it first — the popup leaves
             // on any click outside itself, and only then does the click reach the button.
@@ -290,7 +518,7 @@ namespace AbletonManager
         {
             get
             {
-                int buttons = _pluginMode ? 0 : Sc(Theme.ControlH);
+                int buttons = _mode != PanelMode.Set ? 0 : Sc(Theme.ControlH);
                 return Height - Pad - buttons - Sc(16);
             }
         }
@@ -318,39 +546,69 @@ namespace AbletonManager
 
         protected override void OnMouseMove(MouseEventArgs e)
         {
-            bool t = _arr != null && _arr.HasContent && _thumbRect.Contains(e.Location);
-            bool l = !_linkRect.IsEmpty && _linkRect.Contains(e.Location);
+            UpdateHot(e.Location);
+            base.OnMouseMove(e);
+        }
+
+        /// <summary>
+        /// What is under the point: the hover state of every clickable thing in the panel. A
+        /// press asks it again rather than trusting the last move — a pen or a tap may press
+        /// with no move before it, and a move that came from somewhere else than the real
+        /// cursor is followed at once by the system's "the mouse has left".
+        /// </summary>
+        void UpdateHot(Point p)
+        {
+            bool t = _arr != null && _arr.HasContent && _thumbRect.Contains(p);
+            bool l = !_linkRect.IsEmpty && _linkRect.Contains(p);
 
             int rowHot = -1;
             for (int i = 0; i < _setRowRects.Count; i++)
-                if (_setRowRects[i].Contains(e.Location)) { rowHot = i; break; }
+                if (_setRowRects[i].Contains(p)) { rowHot = i; break; }
 
             int pluginRowHot = -1;
             for (int i = 0; i < _pluginRowRects.Count; i++)
-                if (_pluginRowRects[i].Contains(e.Location)) { pluginRowHot = i; break; }
+                if (_pluginRowRects[i].Contains(p)) { pluginRowHot = i; break; }
 
-            bool n = _set != null && !_pluginMode && _notesRect.Contains(e.Location);
-            bool up = !_topRect.IsEmpty && _topRect.Contains(e.Location);
-            if (up) { t = l = n = false; rowHot = pluginRowHot = -1; }
+            int linkRowHot = -1;
+            for (int i = 0; i < _linkRects.Count; i++)
+                if (_linkRects[i].Contains(p)) { linkRowHot = i; break; }
 
-            if (t != _thumbHot || l != _linkHot || n != _notesHot || up != _topHot
-                || rowHot != _setRowHot || pluginRowHot != _pluginRowHot)
+            // The chart's hit target is the column's whole slot, not only the painted column.
+            int chartHot = -1;
+            if (!_chartRect.IsEmpty && _chartRect.Contains(p) && _months.Length > 0)
+                chartHot = Math.Min(_months.Length - 1,
+                                    (p.X - _chartRect.X) * _months.Length / Math.Max(1, _chartRect.Width));
+
+            // The wave is a button only where something will sound.
+            bool wave = WaveClicked != null && _sample != null && _sample.CanPreview
+                     && !_waveRect.IsEmpty && _waveRect.Contains(p);
+
+            bool n = _set != null && _mode == PanelMode.Set && _notesRect.Contains(p);
+            bool up = !_topRect.IsEmpty && _topRect.Contains(p);
+            if (up) { t = l = n = wave = false; rowHot = pluginRowHot = linkRowHot = chartHot = -1; }
+
+            if (t != _thumbHot || l != _linkHot || n != _notesHot || up != _topHot || wave != _waveHot
+                || rowHot != _setRowHot || pluginRowHot != _pluginRowHot || linkRowHot != _linkRowHot
+                || chartHot != _chartHot)
             {
-                _thumbHot = t; _linkHot = l; _notesHot = n; _topHot = up;
-                _setRowHot = rowHot; _pluginRowHot = pluginRowHot;
-                Cursor = (t || l || n || up || rowHot >= 0 || pluginRowHot >= 0) ? Cursors.Hand : Cursors.Default;
+                _thumbHot = t; _linkHot = l; _notesHot = n; _topHot = up; _waveHot = wave;
+                _setRowHot = rowHot; _pluginRowHot = pluginRowHot; _linkRowHot = linkRowHot; _chartHot = chartHot;
+                Cursor = (t || l || n || up || wave || rowHot >= 0 || pluginRowHot >= 0 || linkRowHot >= 0)
+                       ? Cursors.Hand : Cursors.Default;
                 Invalidate();
             }
-            base.OnMouseMove(e);
         }
 
         protected override void OnMouseLeave(EventArgs e)
         {
-            if (_thumbHot || _linkHot || _notesHot || _topHot || _setRowHot >= 0 || _pluginRowHot >= 0)
+            if (_thumbHot || _linkHot || _notesHot || _topHot || _waveHot
+                || _setRowHot >= 0 || _pluginRowHot >= 0 || _linkRowHot >= 0 || _chartHot >= 0)
             {
-                _thumbHot = _linkHot = _notesHot = _topHot = false;
+                _thumbHot = _linkHot = _notesHot = _topHot = _waveHot = false;
                 _setRowHot = -1;
                 _pluginRowHot = -1;
+                _linkRowHot = -1;
+                _chartHot = -1;
                 Cursor = Cursors.Default;
                 Invalidate();
             }
@@ -361,6 +619,7 @@ namespace AbletonManager
         {
             if (e.Button == MouseButtons.Left)
             {
+                UpdateHot(e.Location);
                 if (_topHot)
                 {
                     _scroll = 0;
@@ -385,6 +644,19 @@ namespace AbletonManager
                 if (_pluginRowHot >= 0 && _pluginRowHot < _pluginRowNames.Count && PluginRequested != null)
                 {
                     PluginRequested(_pluginRowNames[_pluginRowHot]);
+                    return;
+                }
+                if (_linkRowHot >= 0 && _linkRowHot < _linkClicks.Count)
+                {
+                    _linkClicks[_linkRowHot]();
+                    return;
+                }
+                if (_waveHot && WaveClicked != null)
+                {
+                    // The same inset as the wave's own box in WaveView.PaintWave.
+                    int inset = Sc(10);
+                    float at = (e.X - _waveRect.X - inset) / (float)Math.Max(1, _waveRect.Width - inset * 2);
+                    WaveClicked(Math.Max(0f, Math.Min(1f, at)));
                     return;
                 }
             }
@@ -417,29 +689,28 @@ namespace AbletonManager
             int over = _scroller != null ? (int)Math.Round(_scroller.Overscroll) : 0;
             int y = Pad - _scroll - over;
 
-            if (_pluginMode) { PaintPlugin(g, Pad, y, w, over); return; }
+            // Every clickable rectangle is laid out anew by the paint below.
+            _thumbRect = _linkRect = _topRect = _waveRect = _chartRect = Rectangle.Empty;
             _setRowRects.Clear();
             _setRowSets.Clear();
             _pluginRowRects.Clear();
             _pluginRowNames.Clear();
+            _linkRects.Clear();
+            _linkClicks.Clear();
+
+            if (_mode == PanelMode.Plugin) { PaintPlugin(g, Pad, y, w, over); return; }
+            if (_mode == PanelMode.Folder) { PaintFolder(g, y, w, over); return; }
+            if (_mode == PanelMode.Sample) { PaintSample(g, y, w, over); return; }
 
             if (_set == null)
             {
-                _thumbRect = _linkRect = _topRect = Rectangle.Empty;
                 PaintEmpty(g, Pad, w, "No set selected", "Pick one from the list");
                 return;
             }
 
             // The heading and the weight of the whole project folder on one line — the same
             // number as in the list column.
-            int titleH = Sc(26);
-            string size = MainForm.SizeMB(_set.ProjectSize);
-            Size sw = TextRenderer.MeasureText(g, size, Theme.FLabel, new Size(w, titleH), PanelRight);
-            Chrome.DrawText(g, _set.Name, Theme.FTitle,
-                new Rectangle(Pad, y, w - sw.Width - Sc(10), titleH), Theme.Text, PanelLeft);
-            Chrome.DrawText(g, size, Theme.FLabel,
-                new Rectangle(Pad, y, w, titleH), Theme.TextDim, PanelRight);
-            y += titleH + Sc(16);
+            y = Header(g, _set.Name, MainForm.SizeMB(_set.ProjectSize), y, w) + Sc(16);
 
             y = Thumb(g, Pad, y, w) + Sc(16);
 
@@ -456,14 +727,32 @@ namespace AbletonManager
 
             // Files
             y = Line(g, "Files:", Theme.FLabel, Theme.TextDim, Pad, y, w) + Sc(8);
-            Chrome.DrawText(g, Chrome.Plural(_set.TotalRefs, "file"), Theme.FLabel,
-                new Rectangle(Pad, y, w, Sc(28)), Theme.Text, PanelLeft);
-            // Colour only when things are bad. A green zero promised an event that is not
-            // there, and red among it stopped catching the eye.
-            if (_set.MissingFiles > 0)
-                Chrome.DrawText(g, _set.MissingFiles + " missing", Theme.FLabel,
-                    new Rectangle(Pad, y, w, Sc(28)), Theme.Red, PanelRight);
+            if (!Below(y + Sc(28)))
+            {
+                Chrome.DrawText(g, Chrome.Plural(_set.TotalRefs, "file"), Theme.FLabel,
+                    new Rectangle(Pad, y, w, Sc(28)), Theme.Text, PanelLeft);
+                // Colour only when things are bad. A green zero promised an event that is not
+                // there, and red among it stopped catching the eye.
+                if (_set.MissingFiles > 0)
+                    Chrome.DrawText(g, _set.MissingFiles + " missing", Theme.FLabel,
+                        new Rectangle(Pad, y, w, Sc(28)), Theme.Red, PanelRight);
+            }
             y += Sc(28) + Sc(24);
+
+            // Which folders of the sample library the set takes from — a click opens the folder
+            // on the Samples tab.
+            if (_setFolders != null && _setFolders.Count > 0)
+            {
+                List<KeyValuePair<SampleFolder, int>> folders = _setFolders;
+                y = LinkList(g, "Sample folders (" + folders.Count.ToString("N0", Inv) + "):", folders.Count, folders.Count,
+                             delegate (int i) { return LibraryTitle(folders[i].Key); },
+                             delegate (int i) { return folders[i].Value.ToString("N0", Inv); },
+                             delegate (int i)
+                             {
+                                 SampleFolder d = folders[i].Key;
+                                 return (Action)delegate { if (LibraryFolderRequested != null) LibraryFolderRequested(d); };
+                             }, y, w) + Sc(24);
+            }
 
             if (_set.Error.Length > 0)
                 y = Wrapped(g, _set.Error, Theme.FLabel, Theme.Red, Pad, y, w) + Sc(24);
@@ -471,11 +760,14 @@ namespace AbletonManager
             // Plugins — the count of missing ones opposite the heading, by the same device as
             // Files.
             Rectangle plugHead = new Rectangle(Pad, y, w, Sc(28));
-            Chrome.DrawText(g, "Plugins" + " (" + _set.Plugins.Length + "):",
-                            Theme.FLabel, plugHead, Theme.TextDim, PanelLeft);
-            if (_set.MissingPlugins > 0)
-                Chrome.DrawText(g, _set.MissingPlugins + " missing", Theme.FLabel,
-                    plugHead, Theme.Red, PanelRight);
+            if (!Below(plugHead.Bottom))
+            {
+                Chrome.DrawText(g, "Plugins" + " (" + _set.Plugins.Length + "):",
+                                Theme.FLabel, plugHead, Theme.TextDim, PanelLeft);
+                if (_set.MissingPlugins > 0)
+                    Chrome.DrawText(g, _set.MissingPlugins + " missing", Theme.FLabel,
+                        plugHead, Theme.Red, PanelRight);
+            }
             y += Sc(28) + Sc(8);
 
             if (_set.Plugins.Length == 0)
@@ -506,16 +798,8 @@ namespace AbletonManager
                     if (m == MatchKind.OtherFormat)
                         Chrome.DrawText(g, "other format", Theme.FLabel,
                                         rr, Theme.TextDim, PanelRight);
-                    if (hot)
-                    {
-                        // We underline only this row and only to the width of the text — the
-                        // same presentation as the clickable sets in a plugin's panel.
-                        Size ts = TextRenderer.MeasureText(g, _set.Plugins[i], Theme.FLabel, new Size(rr.Width, rr.Height), PanelLeft);
-                        int ly = rr.Y + (rr.Height + ts.Height) / 2;
-                        int lx = rr.X + UnderlinePad;
-                        using (Pen ln = new Pen(c))
-                            g.DrawLine(ln, lx, ly, lx + Math.Min(ts.Width, rr.Width - UnderlinePad), ly);
-                    }
+                    // The same presentation as the clickable sets in a plugin's panel.
+                    if (hot) Underline(g, _set.Plugins[i], Theme.FLabel, rr, c);
                     _pluginRowRects.Add(rr);
                     _pluginRowNames.Add(_set.Plugins[i]);
                     y += Sc(28);
@@ -672,14 +956,7 @@ namespace AbletonManager
 
                 // We do not underline the current one even under the cursor: there is no point
                 // clicking it.
-                if (hot && !current)
-                {
-                    Size ts = TextRenderer.MeasureText(g, v.Name, Theme.FBadge, new Size(rr.Width, rr.Height), PanelLeft);
-                    int ly = rr.Y + (rr.Height + ts.Height) / 2;
-                    using (Pen ln = new Pen(Color.White))
-                        g.DrawLine(ln, rr.X + UnderlinePad, ly,
-                                   rr.X + UnderlinePad + Math.Min(ts.Width, rr.Width - UnderlinePad), ly);
-                }
+                if (hot && !current) Underline(g, v.Name, Theme.FBadge, rr, Color.White);
 
                 _setRowRects.Add(rr);
                 _setRowSets.Add(v);
@@ -710,11 +987,6 @@ namespace AbletonManager
 
         void PaintPlugin(Graphics g, int pad, int y, int w, int over)
         {
-            _thumbRect = _linkRect = _topRect = Rectangle.Empty;
-            _setRowRects.Clear();
-            _setRowSets.Clear();
-            _pluginRowRects.Clear();
-            _pluginRowNames.Clear();
             PluginStat p = _plugin;
             if (p == null)
             {
@@ -784,16 +1056,7 @@ namespace AbletonManager
                 Rectangle rr = new Rectangle(pad, y, w, Sc(28));
                 bool hot = _setRowHot == shown;
                 Chrome.DrawText(g, s.Name, Theme.FLabel, rr, hot ? Color.White : Theme.Text, PanelLeft);
-                if (hot)
-                {
-                    // We underline only this row and only to the width of the text — not the
-                    // whole row, or it looks like a button rather than a link.
-                    Size ts = TextRenderer.MeasureText(g, s.Name, Theme.FLabel, new Size(rr.Width, rr.Height), PanelLeft);
-                    int ly = rr.Y + (rr.Height + ts.Height) / 2;
-                    int lx = rr.X + UnderlinePad;
-                    using (Pen ln = new Pen(Color.White))
-                        g.DrawLine(ln, lx, ly, lx + Math.Min(ts.Width, rr.Width - UnderlinePad), ly);
-                }
+                if (hot) Underline(g, s.Name, Theme.FLabel, rr, Color.White);
                 _setRowRects.Add(rr);
                 _setRowSets.Add(s);
                 y += Sc(28);
@@ -819,7 +1082,360 @@ namespace AbletonManager
             PaintScrollTop(g);
         }
 
+        static readonly System.Globalization.CultureInfo Inv = System.Globalization.CultureInfo.InvariantCulture;
+
+        void PaintFolder(Graphics g, int y, int w, int over)
+        {
+            SampleFolder d = _folder;
+            if (d == null)
+            {
+                PaintEmpty(g, Pad, w, "No folder selected", "Pick a folder or a sample");
+                return;
+            }
+
+            // A root's name is its whole path — as a heading it broke in the middle of a word;
+            // the path stands in full right below it.
+            string title = d.Name;
+            if (d.Parent == null)
+            {
+                string last = System.IO.Path.GetFileName(d.Path.TrimEnd('\\'));
+                if (last.Length > 0) title = last;
+            }
+            y = Header(g, title, MainForm.SizeMB(d.TotalBytes), y, w) + Sc(10);
+            y = PathLink(g, d.Path, y, w) + Sc(16);
+
+            FolderUse u = _unknown ? null : _use.Of(d);
+            y = Row(g, "Samples:", d.TotalSamples.ToString("N0", Inv), Theme.Text, Pad, y, w);
+            y = UseRow(g, "Used:", u == null ? null : u.Used.ToString("N0", Inv) + " · " + Share(u.Used, d.TotalSamples), "none", y, w);
+            y = UseRow(g, "Projects:", u == null ? null : u.Projects.ToString("N0", Inv), "none", y, w);
+            y = UseRow(g, "Last used:", u == null ? null : u.LastUsed.ToLocalTime().ToString("yyyy-MM-dd"), "never", y, w);
+            if (d.Created != default(DateTime)) y = Row(g, "Created:", Day(d.Created), Theme.Text, Pad, y, w);
+            // How many of its samples lie elsewhere too, and what they weigh — the Copies column.
+            int dupes = _copies.FilesIn(d);
+            if (dupes > 0)
+                y = Row(g, "Copies:", dupes.ToString("N0", Inv) + " · " + MainForm.SampleSize(_copies.BytesIn(d)),
+                        Theme.Text, Pad, y, w);
+            y += Sc(16);
+
+            y = UsageChart(g, y, w);
+
+            if (u != null && _topFiles.Count > 0)
+            {
+                // Ten at most, on purpose: the whole list is the Most used lens. At the right, how
+                // many projects — the reason a sample is in the list.
+                List<SampleFile> top = _topFiles;
+                y = LinkList(g, "Most used (" + u.Used.ToString("N0", Inv) + "):", top.Count, u.Used,
+                             delegate (int i) { return top[i].Name; },
+                             delegate (int i) { return _use.Of(top[i]).Projects.ToString("N0", Inv); },
+                             delegate (int i)
+                             {
+                                 SampleFile f = top[i];
+                                 return (Action)delegate { if (SampleRequested != null) SampleRequested(f); };
+                             }, y, w) + Sc(16);
+            }
+
+            y = ProjectsList(g, y, w);
+            _contentHeight = y + _scroll + over + Pad;
+            ClampScroll();
+            PaintScrollTop(g);
+        }
+
+        void PaintSample(Graphics g, int y, int w, int over)
+        {
+            SampleFile f = _sample;
+            if (f == null)
+            {
+                PaintEmpty(g, Pad, w, "No folder selected", "Pick a folder or a sample");
+                return;
+            }
+
+            y = Header(g, f.Name, MainForm.SampleSize(f.Size), y, w) + Sc(16);
+
+            // Where a set shows its arrangement, a sample shows its wave.
+            _waveRect = new Rectangle(Pad, y, w, Sc(96));
+            string hint = !f.CanPreview ? "only Live plays this file"
+                        : _wave == null ? "reading…"
+                        : _wave.Ok ? "" : _wave.Note;
+            WaveView.PaintWave(g, _waveRect, _wave, _waveProgress, _wavePlaying, hint, DeviceDpi / 96f);
+            y = _waveRect.Bottom + Sc(16);
+
+            y = PathLink(g, f.Path, y, w) + Sc(16);
+
+            SampleUse u = _unknown ? null : _use.Of(f);
+            if (_durationMs > 0) y = Row(g, "Duration:", Duration(_durationMs), Theme.Text, Pad, y, w);
+            if (_format.Length > 0) y = Row(g, "Format:", _format, Theme.Text, Pad, y, w);
+            y = UseRow(g, "Projects:", u == null ? null : u.Projects.ToString("N0", Inv), "none", y, w);
+            y = UseRow(g, "Last used:", u == null ? null : u.LastUsed.ToLocalTime().ToString("yyyy-MM-dd"), "never", y, w);
+            if (f.Created != default(DateTime)) y = Row(g, "Created:", Day(f.Created), Theme.Text, Pad, y, w);
+            y += Sc(16);
+
+            y = UsageChart(g, y, w);
+
+            // The same sound elsewhere in the library. Which copy the sets use says which one to
+            // keep; a click shows it in the tree.
+            if (_others.Count > 0)
+            {
+                List<SampleFile> others = _others;
+                y = LinkList(g, "Copies (" + others.Count.ToString("N0", Inv) + "):", others.Count, others.Count,
+                             delegate (int i) { return SampleIndex.Location(others[i].Folder); },
+                             // "used" says which copy the sets take; the path needs the rest of the row.
+                             delegate (int i) { return !_unknown && _use.Of(others[i]) != null ? "used" : ""; },
+                             delegate (int i)
+                             {
+                                 SampleFile c = others[i];
+                                 return (Action)delegate { if (SampleRequested != null) SampleRequested(c); };
+                             }, y, w) + Sc(16);
+            }
+
+            y = ProjectsList(g, y, w);
+            _contentHeight = y + _scroll + over + Pad;
+            ClampScroll();
+            PaintScrollTop(g);
+        }
+
+        /// <summary>A library folder as a set's panel lists it: under its root's own name, so the
+        /// Samples of the User Library and a root called Samples do not read alike.</summary>
+        static string LibraryTitle(SampleFolder d)
+        {
+            SampleFolder root = SampleIndex.RootOf(d);
+            if (d == root) return d.Path;
+            string r = System.IO.Path.GetFileName(root.Path.TrimEnd('\\'));
+            return (r.Length > 0 ? r : root.Path.TrimEnd('\\')) + "\\" + d.Name;
+        }
+
+        static string Day(DateTime utc)
+        {
+            return utc == default(DateTime) ? "" : utc.ToLocalTime().ToString("yyyy-MM-dd");
+        }
+
+        /// <summary>
+        /// A heading and a column of rows that lead somewhere (see _linkRects). count rows are at
+        /// hand out of total; "… N more" says the rest. Rows that do not fit above the bottom
+        /// keep their height, so the tail can be scrolled to — as in the projects list.
+        /// </summary>
+        int LinkList(Graphics g, string heading, int count, int total, Func<int, string> text,
+                     Func<int, string> note, Func<int, Action> click, int y, int w)
+        {
+            y = Line(g, heading, Theme.FLabel, Theme.TextDim, Pad, y, w) + Sc(8);
+            int shown = 0;
+            for (int i = 0; i < count; i++)
+            {
+                if (Below(y + Sc(28))) break;
+                y = LinkRow(g, text(i), note(i), y, w, click(i));
+                shown++;
+            }
+            if (shown < count) y += Sc(28) * (count - shown);
+            else if (total > shown && !Below(y + Sc(28)))
+                y = Line(g, "… " + (total - shown).ToString("N0", Inv) + " more", Theme.FLabel, Theme.TextDim, Pad, y, w);
+            return y;
+        }
+
+        /// <summary>One such row: the text cut in the middle — a path keeps its last folder, a
+        /// name its end, so "Kick 01.wav" and "Kick 02.wav" never look alike — a dim note at the
+        /// right, and an underline under the cursor.</summary>
+        int LinkRow(Graphics g, string text, string note, int y, int w, Action click)
+        {
+            Rectangle rr = new Rectangle(Pad, y, w, Sc(28));
+            Rectangle nr = rr;
+            if (!string.IsNullOrEmpty(note))
+            {
+                Chrome.DrawText(g, note, Theme.FLabel, rr, Theme.TextDim, PanelRight);
+                int cw = TextRenderer.MeasureText(g, note, Theme.FLabel, rr.Size, PanelRight).Width;
+                nr = new Rectangle(rr.X, rr.Y, Math.Max(0, rr.Width - cw - Sc(8)), rr.Height);
+            }
+            bool hot = _linkRowHot == _linkRects.Count;
+            string shown = RowListView.FitPath(text, Theme.FLabel, nr.Width);
+            Chrome.DrawText(g, shown, Theme.FLabel, nr, hot ? Color.White : Theme.Text, PanelLeft);
+            if (hot) Underline(g, shown, Theme.FLabel, nr, Color.White);
+            _linkRects.Add(rr);
+            _linkClicks.Add(click);
+            return y + Sc(28);
+        }
+
+        /// <summary>
+        /// Projects by month (see CountMonths): a column a month, up to this one. One series, so
+        /// no legend — the heading says what is counted. The peak carries its number; under the
+        /// cursor a column lights up and the line below reads its count and month, where the two
+        /// ends of the time axis stand otherwise. Thin columns with a gap between them, rounded
+        /// at the value end and square on a hairline baseline — the chart specs of the dataviz
+        /// method, in the panel's own inks.
+        /// </summary>
+        int UsageChart(Graphics g, int y, int w)
+        {
+            int n = _months.Length;
+            if (n == 0) return y;
+            y = Line(g, "Projects by month:", Theme.FLabel, Theme.TextDim, Pad, y, w) + Sc(4);
+
+            int peak = 0, peakAt = 0;
+            for (int i = 0; i < n; i++) if (_months[i] > peak) { peak = _months[i]; peakAt = i; }
+
+            int labelH = TextRenderer.MeasureText("0", Theme.FSmall).Height;
+            int plotH = Sc(40);
+            int lh = TextRenderer.MeasureText("Ag", Theme.FSmall).Height;
+            Rectangle plot = new Rectangle(Pad, y + labelH, w, plotH);
+            Rectangle axis = new Rectangle(Pad, plot.Bottom + Sc(4), w, lh);
+            if (Below(axis.Bottom)) return axis.Bottom + Sc(16);       // scrolled to, it is drawn whole
+            _chartRect = new Rectangle(Pad, y, w, labelH + plotH);
+
+            float slot = plot.Width / (float)n;
+            float gap = Math.Min(Sc(2), slot / 3f);
+            float colW = Math.Min(Sc(24), slot - gap);
+            float rad = Math.Min(Sc(4), colW / 2f);
+            using (Pen baseline = new Pen(Theme.Hairline))
+                g.DrawLine(baseline, plot.X, plot.Bottom, plot.Right, plot.Bottom);
+
+            for (int i = 0; i < n; i++)
+            {
+                if (_months[i] == 0) continue;
+                float h = Math.Max(Sc(3), plotH * _months[i] / (float)peak);
+                RectangleF col = new RectangleF(plot.X + slot * i + (slot - colW) / 2f, plot.Bottom - h, colW, h);
+                Color c = i == _chartHot ? Theme.Light : Color.FromArgb(0xFF, 0x8E, 0x8E, 0x93);
+                using (GraphicsPath p = TopRounded(col, rad))
+                using (SolidBrush b = new SolidBrush(c))
+                    g.FillPath(b, p);
+            }
+
+            // The extreme gets its number, right above its column.
+            string peakText = peak.ToString("N0", Inv);
+            int pw = TextRenderer.MeasureText(g, peakText, Theme.FSmall).Width;
+            int px = (int)Math.Round(plot.X + slot * peakAt + slot / 2f - pw / 2f);
+            px = Math.Max(plot.X, Math.Min(plot.Right - pw, px));
+            Chrome.DrawText(g, peakText, Theme.FSmall, new Rectangle(px, y, pw, labelH), Theme.TextDim, PanelLeft);
+
+            if (_chartHot >= 0 && _chartHot < n)
+            {
+                // The value leads, the month follows.
+                string value = Chrome.Plural(_months[_chartHot], "project");
+                int vw = TextRenderer.MeasureText(g, value, Theme.FSmall, axis.Size, PanelLeft).Width;
+                Chrome.DrawText(g, value, Theme.FSmall, axis, Theme.Text, PanelLeft);
+                Chrome.DrawText(g, " · " + _monthsFrom.AddMonths(_chartHot).ToString("yyyy-MM"), Theme.FSmall,
+                                new Rectangle(axis.X + vw, axis.Y, Math.Max(0, axis.Width - vw), axis.Height),
+                                Theme.TextDim, PanelLeft);
+            }
+            else
+            {
+                Chrome.DrawText(g, _monthsFrom.ToString("yyyy-MM"), Theme.FSmall, axis, Theme.TextDim, PanelLeft);
+                Chrome.DrawText(g, _monthsFrom.AddMonths(n - 1).ToString("yyyy-MM"), Theme.FSmall, axis, Theme.TextDim, PanelRight);
+            }
+            return axis.Bottom + Sc(16);
+        }
+
+        /// <summary>A column rounded at its value end and square at the baseline.</summary>
+        static GraphicsPath TopRounded(RectangleF r, float rad)
+        {
+            GraphicsPath p = new GraphicsPath();
+            if (rad < 0.5f || r.Height < rad * 2) { p.AddRectangle(r); return p; }
+            p.AddArc(r.X, r.Y, rad * 2, rad * 2, 180, 90);
+            p.AddArc(r.Right - rad * 2, r.Y, rad * 2, rad * 2, 270, 90);
+            p.AddLine(r.Right, r.Bottom, r.X, r.Bottom);
+            p.CloseFigure();
+            return p;
+        }
+
+        /// <summary>A usage line: the value, or — while the sets are still being read — "…", or
+        /// dim "none"/"never" when nothing uses it.</summary>
+        int UseRow(Graphics g, string label, string value, string nothing, int y, int w)
+        {
+            if (value != null) return Row(g, label, value, Theme.Text, Pad, y, w);
+            return Row(g, label, _unknown ? "…" : nothing, Theme.TextDim, Pad, y, w);
+        }
+
+        /// <summary>The projects of a folder or a sample, newest first, each under its newest
+        /// set — a click goes to that set on the Sets tab, as from a plugin's panel. Names
+        /// only, as there: a date beside them cut the longer ones short.</summary>
+        int ProjectsList(Graphics g, int y, int w)
+        {
+            if (_projects.Count == 0) return y;
+            y = Line(g, "Projects (" + _projects.Count.ToString("N0", Inv) + "):", Theme.FLabel, Theme.TextDim, Pad, y, w) + Sc(8);
+            int shown = 0;
+            foreach (SetEntry s in _projects)
+            {
+                if (Below(y + Sc(28))) break;
+                bool hot = _setRowHot == shown;
+                Rectangle rr = new Rectangle(Pad, y, w, Sc(28));
+                Chrome.DrawText(g, s.Name, Theme.FLabel, rr, hot ? Color.White : Theme.Text, PanelLeft);
+                if (hot) Underline(g, s.Name, Theme.FLabel, rr, Color.White);
+                _setRowRects.Add(rr);
+                _setRowSets.Add(s);
+                y += Sc(28);
+                shown++;
+            }
+            // As on a plugin: what did not fit is counted, and its height is kept so the tail
+            // can be scrolled to.
+            if (_projects.Count > shown)
+            {
+                if (!Below(y + Sc(28)))
+                    y = Line(g, "… " + (_projects.Count - shown) + " more", Theme.FLabel, Theme.TextDim, Pad, y, w);
+                else
+                    y += Sc(28) * (_projects.Count - shown);
+            }
+            return y;
+        }
+
+        static string Share(int part, int whole)
+        {
+            if (whole <= 0) return "";
+            double p = part * 100.0 / whole;
+            if (p > 0 && p < 0.1) return "<0.1%";
+            return p.ToString(p < 10 ? "0.0" : "0", Inv) + "%";
+        }
+
+        static string Duration(int ms)
+        {
+            if (ms < 60000) return (ms / 1000.0).ToString("0.0", Inv) + " s";
+            int s = ms / 1000;
+            return (s / 60) + ":" + (s % 60).ToString("00");
+        }
+
         // ------------------------------------------------------------------ pieces
+
+        /// <summary>
+        /// The name and the weight on one line — the heading of every kind of panel. A name too
+        /// long for it takes a second line rather than losing its end: names in a sample library
+        /// run long ("Session Drums Multimic" already does not fit beside "12.31 GB").
+        /// </summary>
+        int Header(Graphics g, string name, string size, int y, int w)
+        {
+            int titleH = Sc(26);
+            Size sw = TextRenderer.MeasureText(g, size, Theme.FLabel, new Size(w, titleH), PanelRight);
+            int nw = w - sw.Width - Sc(10);
+            Chrome.DrawText(g, size, Theme.FLabel, new Rectangle(Pad, y, w, titleH), Theme.TextDim, PanelRight);
+
+            const TextFormatFlags oneLine = TextFormatFlags.SingleLine | TextFormatFlags.NoPrefix | TextFormatFlags.NoPadding;
+            if (TextRenderer.MeasureText(g, name, Theme.FTitle, Size.Empty, oneLine).Width <= nw)
+            {
+                Chrome.DrawText(g, name, Theme.FTitle, new Rectangle(Pad, y, nw, titleH), Theme.Text, PanelLeft);
+                return y + titleH;
+            }
+
+            // The first line stands where the one-line title would; the second, if even two
+            // are not enough, ends in an ellipsis.
+            int line = TextRenderer.MeasureText(g, "Ag", Theme.FTitle).Height;
+            int top = y + (titleH - line) / 2;
+            int h = Math.Min(line * 2, TextRenderer.MeasureText(g, name, Theme.FTitle, new Size(nw, int.MaxValue), Chrome.Wrap).Height);
+            TextRenderer.DrawText(g, name, Theme.FTitle, new Rectangle(Pad, top, nw, h), Theme.Text,
+                                  Chrome.Wrap | TextFormatFlags.EndEllipsis);
+            return top + h + (titleH - line) / 2;
+        }
+
+        /// <summary>A path that is itself the link to Explorer, as on a plugin.</summary>
+        int PathLink(Graphics g, string path, int y, int w)
+        {
+            int bottom = Wrapped(g, path, Theme.FSmall, _linkHot ? Theme.Text : Theme.TextDim, Pad, y, w);
+            _linkRect = new Rectangle(Pad, y, w, bottom - y);
+            return bottom;
+        }
+
+        /// <summary>Only this row and only to the width of its text — a link, not a
+        /// button.</summary>
+        void Underline(Graphics g, string text, Font f, Rectangle rr, Color c)
+        {
+            Size ts = TextRenderer.MeasureText(g, text, f, new Size(rr.Width, rr.Height), PanelLeft);
+            int ly = rr.Y + (rr.Height + ts.Height) / 2;
+            int lx = rr.X + UnderlinePad;
+            using (Pen ln = new Pen(c))
+                g.DrawLine(ln, lx, ly, lx + Math.Min(ts.Width, rr.Width - UnderlinePad), ly);
+        }
 
         int Thumb(Graphics g, int x, int y, int w)
         {
@@ -882,11 +1498,13 @@ namespace AbletonManager
             return y + h;
         }
 
+        // Every piece of text keeps its room but is drawn only above the bottom (see Below):
+        // under the buttons it showed through the gap between them.
         int Line(Graphics g, string text, Font f, Color c, int x, int y, int w)
         {
             if (string.IsNullOrEmpty(text)) return y;
             int h = Sc(28);
-            Chrome.DrawText(g, text, f, new Rectangle(x, y, w, h), c, PanelLeft);
+            if (!Below(y + h)) Chrome.DrawText(g, text, f, new Rectangle(x, y, w, h), c, PanelLeft);
             return y + h;
         }
 
@@ -894,7 +1512,7 @@ namespace AbletonManager
         {
             if (string.IsNullOrEmpty(text)) return y;
             int h = TextRenderer.MeasureText(g, text, f, new Size(w, int.MaxValue), Chrome.Wrap).Height;
-            TextRenderer.DrawText(g, text, f, new Rectangle(x, y, w, h), c, Chrome.Wrap);
+            if (!Below(y + h)) TextRenderer.DrawText(g, text, f, new Rectangle(x, y, w, h), c, Chrome.Wrap);
             return y + h;
         }
 
@@ -908,6 +1526,7 @@ namespace AbletonManager
         {
             if (string.IsNullOrEmpty(value)) return y;
             int h = Sc(28);
+            if (Below(y + h)) return y + h;
             Chrome.DrawText(g, label, Theme.FLabel, new Rectangle(x, y, w, h), Theme.TextDim, PanelLeft);
 
             int lw = TextRenderer.MeasureText(g, label, Theme.FLabel, new Size(w, h), PanelLeft).Width;

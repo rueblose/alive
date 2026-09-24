@@ -14,6 +14,11 @@ namespace AbletonManager
         // (and in the UI), but Scan() skips it until it is put back.
         public readonly List<string> DisabledRoots = new List<string>();
 
+        /// <summary>Folders of the sample library — the Samples tab. The same shape as Roots
+        /// and DisabledRoots: a folder switched off stays in the list but is not walked.</summary>
+        public readonly List<string> SampleRoots = new List<string>();
+        public readonly List<string> DisabledSampleRoots = new List<string>();
+
         /// <summary>
         /// Columns of the sets list: visibility, order and widths in one string of the form
         /// "Set,Modified:150,BPM:81,…". Empty means the default set. It is stored as is; the
@@ -25,6 +30,11 @@ namespace AbletonManager
         /// <summary>The same for the plugins table — it is configurable on equal terms with the
         /// sets.</summary>
         public string PluginColumns = "";
+
+        /// <summary>The same for the Samples tab — its columns in the same form as the sets',
+        /// "Name,Location,Samples:140,…". The key is "samplecols": an unreleased build kept
+        /// widths only under "samplecolumns", and that line is simply not read.</summary>
+        public string SampleColumns = "";
 
         /// <summary>
         /// Column order has already been brought back to the catalog's. A column switched on
@@ -50,15 +60,18 @@ namespace AbletonManager
         /// keeps moving for a couple of seconds after the mouse has stopped. Windows 11 runs a
         /// different branch (the system backdrop) and does not have this — which is why we do
         /// not switch it off ourselves but hand over a toggle.
+        ///
+        /// On by default — a fresh install starts flat, and the glass is the person's to turn
+        /// on. A settings.cfg that already says noglass=0 keeps its glass.
         /// </summary>
-        public bool DisableGlass;
+        public bool DisableGlass = true;
 
 
         /// <summary>
         /// Whether smooth vertical scrolling is on (settling by timer). With false, scrolling
-        /// in every list and panel is instant.
+        /// in every list and panel is instant. Off by default, like the glass.
         /// </summary>
-        public bool SmoothScroll = true;
+        public bool SmoothScroll;
 
         /// <summary>
         /// Whether to collapse the sets of one folder into a single row. On by default: a
@@ -125,9 +138,10 @@ namespace AbletonManager
         /// <summary>
         /// Whether the program may ask GitHub about a newer release on its own. This is the
         /// only network request it ever makes — see UpdateCheck — and the only setting here
-        /// that decides whether anything leaves the machine at all.
+        /// that decides whether anything leaves the machine at all. Off by default: a fresh
+        /// install touches the network only when the person asks it to.
         /// </summary>
-        public bool CheckUpdates = true;
+        public bool CheckUpdates;
 
         /// <summary>The day it last asked, yyyy-MM-dd. Once a day is plenty for a program
         /// that gets a release every few weeks.</summary>
@@ -137,10 +151,17 @@ namespace AbletonManager
         /// settings are opened, and opening them writes this down.</summary>
         public string SeenUpdate = "";
 
+        /// <summary>
+        /// Where everything the program keeps lives. ALIVE_HOME moves all of it at once — every
+        /// file goes through this one property — so a test bench or a screenshot session works
+        /// on settings, a catalog and caches of its own and never touches the owner's.
+        /// </summary>
         public static string Dir
         {
             get
             {
+                string home = Environment.GetEnvironmentVariable("ALIVE_HOME");
+                if (!string.IsNullOrEmpty(home)) return home;
                 return Path.Combine(
                     Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
                     "Alive");
@@ -169,8 +190,13 @@ namespace AbletonManager
                     if (key == "root" && val.Length > 0 && !Has(s.Roots, val)) s.Roots.Add(val);
                     else if (key == "root_off" && val.Length > 0 && !Has(s.DisabledRoots, val))
                         s.DisabledRoots.Add(val);
+                    else if (key == "samplefolder" && val.Length > 0 && !Has(s.SampleRoots, val))
+                        s.SampleRoots.Add(val);
+                    else if (key == "samplefolder_off" && val.Length > 0 && !Has(s.DisabledSampleRoots, val))
+                        s.DisabledSampleRoots.Add(val);
                     else if (key == "setcolumns") s.SetColumns = val;
                     else if (key == "plugincolumns") s.PluginColumns = val;
+                    else if (key == "samplecols") s.SampleColumns = val;
                     else if (key == "columnssorted") s.ColumnsSorted = val == "1";
                     else if (key == "pinnedfirst") s.PinnedFirst = val == "1";
                     else if (key == "overviewopen") s.OverviewOpen = val == "1";
@@ -240,6 +266,8 @@ namespace AbletonManager
                 sb.AppendLine("# Alive - folders to scan for projects");
                 foreach (string r in Roots) sb.Append("root=").AppendLine(r);
                 foreach (string r in DisabledRoots) sb.Append("root_off=").AppendLine(r);
+                foreach (string r in SampleRoots) sb.Append("samplefolder=").AppendLine(r);
+                foreach (string r in DisabledSampleRoots) sb.Append("samplefolder_off=").AppendLine(r);
                 sb.Append("pinnedfirst=").AppendLine(PinnedFirst ? "1" : "0");
                 sb.Append("overviewopen=").AppendLine(OverviewOpen ? "1" : "0");
                 sb.Append("noglass=").AppendLine(DisableGlass ? "1" : "0");
@@ -259,6 +287,7 @@ namespace AbletonManager
                 sb.Append("collecttozip=").AppendLine(CollectToZip ? "1" : "0");
                 if (SetColumns.Length > 0) sb.Append("setcolumns=").AppendLine(SetColumns);
                 if (PluginColumns.Length > 0) sb.Append("plugincolumns=").AppendLine(PluginColumns);
+                if (SampleColumns.Length > 0) sb.Append("samplecols=").AppendLine(SampleColumns);
                 sb.Append("columnssorted=").AppendLine(ColumnsSorted ? "1" : "0");
                 if (WindowBounds.Length > 0) sb.Append("window=").AppendLine(WindowBounds);
                 sb.Append("windowmax=").AppendLine(WindowMaximized ? "1" : "0");

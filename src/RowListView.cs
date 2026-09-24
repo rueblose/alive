@@ -26,6 +26,12 @@ namespace AbletonManager
         /// </summary>
         public bool Chips;
 
+        /// <summary>The cell is a path or a file name: shortened in the middle, as Explorer
+        /// does, so the last folder stays readable — "E:\…\Factory Packs" rather than
+        /// "E:\Music\Fact…" — and a name keeps its end, "Kick 0…ped 02.wav". See
+        /// RowListView.FitPath.</summary>
+        public bool PathEllipsis;
+
         public Column(string title, int width) { Title = title; Width = width; }
     }
 
@@ -59,10 +65,23 @@ namespace AbletonManager
         /// on.</summary>
         public bool Pinned;
 
-        /// <summary>One of the versions under an expanded row rather than the project itself —
-        /// the name in the first column is indented and gets a short rail in front of it,
-        /// showing the nesting.</summary>
-        public bool ChildRow;
+        /// <summary>
+        /// How deep the row sits in a tree: the name column is indented by this many steps — a
+        /// version under its project (1), a folder or a sample under its folder on the Samples
+        /// tab (any depth). Which column is "the name" is said by RowListView.IndentColumn.
+        /// </summary>
+        public int Indent;
+
+        /// <summary>A glyph before the name (in IndentColumn): on the Samples tab a folder and
+        /// an audio file look different at a glance.</summary>
+        public Glyph? Icon;
+
+        /// <summary>The name (in IndentColumn) in this font instead of the column's — a sample
+        /// in regular weight under its semibold folders.</summary>
+        public Font NameFont;
+
+        /// <summary>The whole row in the dim colour — on the Samples tab, what no set uses.</summary>
+        public bool Dim;
     }
 
     /// <summary>
@@ -159,6 +178,7 @@ namespace AbletonManager
         public event Action<int, Point> RowRightClicked;
         public event Action<int> RowCountClicked;      // a click on the "+3" / "−3" tail
         public event Action<int> RowTagsClicked;       // a click on a row's tags (or on the "+" in an empty cell)
+        public event Action<int> SelectedRowClicked;   // a left click on the row already selected — SelectionChanged stays silent
 
         public int SortColumn = -1;
         public bool SortDescending;
@@ -194,6 +214,10 @@ namespace AbletonManager
         /// — a project version with no render reference, for instance.
         /// </summary>
         public Func<RowData, string> DragFilePath;
+
+        /// <summary>The column that gets RowData.Indent. The sets name column can be dragged to
+        /// any place, so "the first column" would not do.</summary>
+        public string IndentColumn = "Set";
 
         /// <summary>The row whose play button the cursor is currently on, otherwise
         /// -1.</summary>
@@ -1186,6 +1210,8 @@ namespace AbletonManager
                 Invalidate();
                 if (SelectionChanged != null) SelectionChanged(this, EventArgs.Empty);
             }
+            else if (idx >= 0 && e.Button == MouseButtons.Left && SelectedRowClicked != null)
+                SelectedRowClicked(idx);
 
             // Dragging outwards is only possible when the row has a file at all — the cursor
             // confirms that before the mouse movement decides whether this is a click or a
@@ -1386,7 +1412,9 @@ namespace AbletonManager
             {
                 if (_columns[i].Width == 0)
                 {
-                    int minW = i == 0 ? Sc(220) : Sc(80);
+                    // A path squeezed to 80 px read "…\…e" and said nothing; below its minimum a
+                    // column goes on past the edge, into the horizontal scroll.
+                    int minW = i == 0 ? Sc(220) : _columns[i].PathEllipsis ? Sc(180) : Sc(80);
                     w[i] = Math.Max(minW, available / Math.Max(1, flexCount));
                 }
             }
@@ -1490,7 +1518,7 @@ namespace AbletonManager
                         int offsetY = (int)Math.Round((1.0f - entrance) * Sc(18));
                         int topAnim = top + offsetY;
                         RowData row = _rows[i];
-                        bool dim = ShowCheckboxes && !row.Checked;
+                        bool dim = (ShowCheckboxes && !row.Checked) || row.Dim;
                         bool bright = i == _selected;
 
                         for (int c = 1; c < _columns.Count && c < row.Cells.Length; c++)
@@ -1529,7 +1557,7 @@ namespace AbletonManager
                         int offsetY = (int)Math.Round((1.0f - entrance) * Sc(18));
                         int topAnim = top + offsetY;
                         RowData row = _rows[i];
-                        bool dim = ShowCheckboxes && !row.Checked;
+                        bool dim = (ShowCheckboxes && !row.Checked) || row.Dim;
                         bool bright = i == _selected;
 
                         if (ShowCheckboxes) PaintCheckbox(g, topAnim, rowH, row.Checked);
@@ -1604,28 +1632,35 @@ namespace AbletonManager
         {
             Column col = _columns[c];
             Font f = col.Font ?? Theme.FBody;
+            if (col.Id == IndentColumn && row.NameFont != null) f = row.NameFont;
             Color color = dim ? Theme.TextDim
                               : (col.Color ?? (c == 0 || bright ? Theme.Text : Theme.TextDim));
             if (entrance < 1.0f) color = Color.FromArgb((int)Math.Round(color.A * entrance), color);
 
-            // A version under an expanded row is indented in the name column, and right in that
-            // indent sits a short rail: only on child rows and only next to the text rather
-            // than across the whole row — like the "|" before a name in a file tree.
-            bool childHere = row.ChildRow && col.Id == "Set";
-            int indent = childHere ? Sc(20) : 0;
+            // A version under an expanded row, a folder or a sample inside its folder: the name
+            // is indented, and the indent alone says the level. Guide rails were tried, short
+            // and full-height — both only cluttered the tree.
+            bool nameCol = col.Id == IndentColumn;
+            int level = nameCol ? row.Indent : 0;
+            int indent = level * Sc(20);
             int x = ColX(widths, c);
 
-            if (childHere)
-            {
-                Rectangle rail = new Rectangle(x + Sc(6), topAnim + Sc(4), Sc(2), rowH - Sc(8));
-                Color railColor = Color.FromArgb((int)Math.Round(120 * entrance), Theme.TextDim);
-                g.FillRectangle(Theme.GetBrush(railColor), rail);
-            }
             int maxRight = Width - PadRight;
             int cellX = x + indent;
             int cellW = Math.Max(0, widths[c] - Sc(10) - indent);
             if (cellX + cellW > maxRight) cellW = Math.Max(0, maxRight - cellX);
             if (cellW <= 0 && cellX >= maxRight) return;
+
+            // The row's glyph stands before the name and takes its room from it.
+            if (nameCol && row.Icon.HasValue && cellW > Sc(40))
+            {
+                int icon = Sc(16);
+                Color ic = Theme.TextDim;
+                if (entrance < 1.0f) ic = Color.FromArgb((int)Math.Round(ic.A * entrance), ic);
+                Icons.Draw(g, row.Icon.Value, new RectangleF(cellX, topAnim + (rowH - icon) / 2f, icon, icon), ic, 1.4f);
+                cellX += icon + Sc(10);
+                cellW -= icon + Sc(10);
+            }
             Rectangle cr = new Rectangle(cellX, topAnim, cellW, rowH);
             // The last argument is the left boundary of the clickable zone: a scrolling column
             // can slide under the pinned first one, where the drawing is cut off by the clip,
@@ -1647,23 +1682,26 @@ namespace AbletonManager
                     Color countColor = countHot ? Theme.Text : Theme.TextDim;
                     if (entrance < 1.0f) countColor = Color.FromArgb((int)Math.Round(countColor.A * entrance), countColor);
 
-                    Size countSz = TextRenderer.MeasureText(countText, f);
-                    Size mainSz = TextRenderer.MeasureText(mainText, f);
+                    int countW = TextW(countText, f);
+                    int mainW = TextW(mainText, f);
 
-                    int countX = cr.X + mainSz.Width - Sc(4);
-                    if (countX + countSz.Width <= cr.Right)
+                    int countX = cr.X + mainW - Sc(4);
+                    if (countX + countW <= cr.Right)
                     {
-                        Rectangle mainR = new Rectangle(cr.X, cr.Y, mainSz.Width, cr.Height);
+                        Rectangle mainR = new Rectangle(cr.X, cr.Y, mainW, cr.Height);
                         Chrome.DrawText(g, mainText, f, mainR, color, Chrome.CellLeft);
 
                         Rectangle countR = new Rectangle(countX, cr.Y, Math.Max(0, cr.Right - countX), cr.Height);
                         Chrome.DrawText(g, countText, f, countR, countColor, Chrome.CellLeft);
-                        RememberCount(rowIndex, countX, cr.Y, countSz.Width, cr.Height);
+                        RememberCount(rowIndex, countX, cr.Y, countW, cr.Height);
                     }
                     else
                     {
-                        int maxMainW = Math.Max(0, cr.Width - countSz.Width - Sc(4));
+                        int maxMainW = Math.Max(0, cr.Width - countW - Sc(4));
                         Rectangle mainR = new Rectangle(cr.X, cr.Y, maxMainW, cr.Height);
+                        // A name cut before its "+N" is cut in the middle too, where the column
+                        // asks for it — "…DRUM KIT VOL.1" and "VOL.2" must stay apart.
+                        if (col.PathEllipsis) mainText = FitPath(mainText, f, maxMainW);
                         Chrome.DrawText(g, mainText, f, mainR, color, Chrome.CellLeft);
 
                         int cX = cr.X + maxMainW + Sc(4);
@@ -1671,16 +1709,84 @@ namespace AbletonManager
                         {
                             Rectangle countR = new Rectangle(cX, cr.Y, Math.Max(0, cr.Right - cX), cr.Height);
                             Chrome.DrawText(g, countText, f, countR, countColor, Chrome.CellLeft);
-                            RememberCount(rowIndex, cX, cr.Y, Math.Min(countSz.Width, cr.Right - cX), cr.Height);
+                            RememberCount(rowIndex, cX, cr.Y, Math.Min(countW, cr.Right - cX), cr.Height);
                         }
                     }
                 }
                 else
                 {
-                    Chrome.DrawText(g, row.Cells[c], f, cr, color,
-                                   col.Right ? Chrome.CellRight : Chrome.CellLeft);
+                    string text = col.PathEllipsis ? FitPath(row.Cells[c], f, cr.Width) : row.Cells[c];
+                    Chrome.DrawText(g, text, f, cr, color, col.Right ? Chrome.CellRight : Chrome.CellLeft);
                 }
             }
+        }
+
+        /// <summary>
+        /// A path shortened in the middle: the first folder and as many of the last ones as fit
+        /// — "Unison Beatmaker Blueprint\…\Rage". GDI's own DT_PATH_ELLIPSIS was tried: a path
+        /// with no backslash it clips mid-word without a mark, and so does it the last folder
+        /// when that alone is too long. What is returned here is drawn with the ordinary end
+        /// ellipsis, so every cut shows. When even that is too long, the first folder is cut in
+        /// its middle and the last one kept whole: with an end ellipsis "[SAOL] ASCENDING DRUM
+        /// KIT VOL.1\[S] FX" and "…VOL.2\[S] FX" read the same.
+        /// </summary>
+        internal static string FitPath(string path, Font f, int width)
+        {
+            if (string.IsNullOrEmpty(path) || TextW(path, f) <= width) return path;
+            string[] parts = path.Split('\\');
+            for (int keep = parts.Length - 2; keep >= 1; keep--)
+            {
+                string s = parts[0] + "\\…\\" + string.Join("\\", parts, parts.Length - keep, keep);
+                if (TextW(s, f) <= width) return s;
+            }
+            if (parts.Length == 1) return FitMiddle(path, f, width);
+
+            // Two parts, the first the shorter: it stays whole and the long name is cut instead —
+            // "Samples\Avant Riddim…ition Vol 1" rather than "…\Avant Riddim…".
+            if (parts.Length == 2)
+            {
+                int wa = TextW(parts[0] + "\\", f);
+                if (wa <= TextW("\\" + parts[1], f) && wa < width / 2)
+                    return parts[0] + "\\" + FitMiddle(parts[1], f, width - wa);
+            }
+
+            string tail = (parts.Length > 2 ? "\\…\\" : "\\") + parts[parts.Length - 1];
+            int room = width - TextW(tail, f);
+            // The first folder gets a piece only if the piece can still be read.
+            if (room >= width / 3) return FitMiddle(parts[0], f, room) + tail;
+            return FitMiddle("…\\" + parts[parts.Length - 1], f, width);
+        }
+
+        /// <summary>
+        /// The width a cell's text gets when drawn — measured with NoPrefix, as it is drawn.
+        /// Without it "&" is taken for a mnemonic and left out: "FX & PERCS" came out 18 px
+        /// short, a cut path overflowed its cell, and the "+N" after such a name sat on top of
+        /// the name's end.
+        /// </summary>
+        internal static int TextW(string s, Font f)
+        {
+            return TextRenderer.MeasureText(s, f, Size.Empty, TextFormatFlags.SingleLine | TextFormatFlags.NoPrefix).Width;
+        }
+
+        /// <summary>
+        /// A name shortened in the middle — "[SAOL] ASCENDI…KIT VOL.1". What tells two names
+        /// in a sample library apart is usually at their end (VOL.1 and VOL.2, Kick 01 and
+        /// Kick 02), and an end ellipsis made them look the same.
+        /// </summary>
+        internal static string FitMiddle(string s, Font f, int width)
+        {
+            if (string.IsNullOrEmpty(s) || TextW(s, f) <= width) return s;
+            string best = "…";
+            int lo = 1, hi = s.Length - 1;
+            while (lo <= hi)
+            {
+                int keep = (lo + hi) / 2;
+                int tail = keep * 2 / 5;
+                string t = s.Substring(0, keep - tail).TrimEnd() + "…" + s.Substring(s.Length - tail).TrimStart();
+                if (TextW(t, f) <= width) { best = t; lo = keep + 1; }
+                else hi = keep - 1;
+            }
+            return best;
         }
 
         int ColX(int[] widths, int col)

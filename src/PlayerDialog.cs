@@ -854,19 +854,30 @@ namespace AbletonManager
             Graphics g = e.Graphics;
             Chrome.PaintBase(this, g, Surface);
             Theme.Smooth(g);
+            PaintWave(g, new Rectangle(0, 0, Width, Height), Wave, Progress, true, Hint, DeviceDpi / 96f);
+        }
 
-            Rectangle box = new Rectangle(0, 0, Width, Height);
-            Theme.FillRound(g, box, Sc(Theme.CardR), Theme.Sunken);
+        /// <summary>
+        /// The envelope in a recessed box — shared by the player window and the details panel of
+        /// a sample. k is the screen scale (DeviceDpi / 96). Without a playhead the whole wave is
+        /// drawn light: nothing is playing, so nothing is "already played".
+        /// </summary>
+        public static void PaintWave(Graphics g, Rectangle box, Waveform wave, float progress, bool playhead,
+                                     string hint, float k)
+        {
+            Theme.FillRound(g, box, (int)Math.Round(Theme.CardR * k), Theme.Sunken);
 
-            int pad = Sc(10);
-            Rectangle inner = new Rectangle(pad, pad, Width - pad * 2, Height - pad * 2);
+            int pad = (int)Math.Round(10 * k);
+            Rectangle inner = new Rectangle(box.X + pad, box.Y + pad, box.Width - pad * 2, box.Height - pad * 2);
             if (inner.Width <= 4 || inner.Height <= 4) return;
 
-            int playedX = inner.X + (int)(inner.Width * Math.Max(0f, Math.Min(1f, Progress)));
+            int playedX = playhead
+                        ? inner.X + (int)(inner.Width * Math.Max(0f, Math.Min(1f, progress)))
+                        : inner.Right;
 
-            if (Wave != null && Wave.Ok && Wave.Max.Length > 0)
+            if (wave != null && wave.Ok && wave.Max.Length > 0)
             {
-                int n = Wave.Max.Length;
+                int n = wave.Max.Length;
                 float cy = inner.Y + inner.Height / 2f;
                 float half = inner.Height / 2f - 1f;
 
@@ -880,8 +891,8 @@ namespace AbletonManager
                     {
                         int i = (int)((long)px * n / inner.Width);
                         if (i >= n) i = n - 1;
-                        float top = cy - Wave.Max[i] * half;
-                        float bot = cy - Wave.Min[i] * half;
+                        float top = cy - wave.Max[i] * half;
+                        float bot = cy - wave.Min[i] * half;
                         if (bot - top < 1f) { top = cy - 0.5f; bot = cy + 0.5f; }
                         int x = inner.X + px;
                         g.DrawLine(x < playedX ? lit : dim, x, top, x, bot);
@@ -890,19 +901,23 @@ namespace AbletonManager
             }
             else
             {
-                int barH = Sc(6);
+                int barH = (int)Math.Round(6 * k);
                 Rectangle track = new Rectangle(inner.X, inner.Y + (inner.Height - barH) / 2,
                                                 inner.Width, barH);
                 Theme.FillRound(g, track, barH / 2f, Theme.Surface);
-                Rectangle done = new Rectangle(track.X, track.Y, Math.Max(0, playedX - track.X), barH);
-                if (done.Width > 0) Theme.FillRound(g, done, barH / 2f, Theme.Light);
+                if (playhead)
+                {
+                    Rectangle done = new Rectangle(track.X, track.Y, Math.Max(0, playedX - track.X), barH);
+                    if (done.Width > 0) Theme.FillRound(g, done, barH / 2f, Theme.Light);
+                }
 
-                if (Hint.Length > 0)
-                    Chrome.DrawText(g, Hint, Theme.FLabel,
-                        new Rectangle(inner.X, inner.Y, inner.Width, inner.Height / 2 - Sc(4)),
+                if (!string.IsNullOrEmpty(hint))
+                    Chrome.DrawText(g, hint, Theme.FLabel,
+                        new Rectangle(inner.X, inner.Y, inner.Width, inner.Height / 2 - (int)Math.Round(4 * k)),
                         Theme.TextDim, Chrome.Center);
             }
 
+            if (!playhead) return;
             // The playhead has rounded ends — otherwise a 1.5px line breaks off square and
             // reads on the waveform as a stray bar.
             using (Pen head = new Pen(Color.White, 1.5f))

@@ -165,9 +165,16 @@ namespace AbletonManager
             return (int)Math.Round(pillH / 2f + capH / 2f - Theme.Baseline(f));
         }
 
+        /// <summary>
+        /// Wrapped text, measured and drawn by the same rule. TextBoxControl is what makes it
+        /// the same rule: without it a word wider than the line (a path — "Effect\Freesound4live\
+        /// Downloads\01530") widens the measured rectangle, the other lines are laid out on
+        /// that width, and the height comes out a line or two short of what is drawn — the file
+        /// name at the end of a sample's path simply was not there.
+        /// </summary>
         public static readonly TextFormatFlags Wrap =
             TextFormatFlags.Left | TextFormatFlags.Top | TextFormatFlags.WordBreak |
-            TextFormatFlags.NoPrefix | TextFormatFlags.NoPadding;
+            TextFormatFlags.TextBoxControl | TextFormatFlags.NoPrefix | TextFormatFlags.NoPadding;
 
         // ------------------------------------------------------------ the system beep
 
@@ -204,6 +211,26 @@ namespace AbletonManager
 
             m.Result = (IntPtr)1;      // TRUE means "handled", DefWindowProc is not called
             return true;
+        }
+
+        /// <summary>
+        /// Which resize edge of a borderless window a point of its client area is on — the
+        /// WM_NCHITTEST code (HTLEFT … HTBOTTOMRIGHT), or 0 when it is on none. border — how
+        /// thick the grabbing strip is. Shared by the main window and the resizable dialogs.
+        /// </summary>
+        public static int EdgeHit(Point p, Size client, int border)
+        {
+            bool l = p.X <= border, r = p.X >= client.Width - border;
+            bool t = p.Y <= border, d = p.Y >= client.Height - border;
+            if (t && l) return 13;
+            if (t && r) return 14;
+            if (d && l) return 16;
+            if (d && r) return 17;
+            if (l) return 10;
+            if (r) return 11;
+            if (t) return 12;
+            if (d) return 15;
+            return 0;
         }
 
         public static void Chevron(Graphics g, float cx, float cy, float size, Color color)
@@ -793,17 +820,23 @@ namespace AbletonManager
             Theme.Smooth(g);
 
             RectangleF r = new RectangleF(0, 0, Width, Height);
-            if (Danger && HoverFactor > 0.001f)
-            {
-                Color bg = Color.FromArgb((int)Math.Round(HoverFactor * 255), Theme.Red);
-                Theme.FillRound(g, r, Height / 2f, bg);
-            }
-            else if (!Quiet)
+            // The backing is always there, the close button's included: its red lies on top.
+            // It used to take the backing's place, and on the way out the button faded to
+            // nothing together with the red — then the grey pill popped back in at the very end.
+            if (!Quiet)
             {
                 int baseAlpha = Theme.GlassSurfaceAlpha;
                 int targetAlpha = PressFactor > 0.01f ? Theme.GlassSurfacePressedAlpha : Theme.GlassSurfaceHotAlpha;
                 int alpha = (int)Math.Round(Theme.Lerp(baseAlpha, targetAlpha, Math.Max(HoverFactor, PressFactor)));
                 Theme.PaintGlassSurface(this, g, r, Height / 2f, alpha);
+            }
+            if (Danger && HoverFactor > 0.001f)
+            {
+                // Squared: the red comes in nearly as fast (83% in four frames), but its tail is
+                // gone in about 140 ms instead of the hover's lazy 370 — a saturated red makes
+                // every frame of a tail visible that a grey backing hides.
+                float k = HoverFactor * HoverFactor;
+                Theme.FillRound(g, r, Height / 2f, Color.FromArgb((int)Math.Round(k * 255), Theme.Red));
             }
 
             float box = Width * IconScale;

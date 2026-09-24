@@ -23,11 +23,16 @@ namespace AliveTools
         [DllImport("user32.dll")] static extern bool MoveWindow(IntPtr hWnd, int x, int y, int w, int h, bool repaint);
         [DllImport("user32.dll")] static extern bool SetProcessDPIAware();
 
-        // Clicking an element of a window without a real mouse: WindowFromPoint finds the child
-        // control under the point, and the messages go straight to it. Touching SetCursorPos is
-        // not an option — the cursor belongs to somebody else, and the click would land on
-        // whichever window is on top rather than the one being checked.
-        [DllImport("user32.dll")] static extern IntPtr WindowFromPoint(POINT p);
+        // Clicking an element of a window without a real mouse: the control under the point is
+        // found, and the messages go straight to it. Touching SetCursorPos is not an option —
+        // the cursor belongs to somebody else, and the click would land on whichever window is
+        // on top rather than the one being checked. WindowFromPoint had the same flaw: it
+        // answers with the window on top of the screen, and after a long --wait that was another
+        // program's — the clicks went to it. So the control is looked up among the program's
+        // own windows only: its popups first (see PopupAt), then the children of the window.
+        [DllImport("user32.dll")] static extern IntPtr ChildWindowFromPointEx(IntPtr parent, POINT p, uint flags);
+        [DllImport("user32.dll")] static extern int MapWindowPoints(IntPtr from, IntPtr to, ref POINT p, int count);
+        const uint CWP_SKIPINVISIBLE = 0x1, CWP_SKIPTRANSPARENT = 0x4;
         [DllImport("user32.dll")] static extern bool ClientToScreen(IntPtr hWnd, ref POINT p);
         [DllImport("user32.dll")] static extern bool ScreenToClient(IntPtr hWnd, ref POINT p);
         [DllImport("user32.dll")] static extern IntPtr PostMessage(IntPtr hWnd, uint msg, IntPtr wp, IntPtr lp);
@@ -84,18 +89,91 @@ namespace AliveTools
         /// DBLCLK, UP. The second press arrives as its own message, not as a second DOWN, and
         /// a control that miscounts it can only be caught by sending the genuine sequence.
         /// </summary>
-        enum Kind { Left, Right, Double }
+        enum Kind { Left, Right, Double, Text, Drag }
 
-        static void Click(IntPtr window, int x, int y, Kind kind)
+        [DllImport("user32.dll")] static extern bool EnumChildWindows(IntPtr parent, EnumProc cb, IntPtr param);
+        [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int GetClassName(IntPtr hWnd, System.Text.StringBuilder name, int max);
+        [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern IntPtr SendMessage(IntPtr hWnd, uint msg, IntPtr wp, string lp);
+        const uint WM_SETTEXT = 0x000C;
+
+        /// <summary>
+        /// Type into the window's text field without a keyboard: the first EDIT child gets the
+        /// text by WM_SETTEXT, which a WinForms TextBox answers with TextChanged — the search in
+        /// the catalog rebuilds exactly as it does under typing.
+        /// </summary>
+        static void SetText(IntPtr window, string text)
+        {
+            IntPtr edit = IntPtr.Zero;
+            EnumChildWindows(window, delegate(IntPtr h, IntPtr param)
+            {
+                System.Text.StringBuilder name = new System.Text.StringBuilder(256);
+                GetClassName(h, name, name.Capacity);
+                if (name.ToString().IndexOf("EDIT", StringComparison.OrdinalIgnoreCase) < 0) return true;
+                edit = h;
+                return false;
+            }, IntPtr.Zero);
+            if (edit == IntPtr.Zero) { Console.WriteLine("no text field to type into"); return; }
+            SendMessage(edit, WM_SETTEXT, IntPtr.Zero, text);
+            Console.WriteLine("typed \"" + text + "\"");
+        }
+
+        /// <summary>
+        /// The program's own other window under a screen point — a dropped menu, say — the one
+        /// on top if there are several: EnumWindows goes from the top of the z-order down. Asked
+        /// of the program's windows only: WindowFromPoint answers with whatever lies on top of
+        /// the screen there, and with the program in the background that is somebody else's.
+        /// </summary>
+        static IntPtr PopupAt(IntPtr main, POINT screen)
+        {
+            uint pid;
+            GetWindowThreadProcessId(main, out pid);
+            IntPtr found = IntPtr.Zero;
+            EnumWindows(delegate(IntPtr h, IntPtr param)
+            {
+                uint p;
+                GetWindowThreadProcessId(h, out p);
+                if (p != pid || h == main || !IsWindowVisible(h)) return true;
+                RECT r;
+                GetWindowRect(h, out r);
+                if (screen.X < r.Left || screen.X >= r.Right || screen.Y < r.Top || screen.Y >= r.Bottom) return true;
+                found = h;
+                return false;
+            }, IntPtr.Zero);
+            return found;
+        }
+
+        /// <summary>The control under a point of the window's client area, and that point in
+        /// the control's own coordinates: the program's popup there (its menu, say), or else the
+        /// deepest visible child of the window. Another program's window is never the
+        /// answer.</summary>
+        static IntPtr TargetAt(IntPtr window, int x, int y, out POINT local)
         {
             POINT screen = new POINT(x, y);
             ClientToScreen(window, ref screen);
+            IntPtr popup = PopupAt(window, screen);
+            if (popup != IntPtr.Zero)
+            {
+                local = screen;
+                ScreenToClient(popup, ref local);
+                return popup;
+            }
 
-            IntPtr target = WindowFromPoint(screen);
-            if (target == IntPtr.Zero) target = window;
+            IntPtr cur = window;
+            local = new POINT(x, y);
+            for (int depth = 0; depth < 16; depth++)
+            {
+                IntPtr child = ChildWindowFromPointEx(cur, local, CWP_SKIPINVISIBLE | CWP_SKIPTRANSPARENT);
+                if (child == IntPtr.Zero || child == cur) break;
+                MapWindowPoints(cur, child, ref local, 1);
+                cur = child;
+            }
+            return cur;
+        }
 
-            POINT local = screen;
-            ScreenToClient(target, ref local);
+        static void Click(IntPtr window, int x, int y, Kind kind)
+        {
+            POINT local;
+            IntPtr target = TargetAt(window, x, y, out local);
             IntPtr lp = (IntPtr)((local.Y << 16) | (local.X & 0xFFFF));
 
             // The pause between press and release is mandatory: WinForms counts a click as a
@@ -119,11 +197,40 @@ namespace AliveTools
                             + (target == window ? " (the window itself, not a control)" : " (child control)"));
         }
 
+        /// <summary>A drag with the left button: press at the start, a few moves on the way —
+        /// all sent to the control under the start, as Windows does while the button is held —
+        /// and release at the end. A column edge in a table is taken hold of like this.</summary>
+        static void Drag(IntPtr window, Point from, Point to)
+        {
+            POINT start;
+            IntPtr target = TargetAt(window, from.X, from.Y, out start);
+
+            const int steps = 8;
+            for (int i = 0; i <= steps + 1; i++)
+            {
+                int k = Math.Min(i, steps);
+                POINT p = new POINT(from.X + (to.X - from.X) * k / steps, from.Y + (to.Y - from.Y) * k / steps);
+                ClientToScreen(window, ref p);
+                ScreenToClient(target, ref p);
+                IntPtr lp = (IntPtr)((p.Y << 16) | (p.X & 0xFFFF));
+                if (i == 0)
+                {
+                    PostMessage(target, WM_MOUSEMOVE, IntPtr.Zero, lp);
+                    Thread.Sleep(60);
+                    PostMessage(target, WM_LBUTTONDOWN, (IntPtr)1, lp);
+                }
+                else if (i <= steps) PostMessage(target, WM_MOUSEMOVE, (IntPtr)1, lp);
+                else PostMessage(target, WM_LBUTTONUP, IntPtr.Zero, lp);
+                Thread.Sleep(40);
+            }
+            Console.WriteLine("dragged " + from.X + "," + from.Y + " -> " + to.X + "," + to.Y + " in hwnd " + target.ToInt64());
+        }
+
         static int Main(string[] args)
         {
             if (args.Length < 2)
             {
-                Console.WriteLine("usage: Shot.exe <exe> <out.png> [--wait S] [--size W,H] [--click X,Y] [--rclick X,Y] [--dbl X,Y] [args...]");
+                Console.WriteLine("usage: Shot.exe <exe> <out.png> [--wait S] [--size W,H] [--click X,Y] [--rclick X,Y] [--dbl X,Y] [--drag X1,Y1,X2,Y2] [--settext TEXT] [args...]");
                 return 2;
             }
 
@@ -134,6 +241,8 @@ namespace AliveTools
             string rest = "";
             List<Point> clicks = new List<Point>();
             List<Kind> kinds = new List<Kind>();
+            List<string> texts = new List<string>();
+            List<Point> ends = new List<Point>();       // where a drag lets go; empty for the rest
             Size size = Size.Empty;
             int settle = 6000;
 
@@ -149,6 +258,27 @@ namespace AliveTools
                     string[] xy = args[++i].Split(',');
                     clicks.Add(new Point(int.Parse(xy[0]), int.Parse(xy[1])));
                     kinds.Add(kind);
+                    texts.Add(null);
+                    ends.Add(Point.Empty);
+                    continue;
+                }
+                // --drag X1,Y1,X2,Y2 - hold the left button at one point and let go at another
+                if (args[i] == "--drag" && i + 1 < args.Length)
+                {
+                    string[] q = args[++i].Split(',');
+                    clicks.Add(new Point(int.Parse(q[0]), int.Parse(q[1])));
+                    kinds.Add(Kind.Drag);
+                    texts.Add(null);
+                    ends.Add(new Point(int.Parse(q[2]), int.Parse(q[3])));
+                    continue;
+                }
+                // --settext TEXT - put TEXT into the window's text field, in order with the clicks
+                if (args[i] == "--settext" && i + 1 < args.Length)
+                {
+                    clicks.Add(Point.Empty);
+                    kinds.Add(Kind.Text);
+                    texts.Add(args[++i]);
+                    ends.Add(Point.Empty);
                     continue;
                 }
                 // --size W,H - resize the window before capturing, in physical pixels. A
@@ -206,7 +336,9 @@ namespace AliveTools
 
                 for (int i = 0; i < clicks.Count; i++)
                 {
-                    Click(hwnd, clicks[i].X, clicks[i].Y, kinds[i]);
+                    if (kinds[i] == Kind.Text) SetText(hwnd, texts[i]);
+                    else if (kinds[i] == Kind.Drag) Drag(hwnd, clicks[i], ends[i]);
+                    else Click(hwnd, clicks[i].X, clicks[i].Y, kinds[i]);
                     Thread.Sleep(900);      // the window gets time to rebuild the list
                 }
 

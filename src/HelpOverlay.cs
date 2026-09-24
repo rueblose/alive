@@ -286,7 +286,9 @@ namespace AbletonManager
         void LayoutCard()
         {
             int w = Math.Min(Sc(900), Width - Sc(104));
-            int h = Math.Min(Sc(600), Height - Sc(84));
+            // 740 holds both columns whole since the Samples section joined the second one;
+            // a lower window scrolls, as before.
+            int h = Math.Min(Sc(740), Height - Sc(84));
             _card = new Rectangle((Width - w) / 2, (Height - h) / 2, w, h);
         }
 
@@ -442,7 +444,7 @@ namespace AbletonManager
             {
                 Section("Navigation & Views"),
                 Key("F1", "Toggle this help dialog"),
-                Key("Ctrl 1 .. 3", "Home / Sets / Plugins"),
+                Key("Ctrl 1 .. 4", "Home / Sets / Plugins / Samples"),
                 Key("F", "Open filters dialog"),
                 Key("Shift F", "Open scan folders window"),
                 Key("Ctrl F", "Focus search field"),
@@ -464,6 +466,11 @@ namespace AbletonManager
                 Key("Ctrl R", "Rescue a set that will not open"),
                 Key("F5", "Rescan catalog"),
                 Key("Ctrl N", "Launch Live"),
+
+                Section("Samples"),
+                Key("Space", "Play or stop the sample"),
+                Key("Enter", "Open folder / play sample"),
+                Key("← →", "Collapse or expand a folder"),
             };
         }
     }
