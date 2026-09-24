@@ -23,11 +23,16 @@ namespace AliveTools
         [DllImport("user32.dll")] static extern bool MoveWindow(IntPtr hWnd, int x, int y, int w, int h, bool repaint);
         [DllImport("user32.dll")] static extern bool SetProcessDPIAware();
 
-        // Clicking an element of a window without a real mouse: WindowFromPoint finds the child
-        // control under the point, and the messages go straight to it. Touching SetCursorPos is
-        // not an option — the cursor belongs to somebody else, and the click would land on
-        // whichever window is on top rather than the one being checked.
-        [DllImport("user32.dll")] static extern IntPtr WindowFromPoint(POINT p);
+        // Clicking an element of a window without a real mouse: the control under the point is
+        // found, and the messages go straight to it. Touching SetCursorPos is not an option —
+        // the cursor belongs to somebody else, and the click would land on whichever window is
+        // on top rather than the one being checked. WindowFromPoint had the same flaw: it
+        // answers with the window on top of the screen, and after a long --wait that was another
+        // program's — the clicks went to it. So the control is looked up among the program's
+        // own windows only: its popups first (see PopupAt), then the children of the window.
+        [DllImport("user32.dll")] static extern IntPtr ChildWindowFromPointEx(IntPtr parent, POINT p, uint flags);
+        [DllImport("user32.dll")] static extern int MapWindowPoints(IntPtr from, IntPtr to, ref POINT p, int count);
+        const uint CWP_SKIPINVISIBLE = 0x1, CWP_SKIPTRANSPARENT = 0x4;
         [DllImport("user32.dll")] static extern bool ClientToScreen(IntPtr hWnd, ref POINT p);
         [DllImport("user32.dll")] static extern bool ScreenToClient(IntPtr hWnd, ref POINT p);
         [DllImport("user32.dll")] static extern IntPtr PostMessage(IntPtr hWnd, uint msg, IntPtr wp, IntPtr lp);
@@ -112,16 +117,63 @@ namespace AliveTools
             Console.WriteLine("typed \"" + text + "\"");
         }
 
-        static void Click(IntPtr window, int x, int y, Kind kind)
+        /// <summary>
+        /// The program's own other window under a screen point — a dropped menu, say — the one
+        /// on top if there are several: EnumWindows goes from the top of the z-order down. Asked
+        /// of the program's windows only: WindowFromPoint answers with whatever lies on top of
+        /// the screen there, and with the program in the background that is somebody else's.
+        /// </summary>
+        static IntPtr PopupAt(IntPtr main, POINT screen)
+        {
+            uint pid;
+            GetWindowThreadProcessId(main, out pid);
+            IntPtr found = IntPtr.Zero;
+            EnumWindows(delegate(IntPtr h, IntPtr param)
+            {
+                uint p;
+                GetWindowThreadProcessId(h, out p);
+                if (p != pid || h == main || !IsWindowVisible(h)) return true;
+                RECT r;
+                GetWindowRect(h, out r);
+                if (screen.X < r.Left || screen.X >= r.Right || screen.Y < r.Top || screen.Y >= r.Bottom) return true;
+                found = h;
+                return false;
+            }, IntPtr.Zero);
+            return found;
+        }
+
+        /// <summary>The control under a point of the window's client area, and that point in
+        /// the control's own coordinates: the program's popup there (its menu, say), or else the
+        /// deepest visible child of the window. Another program's window is never the
+        /// answer.</summary>
+        static IntPtr TargetAt(IntPtr window, int x, int y, out POINT local)
         {
             POINT screen = new POINT(x, y);
             ClientToScreen(window, ref screen);
+            IntPtr popup = PopupAt(window, screen);
+            if (popup != IntPtr.Zero)
+            {
+                local = screen;
+                ScreenToClient(popup, ref local);
+                return popup;
+            }
 
-            IntPtr target = WindowFromPoint(screen);
-            if (target == IntPtr.Zero) target = window;
+            IntPtr cur = window;
+            local = new POINT(x, y);
+            for (int depth = 0; depth < 16; depth++)
+            {
+                IntPtr child = ChildWindowFromPointEx(cur, local, CWP_SKIPINVISIBLE | CWP_SKIPTRANSPARENT);
+                if (child == IntPtr.Zero || child == cur) break;
+                MapWindowPoints(cur, child, ref local, 1);
+                cur = child;
+            }
+            return cur;
+        }
 
-            POINT local = screen;
-            ScreenToClient(target, ref local);
+        static void Click(IntPtr window, int x, int y, Kind kind)
+        {
+            POINT local;
+            IntPtr target = TargetAt(window, x, y, out local);
             IntPtr lp = (IntPtr)((local.Y << 16) | (local.X & 0xFFFF));
 
             // The pause between press and release is mandatory: WinForms counts a click as a
@@ -150,10 +202,8 @@ namespace AliveTools
         /// and release at the end. A column edge in a table is taken hold of like this.</summary>
         static void Drag(IntPtr window, Point from, Point to)
         {
-            POINT screen = new POINT(from.X, from.Y);
-            ClientToScreen(window, ref screen);
-            IntPtr target = WindowFromPoint(screen);
-            if (target == IntPtr.Zero) target = window;
+            POINT start;
+            IntPtr target = TargetAt(window, from.X, from.Y, out start);
 
             const int steps = 8;
             for (int i = 0; i <= steps + 1; i++)

@@ -31,8 +31,9 @@ namespace AbletonManager
         /// sets.</summary>
         public string PluginColumns = "";
 
-        /// <summary>The Samples tab's column widths, "Samples:130,Size:120". Only widths: its
-        /// columns change with the view and cannot be reordered.</summary>
+        /// <summary>The same for the Samples tab — its columns in the same form as the sets',
+        /// "Name,Location,Samples:140,…". The key is "samplecols": an unreleased build kept
+        /// widths only under "samplecolumns", and that line is simply not read.</summary>
         public string SampleColumns = "";
 
         /// <summary>
@@ -191,7 +192,7 @@ namespace AbletonManager
                         s.DisabledSampleRoots.Add(val);
                     else if (key == "setcolumns") s.SetColumns = val;
                     else if (key == "plugincolumns") s.PluginColumns = val;
-                    else if (key == "samplecolumns") s.SampleColumns = val;
+                    else if (key == "samplecols") s.SampleColumns = val;
                     else if (key == "columnssorted") s.ColumnsSorted = val == "1";
                     else if (key == "pinnedfirst") s.PinnedFirst = val == "1";
                     else if (key == "overviewopen") s.OverviewOpen = val == "1";
@@ -282,7 +283,7 @@ namespace AbletonManager
                 sb.Append("collecttozip=").AppendLine(CollectToZip ? "1" : "0");
                 if (SetColumns.Length > 0) sb.Append("setcolumns=").AppendLine(SetColumns);
                 if (PluginColumns.Length > 0) sb.Append("plugincolumns=").AppendLine(PluginColumns);
-                if (SampleColumns.Length > 0) sb.Append("samplecolumns=").AppendLine(SampleColumns);
+                if (SampleColumns.Length > 0) sb.Append("samplecols=").AppendLine(SampleColumns);
                 sb.Append("columnssorted=").AppendLine(ColumnsSorted ? "1" : "0");
                 if (WindowBounds.Length > 0) sb.Append("window=").AppendLine(WindowBounds);
                 sb.Append("windowmax=").AppendLine(WindowMaximized ? "1" : "0");

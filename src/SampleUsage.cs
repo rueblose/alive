@@ -36,6 +36,7 @@ namespace AbletonManager
 
         readonly Dictionary<SampleFile, SampleUse> _files = new Dictionary<SampleFile, SampleUse>();
         readonly Dictionary<SampleFolder, FolderUse> _folders = new Dictionary<SampleFolder, FolderUse>();
+        readonly Dictionary<SetEntry, List<SampleFile>> _sets = new Dictionary<SetEntry, List<SampleFile>>();
 
         public SampleUse Of(SampleFile f)
         {
@@ -50,6 +51,13 @@ namespace AbletonManager
         }
 
         public ICollection<SampleFile> UsedFiles { get { return _files.Keys; } }
+
+        /// <summary>The library samples one set uses — the other way round from Of.</summary>
+        public List<SampleFile> FilesOf(SetEntry s)
+        {
+            List<SampleFile> l;
+            return s != null && _sets.TryGetValue(s, out l) ? l : new List<SampleFile>();
+        }
 
         public static SampleUsage Compute(SampleIndex index, List<SetEntry> sets)
         {
@@ -104,7 +112,13 @@ namespace AbletonManager
                             u._files[f] = use;
                             projects[f] = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
                         }
-                        if (!use.Sets.Contains(s)) use.Sets.Add(s);
+                        if (!use.Sets.Contains(s))
+                        {
+                            use.Sets.Add(s);
+                            List<SampleFile> mine;
+                            if (!u._sets.TryGetValue(s, out mine)) { mine = new List<SampleFile>(); u._sets[s] = mine; }
+                            mine.Add(f);
+                        }
                         projects[f].Add(s.ProjectDir);
                         if (s.Modified > use.LastUsed) use.LastUsed = s.Modified;
                     }
@@ -237,6 +251,101 @@ namespace AbletonManager
             List<SetEntry> list = new List<SetEntry>(best.Values);
             list.Sort(delegate (SetEntry a, SetEntry b) { return b.Modified.CompareTo(a.Modified); });
             return list;
+        }
+    }
+
+    /// <summary>
+    /// The same sample in more than one place of the library: equal name, size and content
+    /// hash (SampleFile.Print — name and size alone also pair a pack's Dry and Wet takes of one
+    /// sound: 1,904 of the 8,001 namesakes on the development machine). The typical case is a pack unpacked twice, or the same one-shots shipped in
+    /// several packs. A file without a print is never anybody's copy: telling a person that two
+    /// different sounds are one is worse than missing a copy.
+    /// </summary>
+    public sealed class SampleCopies
+    {
+        public static readonly SampleCopies Empty = new SampleCopies();
+
+        // Every file that has a copy maps to its whole group, the file itself included.
+        readonly Dictionary<SampleFile, List<SampleFile>> _groups = new Dictionary<SampleFile, List<SampleFile>>();
+        readonly Dictionary<SampleFolder, int> _files = new Dictionary<SampleFolder, int>();
+        readonly Dictionary<SampleFolder, long> _bytes = new Dictionary<SampleFolder, long>();
+
+        /// <summary>Every file with a copy, the group that wastes the most room first and its
+        /// copies side by side — the Duplicates lens as it is.</summary>
+        public readonly List<SampleFile> Files = new List<SampleFile>();
+
+        /// <summary>What the copies take beyond one of each.</summary>
+        public long ExtraBytes;
+
+        /// <summary>The other places this very sample lies in; empty — it is the only one.</summary>
+        public List<SampleFile> Others(SampleFile f)
+        {
+            List<SampleFile> g, others = new List<SampleFile>();
+            if (f == null || !_groups.TryGetValue(f, out g)) return others;
+            foreach (SampleFile x in g) if (!ReferenceEquals(x, f)) others.Add(x);
+            return others;
+        }
+
+        /// <summary>In how many other places this sample lies; 0 — nowhere else.</summary>
+        public int CopiesOf(SampleFile f)
+        {
+            List<SampleFile> g;
+            return f != null && _groups.TryGetValue(f, out g) ? g.Count - 1 : 0;
+        }
+
+        /// <summary>How many samples of a folder's subtree lie somewhere else too, and what
+        /// they weigh.</summary>
+        public int FilesIn(SampleFolder d) { int n; return d != null && _files.TryGetValue(d, out n) ? n : 0; }
+        public long BytesIn(SampleFolder d) { long n; return d != null && _bytes.TryGetValue(d, out n) ? n : 0; }
+
+        public static SampleCopies Find(SampleIndex index)
+        {
+            SampleCopies c = new SampleCopies();
+            if (index == null || index.Files.Count == 0) return c;
+
+            Dictionary<string, List<SampleFile>> byKey = new Dictionary<string, List<SampleFile>>(StringComparer.OrdinalIgnoreCase);
+            foreach (SampleFile f in index.Files)
+            {
+                if (f.Print == 0) continue;
+                string key = f.Size.ToString(System.Globalization.CultureInfo.InvariantCulture) + "|"
+                           + f.Print.ToString(System.Globalization.CultureInfo.InvariantCulture) + "|" + f.Name;
+                List<SampleFile> g;
+                if (!byKey.TryGetValue(key, out g)) { g = new List<SampleFile>(1); byKey[key] = g; }
+                g.Add(f);
+            }
+
+            List<List<SampleFile>> groups = new List<List<SampleFile>>();
+            foreach (List<SampleFile> g in byKey.Values)
+            {
+                if (g.Count < 2 || g[0].Size <= 0) continue;
+                groups.Add(g);
+                c.ExtraBytes += g[0].Size * (g.Count - 1);
+                foreach (SampleFile f in g)
+                {
+                    c._groups[f] = g;
+                    for (SampleFolder d = f.Folder; d != null; d = d.Parent)
+                    {
+                        int n; long b;
+                        c._files.TryGetValue(d, out n);
+                        c._bytes.TryGetValue(d, out b);
+                        c._files[d] = n + 1;
+                        c._bytes[d] = b + f.Size;
+                    }
+                }
+            }
+
+            groups.Sort(delegate (List<SampleFile> a, List<SampleFile> b)
+            {
+                int r = (b[0].Size * (b.Count - 1)).CompareTo(a[0].Size * (a.Count - 1));
+                return r != 0 ? r : string.Compare(a[0].Name, b[0].Name, StringComparison.OrdinalIgnoreCase);
+            });
+            foreach (List<SampleFile> g in groups)
+            {
+                g.Sort(delegate (SampleFile a, SampleFile b)
+                    { return string.Compare(a.Folder.Path, b.Folder.Path, StringComparison.OrdinalIgnoreCase); });
+                c.Files.AddRange(g);
+            }
+            return c;
         }
     }
 }

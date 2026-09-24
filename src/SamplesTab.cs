@@ -18,7 +18,7 @@ namespace AbletonManager
     /// </summary>
     public sealed partial class MainForm
     {
-        enum SampleLens { All, NeverUsed, MostUsed }
+        enum SampleLens { All, NeverUsed, MostUsed, Duplicates }
 
         SampleIndex _samples = SampleIndex.Empty;
         SampleLens _lens = SampleLens.All;
@@ -29,6 +29,10 @@ namespace AbletonManager
         SampleUsage _usage = SampleUsage.Empty;
         List<SetEntry> _usageSets;
         SampleIndex _usageIndex;
+
+        // The copies depend on the index alone and are found anew only when it changes.
+        SampleCopies _copies = SampleCopies.Empty;
+        SampleIndex _copiesIndex;
 
         // Open folders by path: a quiet re-walk makes new objects for the same folders.
         readonly HashSet<string> _openSampleDirs = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -67,8 +71,41 @@ namespace AbletonManager
 
         List<SampleCol> _sampleCols = new List<SampleCol>();
 
-        // Widths the person dragged the columns to, by id — kept in the settings like the sets'.
-        readonly Dictionary<string, int> _sampleColW = new Dictionary<string, int>();
+        // Which columns are on, in what order and width — configurable like the sets' and the
+        // plugins' (see MainForm's column state). A view may still hide a column that means
+        // nothing in it, or add its own: see SampleViewDecides.
+        readonly List<string> _sampleOrder = new List<string>();
+        readonly Dictionary<string, int> _sampleColW = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+
+        // Every column the tab has, in the menu's order. The widths are the sets table's for
+        // the same kind of value (a date 150, a size 130): the layout is in logical pixels while
+        // the type follows the screen's scale, and at 125% narrower columns cut "2026-09-22" to
+        // "2026-0…". A sorted column's header carries its arrow too: "Samples" needs 113 with
+        // it and "Projects" 109, measured. The name and the location share whatever is left, and
+        // are cut in the middle: what tells two samples apart is at the end — "(7).wav".
+        static readonly List<SampleCol> SampleCatalog = new List<SampleCol>
+        {
+            new SampleCol { Id = "Name", Title = "Name", Width = 0, Font = Theme.FTitle, Color = Theme.Text, Path = true },
+            new SampleCol { Id = "Location", Title = "Location", Width = 0, Path = true },
+            new SampleCol { Id = "Samples", Title = "Samples", Width = 130, Right = true },
+            new SampleCol { Id = "Used", Title = "Used", Width = 90, Right = true },
+            new SampleCol { Id = "Copies", Title = "Copies", Width = 110, Right = true },
+            new SampleCol { Id = "Projects", Title = "Projects", Width = 120, Right = true },
+            new SampleCol { Id = "LastUsed", Title = "Last used", Width = 150 },
+            new SampleCol { Id = "Created", Title = "Created", Width = 150 },
+            new SampleCol { Id = "Modified", Title = "Modified", Width = 150 },
+            new SampleCol { Id = "Size", Title = "Size", Width = 130, Right = true },
+        };
+
+        static readonly string[] DefaultSampleCols =
+            { "Name", "Location", "Samples", "Used", "Projects", "LastUsed", "Size" };
+
+        static SampleCol FindSampleCol(string id)
+        {
+            foreach (SampleCol d in SampleCatalog)
+                if (string.Equals(d.Id, id, StringComparison.OrdinalIgnoreCase)) return d;
+            return null;
+        }
 
         static readonly CultureInfo Inv = CultureInfo.InvariantCulture;
 
@@ -185,6 +222,17 @@ namespace AbletonManager
             return _usage;
         }
 
+        /// <summary>The same sample in several places — found anew only for a new index.</summary>
+        SampleCopies Copies()
+        {
+            if (ReferenceEquals(_samples, _copiesIndex)) return _copies;
+            Stopwatch sw = Stopwatch.StartNew();
+            _copies = SampleCopies.Find(_samples);
+            _copiesIndex = _samples;
+            if (sw.ElapsedMilliseconds > 50) Diag.Line("samples: copies in " + sw.ElapsedMilliseconds + " ms");
+            return _copies;
+        }
+
         /// <summary>
         /// The usage columns say "…" rather than "never" while the sets have not been read yet:
         /// right after an update the whole catalog is parsed anew, and for that half a minute
@@ -217,39 +265,64 @@ namespace AbletonManager
 
         // ---------------------------------------------------------------- table
 
+        /// <summary>
+        /// Whether the current view decides a column by itself: null — it is the person's to
+        /// turn on and off; false — never here (it would be the same in every row, or empty);
+        /// true — always here, it is what the view is about.
+        /// </summary>
+        bool? SampleViewDecides(string id)
+        {
+            bool onlyFiles = _lens == SampleLens.MostUsed || _lens == SampleLens.Duplicates;
+            switch (id)
+            {
+                case "Location": return SampleFlat ? (bool?)null : false;     // in the tree the tree is the location
+                case "Samples": return onlyFiles ? (bool?)false : null;
+                case "Used": return onlyFiles || _lens == SampleLens.NeverUsed ? (bool?)false : null;
+                case "Projects":
+                case "LastUsed": return _lens == SampleLens.NeverUsed ? (bool?)false : null;   // "never" in every row
+                case "Copies": return _lens == SampleLens.Duplicates ? (bool?)true : null;
+                case "Created": return _lens == SampleLens.NeverUsed ? (bool?)true : null;     // how long it has lain there
+            }
+            return null;
+        }
+
+        /// <summary>The columns of the current view: the person's, in their order, less what
+        /// the view hides, plus what it adds — at its place in the catalog.</summary>
         List<SampleCol> SampleColumns()
         {
-            bool flat = SampleFlat;
             List<SampleCol> c = new List<SampleCol>();
-            string first = _lens == SampleLens.NeverUsed ? "Folder"
-                         : _lens == SampleLens.MostUsed ? "Sample"
-                         : flat ? "Name" : "Folder";
-            // The widths are the sets table's for the same kind of value (a date 150, a size 130):
-            // the layout is in logical pixels while the type follows the screen's scale, and at
-            // 125% narrower columns cut "2026-09-22" to "2026-0…". A sorted column's header
-            // carries its arrow too: "Samples" needs 113 with it and "Projects" 109, measured.
-            // A long name is cut in its middle: what tells two samples apart is at the end of
-            // the name — "(7).wav", "Loop 02" — and so is the extension.
-            c.Add(new SampleCol { Id = "Name", Title = first, Width = 0, Font = Theme.FTitle, Color = Theme.Text, Path = true });
-            // Location stretches together with the name: the two share whatever is left, and a
-            // path gets as much room as a name does.
-            if (flat) c.Add(new SampleCol { Id = "Location", Title = "Location", Width = 0, Path = true });
-            if (_lens != SampleLens.MostUsed) c.Add(new SampleCol { Id = "Samples", Title = "Samples", Width = 130, Right = true });
-            if (!flat) c.Add(new SampleCol { Id = "Used", Title = "Used", Width = 90, Right = true });
-            if (_lens != SampleLens.NeverUsed)
+            foreach (string id in _sampleOrder)
             {
-                c.Add(new SampleCol { Id = "Projects", Title = "Projects", Width = 120, Right = true });
-                c.Add(new SampleCol { Id = "LastUsed", Title = "Last used", Width = 150 });
+                SampleCol d = FindSampleCol(id);
+                if (d != null && SampleViewDecides(d.Id) != false) c.Add(d);
             }
-            c.Add(new SampleCol { Id = "Size", Title = "Size", Width = 130, Right = true });
+            for (int k = 0; k < SampleCatalog.Count; k++)
+            {
+                SampleCol d = SampleCatalog[k];
+                if (SampleViewDecides(d.Id) != true || c.Contains(d)) continue;
+                int at = c.Count;
+                for (int i = 0; i < c.Count; i++)
+                    if (SampleCatalog.IndexOf(c[i]) > k) { at = i; break; }
+                c.Insert(at, d);
+            }
             return c;
+        }
+
+        /// <summary>What the first column is called in this view.</summary>
+        string SampleNameTitle
+        {
+            get
+            {
+                if (_lens == SampleLens.MostUsed || _lens == SampleLens.Duplicates) return "Sample";
+                if (_lens == SampleLens.NeverUsed || !SampleFlat) return "Folder";
+                return "Name";
+            }
         }
 
         void FillSamples(bool animate)
         {
             SampleUsage use = Usage();
-            _list.ColumnsConfigurable = false;
-            _list.ColumnsResizable = true;
+            _list.ColumnsConfigurable = true;
             _list.ShowPinIndicator = false;
             // No play button: a sample plays when it is selected (AuditionSelection).
             _list.ShowPlayButton = false;
@@ -269,7 +342,8 @@ namespace AbletonManager
                 // location keep sharing whatever is left.
                 int w = d.Width, ov;
                 if (w != 0 && _sampleColW.TryGetValue(d.Id, out ov) && ov > 0) w = ov;
-                cols[i] = new Column(d.Title, w) { Id = d.Id, Right = d.Right, Font = d.Font, Color = d.Color, PathEllipsis = d.Path };
+                string title = d.Id == "Name" ? SampleNameTitle : d.Title;
+                cols[i] = new Column(title, w) { Id = d.Id, Right = d.Right, Font = d.Font, Color = d.Color, PathEllipsis = d.Path };
                 if (d.Id == _sampleSortId) si = i;
             }
             _list.SetColumns(cols);
@@ -302,6 +376,7 @@ namespace AbletonManager
             List<SampleFile> files;
             if (_lens == SampleLens.NeverUsed) { folders = use.NeverUsed(_samples); files = new List<SampleFile>(); }
             else if (_lens == SampleLens.MostUsed) { folders = new List<SampleFolder>(); files = new List<SampleFile>(use.UsedFiles); }
+            else if (_lens == SampleLens.Duplicates) { folders = new List<SampleFolder>(); files = Copies().Files; }
             else
             {
                 // A search over the whole library; the roots are not matched — their "name" is a path.
@@ -327,12 +402,12 @@ namespace AbletonManager
                    ? (Comparison<SampleFolder>)delegate (SampleFolder a, SampleFolder b) { return b.TotalBytes.CompareTo(a.TotalBytes); }
                    : delegate (SampleFolder a, SampleFolder b) { return Natural(a.Name, b.Name); };
             Comparison<SampleFile> fi = FileOrder(use);
-            if (fi == null)
-                fi = _lens == SampleLens.MostUsed
-                   ? (Comparison<SampleFile>)use.CompareUse
-                   : delegate (SampleFile a, SampleFile b) { return Natural(a.Name, b.Name); };
+            if (fi == null && _lens == SampleLens.MostUsed) fi = use.CompareUse;
+            else if (fi == null && _lens != SampleLens.Duplicates)
+                fi = delegate (SampleFile a, SampleFile b) { return Natural(a.Name, b.Name); };
             folders.Sort(fo);
-            files.Sort(fi);
+            // Duplicates keep SampleCopies' order: the most room wasted first, copies side by side.
+            if (fi != null) files.Sort(fi);
 
             List<RowData> rows = new List<RowData>();
             foreach (SampleFolder d in folders) rows.Add(FolderRow(d, 0, use, true));
@@ -358,7 +433,8 @@ namespace AbletonManager
             RowData r = new RowData();
             r.Cells = SampleCells(name, d.Parent != null ? SampleIndex.Location(d.Parent) : "",
                                   d.TotalSamples, fu != null ? fu.Used : 0, fu != null ? fu.Projects : 0,
-                                  fu != null ? fu.LastUsed : default(DateTime), d.TotalBytes, true);
+                                  fu != null ? fu.LastUsed : default(DateTime), d.TotalBytes, true,
+                                  Copies().FilesIn(d), d.Created, d.Modified);
             r.Tag = d;
             r.Indent = depth;
             r.Icon = Glyph.Folder;
@@ -371,7 +447,8 @@ namespace AbletonManager
             SampleUse u = use.Of(f);
             RowData r = new RowData();
             r.Cells = SampleCells(f.Name, SampleIndex.Location(f.Folder), 0, 0, u != null ? u.Projects : 0,
-                                  u != null ? u.LastUsed : default(DateTime), f.Size, false);
+                                  u != null ? u.LastUsed : default(DateTime), f.Size, false,
+                                  Copies().CopiesOf(f), f.Created, f.Modified);
             r.Tag = f;
             r.Indent = depth;
             r.Icon = Glyph.Wave;
@@ -380,8 +457,10 @@ namespace AbletonManager
             return r;
         }
 
+        /// <summary>copies — for a folder, how many of its samples lie elsewhere too; for a
+        /// sample, in how many other places.</summary>
         string[] SampleCells(string name, string location, int samples, int used, int projects,
-                             DateTime last, long size, bool folder)
+                             DateTime last, long size, bool folder, int copies, DateTime created, DateTime modified)
         {
             bool unknown = UsageUnknown;
             string[] cells = new string[_sampleCols.Count];
@@ -398,9 +477,18 @@ namespace AbletonManager
                         cells[i] = unknown ? "…" : last != default(DateTime) ? last.ToLocalTime().ToString("yyyy-MM-dd") : "never";
                         break;
                     case "Size": cells[i] = SampleSize(size); break;
+                    // No copies is the ordinary case — an empty cell, not a dash in every row.
+                    case "Copies": cells[i] = copies > 0 ? copies.ToString("N0", Inv) : ""; break;
+                    case "Created": cells[i] = Day(created); break;
+                    case "Modified": cells[i] = Day(modified); break;
                 }
             }
             return cells;
+        }
+
+        static string Day(DateTime utc)
+        {
+            return utc == default(DateTime) ? "" : utc.ToLocalTime().ToString("yyyy-MM-dd");
         }
 
         /// <summary>Kilobytes for a single sample; the catalog's MB and GB for anything bigger.</summary>
@@ -454,6 +542,9 @@ namespace AbletonManager
                 case "Projects": c = delegate (SampleFolder a, SampleFolder b) { return ProjectsOf(use, a).CompareTo(ProjectsOf(use, b)); }; break;
                 case "LastUsed": c = delegate (SampleFolder a, SampleFolder b) { return LastOf(use, a).CompareTo(LastOf(use, b)); }; break;
                 case "Size": c = delegate (SampleFolder a, SampleFolder b) { return a.TotalBytes.CompareTo(b.TotalBytes); }; break;
+                case "Copies": { SampleCopies cp = Copies(); c = delegate (SampleFolder a, SampleFolder b) { return cp.FilesIn(a).CompareTo(cp.FilesIn(b)); }; break; }
+                case "Created": c = delegate (SampleFolder a, SampleFolder b) { return a.Created.CompareTo(b.Created); }; break;
+                case "Modified": c = delegate (SampleFolder a, SampleFolder b) { return a.Modified.CompareTo(b.Modified); }; break;
                 default: return null;
             }
             bool desc = _sortDesc;
@@ -474,6 +565,9 @@ namespace AbletonManager
                 case "Projects": c = delegate (SampleFile a, SampleFile b) { return ProjectsOf(use, a).CompareTo(ProjectsOf(use, b)); }; break;
                 case "LastUsed": c = delegate (SampleFile a, SampleFile b) { return LastOf(use, a).CompareTo(LastOf(use, b)); }; break;
                 case "Size": c = delegate (SampleFile a, SampleFile b) { return a.Size.CompareTo(b.Size); }; break;
+                case "Copies": { SampleCopies cp = Copies(); c = delegate (SampleFile a, SampleFile b) { return cp.CopiesOf(a).CompareTo(cp.CopiesOf(b)); }; break; }
+                case "Created": c = delegate (SampleFile a, SampleFile b) { return a.Created.CompareTo(b.Created); }; break;
+                case "Modified": c = delegate (SampleFile a, SampleFile b) { return a.Modified.CompareTo(b.Modified); }; break;
                 default: c = delegate (SampleFile a, SampleFile b) { return Natural(a.Name, b.Name); }; break;
             }
             bool desc = _sortDesc && _sampleSortId != "Samples" && _sampleSortId != "Used";
@@ -539,8 +633,41 @@ namespace AbletonManager
         {
             RowData row = _list.Selected;
             SampleFile f = row != null ? row.Tag as SampleFile : null;
-            if (f != null) _detail.ShowSample(f, Usage(), UsageUnknown);
-            else _detail.ShowFolder(row != null ? row.Tag as SampleFolder : null, Usage(), UsageUnknown);
+            if (f != null) _detail.ShowSample(f, Usage(), Copies(), UsageUnknown);
+            else _detail.ShowFolder(row != null ? row.Tag as SampleFolder : null, Usage(), Copies(), UsageUnknown);
+        }
+
+        /// <summary>
+        /// The library folders a set takes samples from, the most first — for its panel on the
+        /// Sets tab. A sample counts under the folder right below its root: a pack, or a vendor's
+        /// folder of packs, as the library is laid out.
+        /// </summary>
+        List<KeyValuePair<SampleFolder, int>> SampleFoldersOf(SetEntry s)
+        {
+            Dictionary<SampleFolder, int> n = new Dictionary<SampleFolder, int>();
+            foreach (SampleFile f in Usage().FilesOf(s))
+            {
+                SampleFolder top = f.Folder;
+                while (top.Parent != null && top.Parent.Parent != null) top = top.Parent;
+                int c;
+                n.TryGetValue(top, out c);
+                n[top] = c + 1;
+            }
+            List<KeyValuePair<SampleFolder, int>> list = new List<KeyValuePair<SampleFolder, int>>(n);
+            list.Sort(delegate (KeyValuePair<SampleFolder, int> a, KeyValuePair<SampleFolder, int> b)
+            {
+                return a.Value != b.Value ? b.Value.CompareTo(a.Value) : Natural(a.Key.Name, b.Key.Name);
+            });
+            return list;
+        }
+
+        /// <summary>A folder picked in a set's panel: the Samples tab, with the folder shown in
+        /// the tree.</summary>
+        void OnLibraryFolderRequested(SampleFolder d)
+        {
+            if (d == null) return;
+            _mode.SelectedIndex = ModeSamples;
+            ShowSampleInTree(d.Parent, d.Path);
         }
 
         /// <summary>A sample picked in the panel's "Most used": shown in the tree, its folders
@@ -744,8 +871,8 @@ namespace AbletonManager
 
         // ---------------------------------------------------------------- menus
 
-        /// <summary>The Filters button on this tab: not a dialog but three lenses — the tree,
-        /// the dead weight, the working sounds.</summary>
+        /// <summary>The Filters button on this tab: not a dialog but lenses — the tree, the
+        /// dead weight, the working sounds, the same sound twice.</summary>
         void ShowSampleLens()
         {
             ContextMenuStrip m = DarkMenu.Create();
@@ -753,6 +880,7 @@ namespace AbletonManager
             AddLens(m, "All folders", SampleLens.All);
             AddLens(m, "Never used", SampleLens.NeverUsed);
             AddLens(m, "Most used", SampleLens.MostUsed);
+            AddLens(m, "Duplicates", SampleLens.Duplicates);
             m.Show(_filtersBtn, new Point(0, _filtersBtn.Height + Sc(6)));
         }
 
@@ -839,6 +967,9 @@ namespace AbletonManager
                 string all = _sampleMatches.ToString("N0", Inv);
                 return new string[] { "first " + r + " of " + all, r + " of " + all, r + "+" };
             }
+            // The lens of copies says what they cost — unless a search narrows it.
+            if (_lens == SampleLens.Duplicates && _search.Box.Text.Trim().Length == 0 && Copies().ExtraBytes > 0)
+                return new string[] { r + " shown · " + SizeMB(Copies().ExtraBytes) + " extra", r + " shown", r };
             return new string[] { r + " shown", r };
         }
 

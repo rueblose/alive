@@ -1,5 +1,6 @@
 using System;
 using System.Globalization;
+using System.Reflection;
 using System.Threading;
 using System.Windows.Forms;
 using AbletonManager;
@@ -17,6 +18,7 @@ namespace AliveTools
     ///     Shot.exe DialogShow.exe out.png samples     (the folders window on Samples)
     ///     Shot.exe DialogShow.exe out.png folders     (the folders window on Projects)
     ///     Shot.exe DialogShow.exe out.png player  "set.als"
+    ///     Shot.exe DialogShow.exe out.png main    Duplicates   (the Samples tab in a lens)
     ///
     /// Build: tools\build-rescue-test.cmd. Does not go into bin.
     /// </summary>
@@ -75,6 +77,31 @@ namespace AliveTools
                 PlayerDialog p = new PlayerDialog();
                 p.Shown += delegate { p.LoadSet(set, null, -1, false); };
                 f = p;
+            }
+            else if (which == "main")
+            {
+                // The main window itself, put into a view a click cannot reach while the program
+                // is not the active one: a Samples lens is picked in a drop-down menu, and the
+                // menu of an inactive program closes the moment it opens. The tab and the lens
+                // are set the way the menu would set them.
+                MainForm m = new MainForm();
+                string lens = args.Length > 1 ? args[1] : "";
+                System.Windows.Forms.Timer t = new System.Windows.Forms.Timer();
+                t.Interval = 2500;
+                t.Tick += delegate
+                {
+                    t.Stop();
+                    BindingFlags any = BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public;
+                    Segmented mode = (Segmented)typeof(MainForm).GetField("_mode", any).GetValue(m);
+                    mode.SelectedIndex = 3;
+                    if (lens.Length == 0) return;
+                    FieldInfo lf = typeof(MainForm).GetField("_lens", any);
+                    lf.SetValue(m, Enum.Parse(lf.FieldType, lens));
+                    typeof(MainForm).GetMethod("UpdateFiltersButton", any).Invoke(m, null);
+                    typeof(MainForm).GetMethod("Refill", any, null, Type.EmptyTypes, null).Invoke(m, null);
+                };
+                m.Shown += delegate { t.Start(); };
+                f = m;
             }
             else if (which == "samples" || which == "folders")
             {

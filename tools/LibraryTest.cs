@@ -21,6 +21,7 @@ namespace AliveTools
     ///     LibraryTest.exe aiff       the AIFF reader
     ///     LibraryTest.exe sources    Live's Places and the From Live suggestions
     ///     LibraryTest.exe fit        names and paths cut to their cell
+    ///     LibraryTest.exe copies     the same sample in several places
     ///     LibraryTest.exe real &lt;projects&gt; &lt;samples...&gt;   timings on a real library, no checks
     ///
     /// Runs with its own ALIVE_HOME under %TEMP% — the owner's settings and caches are never
@@ -51,10 +52,11 @@ namespace AliveTools
             if (cmd == "all" || cmd == "aiff") Aiff();
             if (cmd == "all" || cmd == "sources") Sources();
             if (cmd == "all" || cmd == "fit") Fit();
+            if (cmd == "all" || cmd == "copies") CopiesCheck();
 
             if (_checks == 0)
             {
-                Console.WriteLine("usage: LibraryTest.exe all | index | walk | usage | aiff | sources | fit | real <projects> <samples...>");
+                Console.WriteLine("usage: LibraryTest.exe all | index | walk | usage | aiff | sources | fit | copies | real <projects> <samples...>");
                 return 2;
             }
 
@@ -96,7 +98,11 @@ namespace AliveTools
         }
 
         /// <summary>A mono 16-bit WAV of silence. Returns its size on disk.</summary>
-        static long WriteWav(string path, int frames)
+        static long WriteWav(string path, int frames) { return WriteWav(path, frames, 0); }
+
+        /// <summary>The same, every data byte set to fill — a different sound of the same
+        /// length.</summary>
+        static long WriteWav(string path, int frames, byte fill)
         {
             Directory.CreateDirectory(Path.GetDirectoryName(path));
             using (FileStream fs = File.Create(path))
@@ -109,7 +115,9 @@ namespace AliveTools
                 w.Write((short)1); w.Write((short)1); w.Write(44100); w.Write(88200);
                 w.Write((short)2); w.Write((short)16);
                 w.Write(Encoding.ASCII.GetBytes("data")); w.Write(data);
-                w.Write(new byte[data]);
+                byte[] body = new byte[data];
+                if (fill != 0) for (int i = 0; i < body.Length; i++) body[i] = fill;
+                w.Write(body);
             }
             return new FileInfo(path).Length;
         }
@@ -281,10 +289,26 @@ namespace AliveTools
             Check(SampleIndex.CountIn(lib, null) == expected, "walk: CountIn disagrees with the walk");
             Check(SampleIndex.CountIn(Path.Combine(lib, "nowhere"), null) == -1, "walk: a missing folder must count -1");
 
+            // The dates come from the directory entries, as Explorer shows them.
+            SampleFile k1 = null;
+            foreach (SampleFile f in idx.Files) if (Same(f.Name, "kick 1.wav")) k1 = f;
+            DateTime k1Written = File.GetLastWriteTimeUtc(kick1), k1Made = File.GetCreationTimeUtc(kick1);
+            Check(k1 != null && Math.Abs((k1.Modified - k1Written).TotalSeconds) < 1
+                  && Math.Abs((k1.Created - k1Made).TotalSeconds) < 1,
+                  "walk: a sample's dates are not the file's");
+            Check(kicks != null && Math.Abs((kicks.Created - Directory.GetCreationTimeUtc(kicks.Path)).TotalSeconds) < 1,
+                  "walk: a folder's Created is not the folder's");
+            Check(r != null && r.Created != default(DateTime), "walk: the root has no dates");
+
             idx.SaveCache();
             SampleIndex back = SampleIndex.LoadCache();
             Check(back.Roots.Count == 1 && back.Files.Count == expected && back.Folders.Count == idx.Folders.Count,
                   "walk: the cache does not give back the same index");
+            SampleFile backK1 = null;
+            foreach (SampleFile f in back.Files) if (Same(f.Name, "kick 1.wav")) backK1 = f;
+            Check(backK1 != null && k1 != null && backK1.Modified == k1.Modified && backK1.Created == k1.Created
+                  && back.Roots[0].Created == r.Created,
+                  "walk: the cache lost the dates");
             SampleFolder backA = back.Roots.Count == 1 ? Child(back.Roots[0], "Pack A") : null;
             Check(backA != null && backA.TotalBytes == packA && Child(backA, "Kicks") != null
                   && Child(backA, "Kicks").Files.Count == 2,
@@ -294,6 +318,20 @@ namespace AliveTools
             Check(back.Only(new List<string> { lib }, new List<string> { lib }).Files.Count == 0, "walk: Only kept a disabled root");
             Check(ReferenceEquals(back.Only(new List<string> { lib }, new List<string>()), back),
                   "walk: Only made a copy although nothing changed");
+
+            // A cache from before the dates is still read: the first walk after an update keeps
+            // the AIFF flags it holds.
+            using (FileStream fs = File.Create(Path.Combine(Settings.Dir, "samples.cache")))
+            using (BinaryWriter w = new BinaryWriter(fs, Encoding.UTF8))
+            {
+                w.Write(2);
+                w.Write(1); w.Write(lib); w.Write(-1); w.Write(1); w.Write(10L);
+                w.Write(1); w.Write(0); w.Write("old.aif"); w.Write(10L); w.Write(true);
+                w.Write(1); w.Write(0);
+            }
+            SampleIndex v2 = SampleIndex.LoadCache();
+            Check(v2.Files.Count == 1 && v2.Files[0].Silent && v2.Files[0].Created == default(DateTime),
+                  "walk: a version 2 cache must still read, without dates");
 
             File.WriteAllBytes(Path.Combine(Settings.Dir, "samples.cache"), new byte[] { 99, 0, 0, 0 });
             Check(SampleIndex.LoadCache().Roots.Count == 0, "walk: a cache of another version must read as empty");
@@ -390,7 +428,73 @@ namespace AliveTools
             List<SetEntry> newest = SampleUsage.Newest(ku != null ? ku.Sets : new List<SetEntry>());
             Check(newest.Count == 1 && newest[0].Name == "a v2", "usage: Newest keeps the newest set of a project");
 
+            List<SampleFile> ofB = u.FilesOf(sets[2]);
+            Check(ofB.Count == 1 && ofB[0] == sn, "usage: FilesOf must give the library files a set uses");
+            Check(u.FilesOf(sets[3]).Count == 0 && u.FilesOf(null).Count == 0, "usage: FilesOf of a set using nothing");
+
             Check(SampleUsage.Compute(idx, new List<SetEntry>()).UsedFiles.Count == 0, "usage: no sets - no usage");
+        }
+
+        // ----------------------------------------------------------------- copies
+
+        static void CopiesCheck()
+        {
+            string lib = Path.Combine(Fresh("copies"), "lib");
+            long big = WriteWav(Path.Combine(lib, @"Pack A\kick.wav"), 500);
+            WriteWav(Path.Combine(lib, @"Pack B\kick.wav"), 500);                     // the same sample again
+            WriteWav(Path.Combine(lib, @"Pack B\Deep\KICK.wav"), 500);                // and a third time
+            long small = WriteWav(Path.Combine(lib, @"Pack A\hat.wav"), 20);
+            WriteWav(Path.Combine(lib, @"Pack C\hat.wav"), 20);                       // a smaller pair
+            WriteWav(Path.Combine(lib, @"Pack C\kick.wav"), 499);                     // same name, other size
+            WriteWav(Path.Combine(lib, @"Pack C\snare.wav"), 20);                     // same size, other name
+            WriteWav(Path.Combine(lib, @"Dry\pad.wav"), 9000, 1);                     // a pack's Dry and Wet
+            WriteWav(Path.Combine(lib, @"Wet\pad.wav"), 9000, 2);                     // takes: not copies
+            // The case that broke a print of a few blocks: silence at both ends, a difference
+            // only in the middle.
+            byte[] quiet = new byte[200000], other = new byte[200000];
+            other[100000] = 1;
+            Directory.CreateDirectory(Path.Combine(lib, "Dry2"));
+            Directory.CreateDirectory(Path.Combine(lib, "Wet2"));
+            File.WriteAllBytes(Path.Combine(lib, @"Dry2\guitar.wav"), quiet);
+            File.WriteAllBytes(Path.Combine(lib, @"Wet2\guitar.wav"), other);
+
+            SampleIndex idx = SampleIndex.Build(new List<string> { lib }, new List<string>(), null, CancellationToken.None);
+            SampleCopies c = SampleCopies.Find(idx);
+
+            Check(c.Files.Count == 5, "copies: 5 files have a copy, got " + c.Files.Count);
+            Check(c.ExtraBytes == big * 2 + small, "copies: the extra bytes are " + c.ExtraBytes + " instead of " + (big * 2 + small));
+            Check(c.Files.Count == 5 && Same(c.Files[0].Name, "kick.wav") && Same(c.Files[2].Name, "KICK.wav")
+                  && Same(c.Files[3].Name, "hat.wav"),
+                  "copies: the group wasting the most room goes first, its copies side by side");
+
+            SampleFile a = null, c499 = null;
+            foreach (SampleFile f in idx.Files)
+            {
+                if (Same(f.Name, "kick.wav") && f.Folder.Name == "Pack A") a = f;
+                if (Same(f.Name, "kick.wav") && f.Folder.Name == "Pack C") c499 = f;
+            }
+            Check(a != null && c.CopiesOf(a) == 2 && c.Others(a).Count == 2 && !c.Others(a).Contains(a),
+                  "copies: a sample in three places has two others");
+            Check(c.CopiesOf(c499) == 0 && c.Others(c499).Count == 0, "copies: a different size is not a copy");
+            SampleFile dry = FileNamed(idx, "pad.wav");
+            Check(dry != null && dry.Print != 0 && c.CopiesOf(dry) == 0,
+                  "copies: Dry and Wet takes of equal name and size are different sounds, not copies");
+            Check(FileNamed(idx, "snare.wav").Print == 0, "copies: a file with no namesake needs no print");
+            SampleFile guitar = FileNamed(idx, "guitar.wav");
+            Check(guitar != null && guitar.Print != 0 && c.CopiesOf(guitar) == 0,
+                  "copies: files that differ only in the middle are not copies");
+
+            // A print survives the cache and is kept by the next walk while the file is the same.
+            idx.SaveCache();
+            SampleIndex back = SampleIndex.LoadCache();
+            Check(FileNamed(back, "pad.wav") != null && FileNamed(back, "pad.wav").Print == dry.Print,
+                  "copies: the cache lost the prints");
+            SampleIndex again = SampleIndex.Build(new List<string> { lib }, new List<string>(), null, CancellationToken.None, back);
+            Check(FileNamed(again, "pad.wav").Print == dry.Print, "copies: the next walk changed an unchanged print");
+            Check(c.FilesIn(idx.Roots[0]) == 5 && c.FilesIn(FolderNamed(idx, "Pack B")) == 2
+                  && c.BytesIn(FolderNamed(idx, "Pack B")) == big * 2,
+                  "copies: a folder counts the samples of its subtree that lie elsewhere too");
+            Check(SampleCopies.Find(SampleIndex.Empty).Files.Count == 0, "copies: an empty index has none");
         }
 
         // ------------------------------------------------------------------- aiff
@@ -640,6 +744,12 @@ namespace AliveTools
             string p = RowListView.FitPath(path, f, pw);
             Check(p.EndsWith(@"\[S] FX & PERCS") && p.Contains("VOL.1") && RowListView.TextW(p, f) <= pw,
                   "fit: a two-folder path keeps the last folder and the end of the first, got '" + p + "'");
+
+            string pack = @"Samples\Avant Riddim Drop Ammunition Vol 1";
+            int kw = RowListView.TextW(pack, f) * 7 / 10;
+            string k = RowListView.FitPath(pack, f, kw);
+            Check(k.StartsWith(@"Samples\") && k.EndsWith("Vol 1") && k.Contains("…") && RowListView.TextW(k, f) <= kw,
+                  "fit: a short first folder stays whole and the long name is cut, got '" + k + "'");
         }
 
         // ------------------------------------------------------------------- real
@@ -679,6 +789,18 @@ namespace AliveTools
             SampleUsage u = SampleUsage.Compute(idx, sets.Sets);
             Console.WriteLine("usage: " + u.UsedFiles.Count + " files used, " + u.NeverUsed(idx).Count
                               + " never-used folders, in " + sw.ElapsedMilliseconds + " ms");
+
+            sw.Restart();
+            SampleCopies c = SampleCopies.Find(idx);
+            int printed = 0;
+            foreach (SampleFile f in idx.Files) if (f.Print != 0) printed++;
+            Console.WriteLine("copies: " + c.Files.Count + " files are copies, of " + printed
+                              + " with a namesake of the same size; " + MainForm.SizeMB(c.ExtraBytes)
+                              + " extra, in " + sw.ElapsedMilliseconds + " ms");
+
+            sw.Restart();
+            SampleIndex.Build(roots, new List<string>(), null, CancellationToken.None, idx);
+            Console.WriteLine("walk again, AIFF flags and prints kept: " + sw.ElapsedMilliseconds + " ms");
         }
     }
 }

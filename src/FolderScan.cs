@@ -243,8 +243,17 @@ namespace AbletonManager
             return dir.Length > 0 && dir[dir.Length - 1] == '\\' ? dir + name : dir + "\\" + name;
         }
 
-        /// <summary>One entry of a folder, with the size straight from the directory entry.</summary>
-        internal delegate void EntryFound(string name, bool isDir, long size);
+        /// <summary>One entry of a folder, with the size and the dates straight from the
+        /// directory entry — nothing is opened for them. The dates are FILETIMEs (UTC, 0 when
+        /// the file system has none); see FileTime.</summary>
+        internal delegate void EntryFound(string name, bool isDir, long size, long created, long modified);
+
+        /// <summary>A FILETIME from a directory entry as a UTC date; default when there is none
+        /// or it is out of DateTime's range.</summary>
+        internal static DateTime FileTime(long ft)
+        {
+            return ft > 0 && ft <= 2650467743999999999L ? DateTime.FromFileTimeUtc(ft) : default(DateTime);
+        }
 
         /// <summary>
         /// The entries of one folder — the sample walk makes its own decisions about what to
@@ -264,7 +273,9 @@ namespace AbletonManager
                     if (name == "." || name == "..") continue;
                     bool isDir = (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0;
                     if (isDir && (fd.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT) != 0) continue;
-                    found(name, isDir, isDir ? 0L : ((long)fd.nFileSizeHigh << 32) | fd.nFileSizeLow);
+                    found(name, isDir, isDir ? 0L : ((long)fd.nFileSizeHigh << 32) | fd.nFileSizeLow,
+                          ((long)fd.ftCreationHigh << 32) | fd.ftCreationLow,
+                          ((long)fd.ftWriteHigh << 32) | fd.ftWriteLow);
                 }
                 while (FindNextFileW(h, out fd));
             }

@@ -132,27 +132,63 @@ namespace AbletonManager
             return false;
         }
 
-        /// <summary>A column's place in the canonical catalog — which is also the order of the
+        // The three configurable tables go by Domain: 0 — sets, 1 — plugins, 2 — samples.
+
+        /// <summary>A table's catalog, in its canonical order — which is also the order of the
         /// menu items.</summary>
-        static int CatalogPos(bool sets, string id)
+        static List<string> CatalogIds(int domain)
         {
-            if (sets)
-            {
-                for (int i = 0; i < Catalog.Count; i++)
-                    if (string.Equals(Catalog[i].Id, id, StringComparison.OrdinalIgnoreCase)) return i;
-            }
-            else
-            {
-                for (int i = 0; i < PluginCatalog.Count; i++)
-                    if (string.Equals(PluginCatalog[i].Id, id, StringComparison.OrdinalIgnoreCase)) return i;
-            }
+            List<string> ids = new List<string>();
+            if (domain == 0) foreach (ColDef d in Catalog) ids.Add(d.Id);
+            else if (domain == 1) foreach (PluginColDef d in PluginCatalog) ids.Add(d.Id);
+            else foreach (SampleCol d in SampleCatalog) ids.Add(d.Id);
+            return ids;
+        }
+
+        static string CatalogTitle(int domain, string id)
+        {
+            if (domain == 0) { ColDef d = FindCol(id); return d != null ? d.En : id; }
+            if (domain == 1) { PluginColDef d = FindPluginCol(id); return d != null ? d.En : id; }
+            SampleCol s = FindSampleCol(id);
+            return s != null ? s.Title : id;
+        }
+
+        /// <summary>The default logical width; 0 — the column stretches, or there is no such
+        /// column.</summary>
+        static int CatalogWidth(int domain, string id)
+        {
+            if (domain == 0) return WidthOf(FindCol(id));
+            if (domain == 1) return WidthOf(FindPluginCol(id));
+            SampleCol s = FindSampleCol(id);
+            return s != null ? s.Width : 0;
+        }
+
+        static int CatalogPos(int domain, string id)
+        {
+            List<string> ids = CatalogIds(domain);
+            for (int i = 0; i < ids.Count; i++)
+                if (string.Equals(ids[i], id, StringComparison.OrdinalIgnoreCase)) return i;
             return int.MaxValue;
         }
 
-        static void SortByCatalog(List<string> order, bool sets)
+        static void SortByCatalog(List<string> order, int domain)
         {
             order.Sort(delegate (string a, string b)
-                { return CatalogPos(sets, a).CompareTo(CatalogPos(sets, b)); });
+                { return CatalogPos(domain, a).CompareTo(CatalogPos(domain, b)); });
+        }
+
+        List<string> OrderOf(int domain) { return domain == 0 ? _setOrder : domain == 1 ? _pluginOrder : _sampleOrder; }
+        Dictionary<string, int> WidthsOf(int domain) { return domain == 0 ? _setColW : domain == 1 ? _pluginColW : _sampleColW; }
+        static string MandatoryOf(int domain) { return domain == 0 ? "Set" : domain == 1 ? "Plugin" : "Name"; }
+        static string[] DefaultsOf(int domain) { return domain == 0 ? DefaultSetCols : domain == 1 ? DefaultPluginCols : DefaultSampleCols; }
+
+        /// <summary>The sort goes back to the table's own order when its column is hidden.</summary>
+        void DropHiddenSort(int domain)
+        {
+            List<string> order = OrderOf(domain);
+            if (domain == 0) { if (_setSortId != null && !HasCol(order, _setSortId)) _setSortId = null; }
+            else if (domain == 1) { if (_pluginSortId != null && !HasCol(order, _pluginSortId)) _pluginSortId = null; }
+            else if (_sampleSortId != null && !HasCol(order, _sampleSortId)) _sampleSortId = null;
         }
 
         string _setSortId;
@@ -497,22 +533,17 @@ namespace AbletonManager
 
         void LoadColumns()
         {
-            LoadColumnSpec(_settings.SetColumns, _setOrder, _setColW, DefaultSetCols, "Set", true);
-            LoadColumnSpec(_settings.PluginColumns, _pluginOrder, _pluginColW, DefaultPluginCols, "Plugin", false);
-            foreach (string tok in _settings.SampleColumns.Split(','))
-            {
-                int colon = tok.IndexOf(':'), w;
-                if (colon > 0 && int.TryParse(tok.Substring(colon + 1), out w) && w > 0)
-                    _sampleColW[tok.Substring(0, colon).Trim()] = w;
-            }
+            LoadColumnSpec(_settings.SetColumns, 0);
+            LoadColumnSpec(_settings.PluginColumns, 1);
+            LoadColumnSpec(_settings.SampleColumns, 2);
 
             // A one-off repair of old settings: before this a column switched on fell to the
             // end, and the saved order is merely a history of presses rather than anybody's
             // intent. From here on the order is the user's again and is not touched.
             if (!_settings.ColumnsSorted)
             {
-                SortByCatalog(_setOrder, true);
-                SortByCatalog(_pluginOrder, false);
+                SortByCatalog(_setOrder, 0);
+                SortByCatalog(_pluginOrder, 1);
                 _settings.ColumnsSorted = true;
                 SaveColumns();
             }
@@ -526,9 +557,11 @@ namespace AbletonManager
         /// mandatory is the column that cannot be removed (the set name, the plugin name):
         /// without it nothing is left in the row to recognise it by at all.
         /// </summary>
-        void LoadColumnSpec(string spec, List<string> order, Dictionary<string, int> widths,
-                            string[] defaults, string mandatory, bool sets)
+        void LoadColumnSpec(string spec, int domain)
         {
+            List<string> order = OrderOf(domain);
+            Dictionary<string, int> widths = WidthsOf(domain);
+            string mandatory = MandatoryOf(domain);
             order.Clear();
             widths.Clear();
 
@@ -547,34 +580,37 @@ namespace AbletonManager
                     }
                     // A column from another version of the program, or one already listed —
                     // skip it.
-                    if (sets ? FindCol(id) == null : FindPluginCol(id) == null) continue;
+                    if (CatalogPos(domain, id) == int.MaxValue) continue;
                     if (HasCol(order, id)) continue;
                     order.Add(id);
                     if (w > 0) widths[id] = w;
                 }
 
             if (!HasCol(order, mandatory)) order.Insert(0, mandatory);
-            if (order.Count <= 1) { order.Clear(); order.AddRange(defaults); }
+            if (order.Count <= 1) { order.Clear(); order.AddRange(DefaultsOf(domain)); }
         }
 
         void SaveColumns()
         {
-            _settings.SetColumns = ColumnSpec(_setOrder, _setColW, true);
-            _settings.PluginColumns = ColumnSpec(_pluginOrder, _pluginColW, false);
+            _settings.SetColumns = ColumnSpec(0);
+            _settings.PluginColumns = ColumnSpec(1);
+            _settings.SampleColumns = ColumnSpec(2);
             _settings.Save();
         }
 
-        string ColumnSpec(List<string> order, Dictionary<string, int> widths, bool sets)
+        string ColumnSpec(int domain)
         {
+            Dictionary<string, int> widths = WidthsOf(domain);
+            List<string> order = OrderOf(domain);
             List<string> toks = new List<string>();
             foreach (string id in order)
             {
                 // We do not write a width for a stretching column (Width == 0): it always takes
                 // the remainder, and a remembered number would have no effect on anything
                 // anyway.
-                int def = sets ? WidthOf(FindCol(id)) : WidthOf(FindPluginCol(id));
+                int def = CatalogWidth(domain, id);
                 int w;
-                if (def != 0 && widths.TryGetValue(id, out w) && w > 0) toks.Add(id + ":" + w);
+                if (def != 0 && widths.TryGetValue(id, out w) && w > 0 && w != def) toks.Add(id + ":" + w);
                 else toks.Add(id);
             }
             return string.Join(",", toks.ToArray());
@@ -876,6 +912,8 @@ namespace AbletonManager
             _detail.SetRequested += OnSetRequested;
             _detail.PluginRequested += OnPluginRequested;
             _detail.SampleRequested += OnSampleRequested;
+            _detail.LibraryFoldersOf = SampleFoldersOf;
+            _detail.LibraryFolderRequested += OnLibraryFolderRequested;
             _detail.WaveClicked += OnWaveClicked;
             _detail.NotesRequested += EditNotes;
             Controls.Add(_detail);
@@ -2380,8 +2418,8 @@ namespace AbletonManager
         /// </summary>
         void OnHeaderRightClick(Point pt)
         {
-            if (SamplesDomain) return;       // its columns are fixed — see SamplesTab
-            bool sets = SetsDomain;
+            int domain = Domain;
+            bool sets = domain == 0;
 
             ContextMenuStrip menu = DarkMenu.Create();
             menu.ShowCheckMargin = true;   // it is visible which columns are already on — as in Explorer
@@ -2414,25 +2452,24 @@ namespace AbletonManager
                 if (e.CloseReason == ToolStripDropDownCloseReason.ItemClicked) e.Cancel = true;
             };
 
-            List<string> order = sets ? _setOrder : _pluginOrder;
-            string mandatory = sets ? "Set" : "Plugin";
+            List<string> order = OrderOf(domain);
+            string mandatory = MandatoryOf(domain);
 
             // The items are in the catalog's canonical order rather than the user's: the menu
             // is a list of what there is at all, and reordering it after the table would mean
             // hunting for the right line in a new place every time.
-            List<string> ids = new List<string>();
-            List<string> titles = new List<string>();
-            if (sets)
-                foreach (ColDef d in Catalog) { ids.Add(d.Id); titles.Add(d.En); }
-            else
-                foreach (PluginColDef d in PluginCatalog) { ids.Add(d.Id); titles.Add(d.En); }
+            List<string> ids = CatalogIds(domain);
 
             List<ToolStripMenuItem> boxes = new List<ToolStripMenuItem>();
             for (int i = 0; i < ids.Count; i++)
             {
-                ToolStripMenuItem mi = new ToolStripMenuItem(titles[i]);
-                mi.Checked = HasCol(order, ids[i]);
-                if (ids[i] == mandatory) mi.Enabled = false;   // the principal column cannot be removed
+                ToolStripMenuItem mi = new ToolStripMenuItem(CatalogTitle(domain, ids[i]));
+                // On the Samples tab a view may decide a column by itself (the tree has no
+                // Location, Duplicates always shows Copies) — such an item shows what the view
+                // does, greyed out.
+                bool? fixedHere = domain == 2 ? SampleViewDecides(ids[i]) : null;
+                mi.Checked = fixedHere ?? HasCol(order, ids[i]);
+                if (ids[i] == mandatory || fixedHere.HasValue) mi.Enabled = false;   // the principal column cannot be removed
                 else
                 {
                     string id = ids[i];
@@ -2453,7 +2490,7 @@ namespace AbletonManager
             {
                 ResetColumns();
                 for (int i = 0; i < resetBoxes.Count; i++)
-                    resetBoxes[i].Checked = HasCol(resetOrder, resetIds[i]);
+                    if (resetBoxes[i].Enabled) resetBoxes[i].Checked = HasCol(resetOrder, resetIds[i]);
             };
             menu.Items.Add(reset);
 
@@ -2462,10 +2499,9 @@ namespace AbletonManager
 
         void ToggleColumn(string id)
         {
-            if (SamplesDomain) return;
-            bool sets = SetsDomain;
-            List<string> order = sets ? _setOrder : _pluginOrder;
-            if (id == (sets ? "Set" : "Plugin")) return;
+            int domain = Domain;
+            List<string> order = OrderOf(domain);
+            if (id == MandatoryOf(domain)) return;
 
             if (HasCol(order, id))
             {
@@ -2478,15 +2514,14 @@ namespace AbletonManager
             // was just assembled from. The heading can still be dragged afterwards.
             else
             {
-                int pos = CatalogPos(sets, id), at = order.Count;
+                int pos = CatalogPos(domain, id), at = order.Count;
                 for (int i = 0; i < order.Count; i++)
-                    if (CatalogPos(sets, order[i]) > pos) { at = i; break; }
+                    if (CatalogPos(domain, order[i]) > pos) { at = i; break; }
                 order.Insert(at, id);
             }
 
             // The sort may have been on a hidden column — we go back to the default order.
-            if (sets) { if (_setSortId != null && !HasCol(order, _setSortId)) _setSortId = null; }
-            else { if (_pluginSortId != null && !HasCol(order, _pluginSortId)) _pluginSortId = null; }
+            DropHiddenSort(domain);
 
             SaveColumns();
             int sel = _list.SelectedIndex;
@@ -2500,15 +2535,14 @@ namespace AbletonManager
 
         void ResetColumns()
         {
-            if (SamplesDomain) return;
-            bool sets = SetsDomain;
-            List<string> order = sets ? _setOrder : _pluginOrder;
-            Dictionary<string, int> widths = sets ? _setColW : _pluginColW;
-
+            int domain = Domain;
+            List<string> order = OrderOf(domain);
             order.Clear();
-            widths.Clear();
-            order.AddRange(sets ? DefaultSetCols : DefaultPluginCols);
-            if (sets) _setSortId = null; else _pluginSortId = null;
+            WidthsOf(domain).Clear();
+            order.AddRange(DefaultsOf(domain));
+            if (domain == 0) _setSortId = null;
+            else if (domain == 1) _pluginSortId = null;
+            else _sampleSortId = null;
 
             SaveColumns();
             Refill();
@@ -2516,24 +2550,7 @@ namespace AbletonManager
 
         void OnColumnsResized()
         {
-            if (SamplesDomain)
-            {
-                // Only what differs from the default is kept, as for the sets: a default that
-                // changes in a later version then reaches the columns nobody has touched.
-                foreach (Column c in _list.ColumnList)
-                    foreach (SampleCol d in _sampleCols)
-                        if (d.Id == c.Id && c.Width > 0)
-                        {
-                            if (c.Width == d.Width) _sampleColW.Remove(c.Id);
-                            else _sampleColW[c.Id] = c.Width;
-                        }
-                List<string> toks = new List<string>();
-                foreach (KeyValuePair<string, int> kv in _sampleColW) toks.Add(kv.Key + ":" + kv.Value);
-                _settings.SampleColumns = string.Join(",", toks.ToArray());
-                _settings.Save();
-                return;
-            }
-            Dictionary<string, int> widths = SetsDomain ? _setColW : _pluginColW;
+            Dictionary<string, int> widths = WidthsOf(Domain);
             foreach (Column c in _list.ColumnList)
                 if (c.Width > 0 && !string.IsNullOrEmpty(c.Id)) widths[c.Id] = c.Width;
             SaveColumns();
@@ -2545,15 +2562,30 @@ namespace AbletonManager
         /// </summary>
         void OnColumnsReordered(int from, int to)
         {
-            if (SamplesDomain) return;
-            List<string> order = SetsDomain ? _setOrder : _pluginOrder;
-            if (from < 0 || from >= order.Count || to < 0 || to > order.Count || from == to) return;
-
-            string moved = order[from];
-            order.RemoveAt(from);
-            if (to > from) to--;                 // after the removal everything to the right has shifted
-            if (to > order.Count) to = order.Count;
-            order.Insert(to, moved);
+            List<string> order = OrderOf(Domain);
+            if (SamplesDomain)
+            {
+                // The table is not the order one to one here — a view hides some columns and
+                // adds its own — so the move goes by ids: the heading lands before the one it
+                // was dropped on.
+                List<Column> cols = _list.ColumnList;
+                if (from < 0 || from >= cols.Count || to < 0 || to > cols.Count || from == to) return;
+                string id = cols[from].Id;
+                if (!HasCol(order, id)) return;                 // a column the view adds by itself
+                string before = to < cols.Count ? cols[to].Id : null;
+                order.Remove(id);
+                int at = before != null ? order.IndexOf(before) : -1;
+                order.Insert(at >= 0 ? at : order.Count, id);
+            }
+            else
+            {
+                if (from < 0 || from >= order.Count || to < 0 || to > order.Count || from == to) return;
+                string moved = order[from];
+                order.RemoveAt(from);
+                if (to > from) to--;                 // after the removal everything to the right has shifted
+                if (to > order.Count) to = order.Count;
+                order.Insert(to, moved);
+            }
             SaveColumns();
 
             // The rows have not changed — only a column moved, so we put the selection and the

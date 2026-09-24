@@ -187,13 +187,6 @@ namespace AbletonManager
         /// right button.</summary>
         public bool ColumnsConfigurable;
 
-        /// <summary>Column edges can be dragged, with no column menu and no moving of headings —
-        /// the Samples tab, whose set of columns changes with the view. The first column keeps
-        /// stretching: the edge after it moves the next column instead.</summary>
-        public bool ColumnsResizable;
-
-        bool CanResize { get { return ColumnsConfigurable || ColumnsResizable; } }
-
         /// <summary>
         /// A checkbox before the first column — "is this row on" (a folder temporarily excluded
         /// from scanning while staying in the list, for instance). A click on it does not touch
@@ -977,8 +970,8 @@ namespace AbletonManager
         /// </summary>
         int GripAt(int px, int[] widths)
         {
-            if (!CanResize) return -1;
-            if (ColumnsConfigurable && _columns.Count > 0)
+            if (!ColumnsConfigurable) return -1;
+            if (_columns.Count > 0)
             {
                 int edge0 = LeftX + widths[0];
                 if (Math.Abs(px - edge0) <= Sc(4)) return 0;
@@ -1419,7 +1412,9 @@ namespace AbletonManager
             {
                 if (_columns[i].Width == 0)
                 {
-                    int minW = i == 0 ? Sc(220) : Sc(80);
+                    // A path squeezed to 80 px read "…\…e" and said nothing; below its minimum a
+                    // column goes on past the edge, into the horizontal scroll.
+                    int minW = i == 0 ? Sc(220) : _columns[i].PathEllipsis ? Sc(180) : Sc(80);
                     w[i] = Math.Max(minW, available / Math.Max(1, flexCount));
                 }
             }
@@ -1704,6 +1699,9 @@ namespace AbletonManager
                     {
                         int maxMainW = Math.Max(0, cr.Width - countW - Sc(4));
                         Rectangle mainR = new Rectangle(cr.X, cr.Y, maxMainW, cr.Height);
+                        // A name cut before its "+N" is cut in the middle too, where the column
+                        // asks for it — "…DRUM KIT VOL.1" and "VOL.2" must stay apart.
+                        if (col.PathEllipsis) mainText = FitPath(mainText, f, maxMainW);
                         Chrome.DrawText(g, mainText, f, mainR, color, Chrome.CellLeft);
 
                         int cX = cr.X + maxMainW + Sc(4);
@@ -1742,6 +1740,15 @@ namespace AbletonManager
                 if (TextW(s, f) <= width) return s;
             }
             if (parts.Length == 1) return FitMiddle(path, f, width);
+
+            // Two parts, the first the shorter: it stays whole and the long name is cut instead —
+            // "Samples\Avant Riddim…ition Vol 1" rather than "…\Avant Riddim…".
+            if (parts.Length == 2)
+            {
+                int wa = TextW(parts[0] + "\\", f);
+                if (wa <= TextW("\\" + parts[1], f) && wa < width / 2)
+                    return parts[0] + "\\" + FitMiddle(parts[1], f, width - wa);
+            }
 
             string tail = (parts.Length > 2 ? "\\…\\" : "\\") + parts[parts.Length - 1];
             int room = width - TextW(tail, f);
@@ -2121,7 +2128,7 @@ namespace AbletonManager
         /// </summary>
         void PaintGrip(Graphics g, int[] widths)
         {
-            if (_gripAlpha <= 0.001f || !CanResize) return;
+            if (_gripAlpha <= 0.001f || !ColumnsConfigurable) return;
 
             int top = Sc(13), bottom = HeaderHeight - Sc(13);
             if (bottom <= top) return;
@@ -2129,7 +2136,7 @@ namespace AbletonManager
             int a = (int)(180 * Math.Min(1f, Math.Max(0f, _gripAlpha)));
             using (Pen p = new Pen(Color.FromArgb(a, Theme.TextDim)))
             {
-                if (ColumnsConfigurable && _columns.Count > 0)
+                if (_columns.Count > 0)
                 {
                     int x0 = LeftX + widths[0];
                     if (x0 < Width - PadRight)

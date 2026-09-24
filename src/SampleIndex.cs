@@ -33,6 +33,11 @@ namespace AbletonManager
 
         /// <summary>The position in SampleIndex.Folders — the cache writes parents by it.</summary>
         public int Index;
+
+        /// <summary>The folder's own dates, as Explorer shows them (UTC; default when unknown).
+        /// Created is when it appeared on this disk — a pack unpacked two years ago and never
+        /// touched says so here.</summary>
+        public DateTime Created, Modified;
     }
 
     public sealed class SampleFile
@@ -44,6 +49,18 @@ namespace AbletonManager
         /// <summary>An AIFF the preview cannot open — in practice Ableton's own compressed
         /// AIFC, which is most of Live's packs. Only Live plays it; the walk finds out once.</summary>
         public bool Silent;
+
+        /// <summary>The file's own dates (UTC; default when unknown). A pack keeps its author's
+        /// Modified; Created is when the file landed here.</summary>
+        public DateTime Created, Modified;
+
+        /// <summary>
+        /// A hash of the whole content, taken only for a file with a namesake of the same size
+        /// somewhere in the library — see SampleCopies. Name and size alone also pair a pack's
+        /// Dry and Wet takes of one sound: different recordings of equal length. 0 — not taken,
+        /// or the file would not open.
+        /// </summary>
+        public ulong Print;
 
         public string Path { get { return FolderScan.Combine(Folder.Path, Name); } }
 
@@ -61,7 +78,9 @@ namespace AbletonManager
     /// </summary>
     public sealed class SampleIndex
     {
-        const int CacheVersion = 2;   // 2: the Silent flag of an AIFF only Live can play
+        // 2: the Silent flag of an AIFF only Live can play; 4: dates and content prints (3 had
+        // dates only and never left the development machine).
+        const int CacheVersion = 4;
 
         public readonly List<SampleFolder> Roots = new List<SampleFolder>();
         public readonly List<SampleFolder> Folders = new List<SampleFolder>();   // parents before children
@@ -205,7 +224,7 @@ namespace AbletonManager
             Dictionary<string, SampleFile> known = new Dictionary<string, SampleFile>(StringComparer.OrdinalIgnoreCase);
             if (previous != null)
                 foreach (SampleFile f in previous.Files)
-                    if (AiffReader.IsAiffName(f.Name)) known[f.Path] = f;
+                    if (AiffReader.IsAiffName(f.Name) || f.Print != 0) known[f.Path] = f;
 
             Parallel.For(0, walk.Count, delegate (int i)
             {
@@ -227,7 +246,64 @@ namespace AbletonManager
                     idx.Files.AddRange(f.Files);
                 }
             }
+            if (!cancel.IsCancellationRequested) TakePrints(idx, known, cancel);
             return idx;
+        }
+
+        /// <summary>
+        /// Content hashes for the files that could be copies of each other — equal name and
+        /// size: 8,001 of 180,378 on the development machine, read whole once (see Print). A
+        /// hash from the previous index is kept while the file's size and date stay the same.
+        /// </summary>
+        static void TakePrints(SampleIndex idx, Dictionary<string, SampleFile> known, CancellationToken cancel)
+        {
+            Dictionary<string, List<SampleFile>> byKey = new Dictionary<string, List<SampleFile>>(StringComparer.OrdinalIgnoreCase);
+            foreach (SampleFile f in idx.Files)
+            {
+                string key = f.Size.ToString(System.Globalization.CultureInfo.InvariantCulture) + "|" + f.Name;
+                List<SampleFile> g;
+                if (!byKey.TryGetValue(key, out g)) { g = new List<SampleFile>(1); byKey[key] = g; }
+                g.Add(f);
+            }
+            foreach (List<SampleFile> g in byKey.Values)
+            {
+                if (g.Count < 2) continue;
+                foreach (SampleFile f in g)
+                {
+                    if (cancel.IsCancellationRequested) return;
+                    SampleFile was;
+                    string path = f.Path;
+                    f.Print = known.TryGetValue(path, out was) && was.Print != 0 && was.Size == f.Size
+                              && was.Modified == f.Modified
+                            ? was.Print
+                            : Print(path);
+                }
+            }
+        }
+
+        /// <summary>
+        /// FNV-1a over the whole file. A few blocks of it were tried first and were not enough:
+        /// the Dry and Wet takes of "Electric Guitar Wide.wav" in one pack have the same silence
+        /// at the start and the same tail, and part only in the middle. FNV rather than MD5 —
+        /// no cryptography, so nothing breaks on a machine that enforces FIPS. 0 — the file
+        /// would not open.
+        /// </summary>
+        internal static ulong Print(string path)
+        {
+            try
+            {
+                using (FileStream fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite,
+                                                      1 << 16, FileOptions.SequentialScan))
+                {
+                    byte[] buf = new byte[1 << 20];
+                    ulong h = 14695981039346656037UL;
+                    int n;
+                    while ((n = fs.Read(buf, 0, buf.Length)) > 0)
+                        for (int i = 0; i < n; i++) { h ^= buf[i]; h *= 1099511628211UL; }
+                    return h == 0 ? 1UL : h;
+                }
+            }
+            catch { return 0; }
         }
 
         /// <summary>How many samples a folder holds, by the very rules of the walk — the number
@@ -257,6 +333,13 @@ namespace AbletonManager
             SampleFolder rootFolder = new SampleFolder();
             rootFolder.Path = top;
             rootFolder.Name = top;
+            // The root is the one folder that is not an entry of a listing walked here.
+            try
+            {
+                rootFolder.Created = Directory.GetCreationTimeUtc(top);
+                rootFolder.Modified = Directory.GetLastWriteTimeUtc(top);
+            }
+            catch { }
             List<SampleFolder> all = new List<SampleFolder>();
             all.Add(rootFolder);
 
@@ -270,7 +353,7 @@ namespace AbletonManager
                 if (cancelled != null && cancelled()) return null;
                 Pending p = todo.Pop();
 
-                bool ok = FolderScan.List(p.Path, delegate (string name, bool isDir, long size)
+                bool ok = FolderScan.List(p.Path, delegate (string name, bool isDir, long size, long created, long modified)
                 {
                     if (isDir)
                     {
@@ -284,6 +367,8 @@ namespace AbletonManager
                         child.Path = full;
                         child.Name = name;
                         child.Parent = p.Folder;
+                        child.Created = FolderScan.FileTime(created);
+                        child.Modified = FolderScan.FileTime(modified);
                         all.Add(child);
                         todo.Push(new Pending(full, child, true));
                         return;
@@ -295,6 +380,8 @@ namespace AbletonManager
                     f.Name = name;
                     f.Size = size;
                     f.Folder = p.Folder;
+                    f.Created = FolderScan.FileTime(created);
+                    f.Modified = FolderScan.FileTime(modified);
                     if (known != null && AiffReader.IsAiffName(name))
                     {
                         string full = FolderScan.Combine(p.Path, name);
@@ -397,7 +484,13 @@ namespace AbletonManager
                 using (FileStream fs = File.OpenRead(CachePath))
                 using (BinaryReader r = new BinaryReader(fs, Encoding.UTF8))
                 {
-                    if (r.ReadInt32() != CacheVersion) return Empty;
+                    // A version 2 cache has everything but the dates and the prints: it is still
+                    // read, so the first walk after an update keeps the AIFF flags instead of
+                    // opening every AIFF again (a minute and a half on the development machine).
+                    // The dates and the prints arrive with that walk.
+                    int version = r.ReadInt32();
+                    if (version != CacheVersion && version != 2) return Empty;
+                    bool dates = version == CacheVersion;
                     SampleIndex idx = new SampleIndex();
 
                     int folders = r.ReadInt32();
@@ -408,6 +501,7 @@ namespace AbletonManager
                         int parent = r.ReadInt32();
                         f.TotalSamples = r.ReadInt32();
                         f.TotalBytes = r.ReadInt64();
+                        if (dates) { f.Created = Utc(r.ReadInt64()); f.Modified = Utc(r.ReadInt64()); }
                         f.Index = i;
                         if (parent >= 0)
                         {
@@ -427,6 +521,12 @@ namespace AbletonManager
                         s.Name = r.ReadString();
                         s.Size = r.ReadInt64();
                         s.Silent = r.ReadBoolean();
+                        if (dates)
+                        {
+                            s.Created = Utc(r.ReadInt64());
+                            s.Modified = Utc(r.ReadInt64());
+                            s.Print = (ulong)r.ReadInt64();
+                        }
                         s.Folder.Files.Add(s);
                         idx.Files.Add(s);
                     }
@@ -437,6 +537,11 @@ namespace AbletonManager
                 }
             }
             catch { return Empty; }
+        }
+
+        static DateTime Utc(long ticks)
+        {
+            return ticks > 0 && ticks <= DateTime.MaxValue.Ticks ? new DateTime(ticks, DateTimeKind.Utc) : default(DateTime);
         }
 
         public void SaveCache()
@@ -458,6 +563,8 @@ namespace AbletonManager
                         w.Write(f.Parent != null ? f.Parent.Index : -1);
                         w.Write(f.TotalSamples);
                         w.Write(f.TotalBytes);
+                        w.Write(f.Created.Ticks);
+                        w.Write(f.Modified.Ticks);
                     }
                     w.Write(Files.Count);
                     foreach (SampleFile s in Files)
@@ -466,6 +573,9 @@ namespace AbletonManager
                         w.Write(s.Name);
                         w.Write(s.Size);
                         w.Write(s.Silent);
+                        w.Write(s.Created.Ticks);
+                        w.Write(s.Modified.Ticks);
+                        w.Write((long)s.Print);
                     }
                     w.Write(Roots.Count);
                     foreach (SampleFolder r in Roots) w.Write(r.Index);

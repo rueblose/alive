@@ -88,10 +88,17 @@ and cached, so the tab opens at once even on a few hundred thousand files.
 Collect All copied into a project still counts for the pack it came from — the copy is recognised by
 its name and size.
 
-**Filters** here are three lenses: the folder tree, *Never used* — the biggest folders nothing was ever
-taken from, heaviest first — and *Most used*, your working sounds. Select a sample to see its waveform,
-format and the projects it plays in — it plays the moment it is selected, by a click or an arrow
-key, as in Live's browser, and `Space` stops it. Any sample drags straight into Live.
+**Filters** here are four lenses: the folder tree; *Never used* — the biggest folders nothing was ever
+taken from, heaviest first, with the day each landed on the disk; *Most used*, your working sounds; and
+*Duplicates* — the same file in several places (same name, size and content, so a pack's Dry and Wet
+takes of one sound are not mistaken for copies), the most wasted space first. Select a sample to see
+its waveform, format, the projects it plays in and how they spread over the months — it plays the
+moment it is selected, by a click or an arrow key, as in Live's browser, and `Space` stops it. Any
+sample drags straight into Live.
+
+The columns are yours, as on the other tabs: right-click the header to add Created, Modified or
+Copies, drag a heading to move it, drag an edge to resize. And the other way round: a set's panel on
+the Sets tab lists the sample folders it draws from — a click opens that folder here.
 
 Nothing is ever deleted or moved from here: moving a sample breaks every set that uses it. The tab
 tells you what is safe to clear out; Explorer does the clearing.
