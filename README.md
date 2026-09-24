@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="docs/img/icon.png" width="96" alt="Alive">
+<img src="docs/img/icon transparent.png" width="96" alt="Alive">
 
 # Alive
 
