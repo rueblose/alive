@@ -154,19 +154,22 @@ tempo against track count against the year, or anything else the catalog knows.
 
 <img src="docs/img/settings.png" alt="Settings" width="560">
 
-`Ctrl ,` or the gear in the header. Smooth scrolling, a transparency switch
-(on Windows 10 the acrylic backdrop is recomputed on every window move, so the window lags behind
-the cursor), and where the plugin list comes from — Live's own database, or your VST2/VST3 folders.
+`Ctrl ,` or the gear in the header. Smooth scrolling, transparency (on Windows 10 the acrylic
+backdrop is recomputed on every window move, so the window lags behind the cursor), and where the
+plugin list comes from — Live's own database, or your VST2/VST3 folders. A fresh install starts with
+the update check, smooth scrolling and transparency all off; each is one switch away. The same
+window links to this repository and to the developer's Telegram channel,
+[t.me/RueBlose](https://t.me/RueBlose), and opens the [data folder](#data-folder).
 
-**Updates.** Once a day Alive asks GitHub whether a newer release exists, and says so with a dot
-on the gear. No popup, no window in your way: the dot waits until you look. Only a release that
-moves the major or the minor number lights it — a fix waits to be asked about. **Check for
-updates** in the same row asks on the spot and reports anything, fixes included.
+**Updates.** **Check for updates** asks GitHub on the spot whether a newer release exists and
+reports anything, fixes included. Switch on **Check updates once a day** and Alive asks by itself
+and says so with a dot on the gear. No popup, no window in your way: the dot waits until you look.
+Only a release that moves the major or the minor number lights it — a fix waits to be asked about.
 
-That request is the only one the program ever makes. Nothing about you, your library or your
-machine goes with it: it is a plain GET for a public page, and GitHub learns from it what any web
-server learns from anybody who opens one. The switch beside it turns even that off, and then Alive
-touches the network never.
+That request is the only one the program ever makes, and only when you ask for it: out of the box
+Alive never touches the network. Nothing about you, your library or your machine goes with it: it
+is a plain GET for a public page, and GitHub learns from it what any web server learns from anybody
+who opens one.
 
 ---
 
@@ -221,6 +224,33 @@ Requires **.NET Framework 4.6+**, which ships with Windows 10 and 11.
 5. **Something else is wrong** — Alive writes a log of its last run to `%APPDATA%\Alive\alive.log`:
    Windows version, .NET version, where Live was found and what exactly failed. That file is the
    first thing to send.
+
+---
+
+## Data folder
+
+Everything Alive remembers lives in `%APPDATA%\Alive` (**Settings → Data folder → Open folder**).
+Nothing is written anywhere else — no installer, no registry entries — so deleting the folder resets
+the program completely. Mind the two files marked below before you do: they hold what cannot be
+rebuilt.
+
+| File | What it holds | If deleted |
+|---|---|---|
+| `settings.cfg` | Settings: project and sample folders, table columns, window size and place, switches | Back to defaults; the folders are asked for again |
+| `index.cache` | The parsed sets — tempo, key, plugins, files — so the catalog opens without reading every `.als` again | Rebuilt by the next scan |
+| `samples.cache` | The sample library: folders, files, dates, which AIFFs only Live can play, content hashes for Duplicates | Rebuilt by the next walk — a minute or two on a large library |
+| `activity.cache` | The year of work on Home: the days and hours projects were saved | **Lost for good** — Live keeps only the last ten backups of a set; the rest of the history is only here |
+| `notes.cfg` | Your tags and notes | **Lost for good** |
+| `home.cfg` | Projects pinned with the star | Pins are gone |
+| `previews.cfg` | Which render is a project's main preview | Back to the automatic pick |
+| `nebula.cfg` | What Stat's six channels show | Back to defaults |
+| `thumbs\` | Arrangement pictures for the Home tiles, 400 at most | Drawn again when needed |
+| `alive.log` | What happened during the last run; rewritten at every start | Nothing |
+| `probes.txt` | Rescue probe copies lying in project folders right now, so they are cleaned up after a crash | Leftover probes stay where they are (`*.alive-probe.als`) |
+
+`*.tmp` files appear for a moment while a cache is being saved. To keep all of this somewhere else —
+a portable setup, or a second catalog beside the first — set the `ALIVE_HOME` environment variable
+to a folder before starting Alive.
 
 ---
 

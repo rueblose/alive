@@ -820,17 +820,23 @@ namespace AbletonManager
             Theme.Smooth(g);
 
             RectangleF r = new RectangleF(0, 0, Width, Height);
-            if (Danger && HoverFactor > 0.001f)
-            {
-                Color bg = Color.FromArgb((int)Math.Round(HoverFactor * 255), Theme.Red);
-                Theme.FillRound(g, r, Height / 2f, bg);
-            }
-            else if (!Quiet)
+            // The backing is always there, the close button's included: its red lies on top.
+            // It used to take the backing's place, and on the way out the button faded to
+            // nothing together with the red — then the grey pill popped back in at the very end.
+            if (!Quiet)
             {
                 int baseAlpha = Theme.GlassSurfaceAlpha;
                 int targetAlpha = PressFactor > 0.01f ? Theme.GlassSurfacePressedAlpha : Theme.GlassSurfaceHotAlpha;
                 int alpha = (int)Math.Round(Theme.Lerp(baseAlpha, targetAlpha, Math.Max(HoverFactor, PressFactor)));
                 Theme.PaintGlassSurface(this, g, r, Height / 2f, alpha);
+            }
+            if (Danger && HoverFactor > 0.001f)
+            {
+                // Squared: the red comes in nearly as fast (83% in four frames), but its tail is
+                // gone in about 140 ms instead of the hover's lazy 370 — a saturated red makes
+                // every frame of a tail visible that a grey backing hides.
+                float k = HoverFactor * HoverFactor;
+                Theme.FillRound(g, r, Height / 2f, Color.FromArgb((int)Math.Round(k * 255), Theme.Red));
             }
 
             float box = Width * IconScale;

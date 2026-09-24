@@ -60,15 +60,18 @@ namespace AbletonManager
         /// keeps moving for a couple of seconds after the mouse has stopped. Windows 11 runs a
         /// different branch (the system backdrop) and does not have this — which is why we do
         /// not switch it off ourselves but hand over a toggle.
+        ///
+        /// On by default — a fresh install starts flat, and the glass is the person's to turn
+        /// on. A settings.cfg that already says noglass=0 keeps its glass.
         /// </summary>
-        public bool DisableGlass;
+        public bool DisableGlass = true;
 
 
         /// <summary>
         /// Whether smooth vertical scrolling is on (settling by timer). With false, scrolling
-        /// in every list and panel is instant.
+        /// in every list and panel is instant. Off by default, like the glass.
         /// </summary>
-        public bool SmoothScroll = true;
+        public bool SmoothScroll;
 
         /// <summary>
         /// Whether to collapse the sets of one folder into a single row. On by default: a
@@ -135,9 +138,10 @@ namespace AbletonManager
         /// <summary>
         /// Whether the program may ask GitHub about a newer release on its own. This is the
         /// only network request it ever makes — see UpdateCheck — and the only setting here
-        /// that decides whether anything leaves the machine at all.
+        /// that decides whether anything leaves the machine at all. Off by default: a fresh
+        /// install touches the network only when the person asks it to.
         /// </summary>
-        public bool CheckUpdates = true;
+        public bool CheckUpdates;
 
         /// <summary>The day it last asked, yyyy-MM-dd. Once a day is plenty for a program
         /// that gets a release every few weeks.</summary>

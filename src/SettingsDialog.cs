@@ -38,6 +38,8 @@ namespace AbletonManager
         readonly GlassButton _rescan = new GlassButton();
 
         readonly GlassButton _openCache = new GlassButton();
+        readonly GlassButton _github = new GlassButton();
+        readonly GlassButton _telegram = new GlassButton();
         readonly GlassButton _update = new GlassButton();
         readonly PillToggle _autoUpdate = new PillToggle();
         readonly GlassButton _restart = new GlassButton();
@@ -84,7 +86,9 @@ namespace AbletonManager
             };
             State(_smooth);
 
-            _compat.Checked = _s.DisableGlass;
+            // Said the positive way round: the switch is off when the glass is — as the other
+            // two switches of a fresh install are.
+            _compat.Checked = !_s.DisableGlass;
             _compat.CheckedChanged += delegate { ToggleCompat(); };
             State(_compat);
 
@@ -165,6 +169,9 @@ namespace AbletonManager
             };
             _body.Controls.Add(_openCache);
 
+            Link(_github, "GitHub", "https://github.com/rueblose/alive");
+            Link(_telegram, "Telegram", "https://t.me/RueBlose");
+
             // One width for every button in the right column: three different widths gave three
             // different left edges in one column, and the right column fell apart.
             GlassButton[] rightButtons = new GlassButton[] { _openCache, _rescan, _restart };
@@ -174,6 +181,19 @@ namespace AbletonManager
 
             DescribeInventoryAsync();
             RefreshInstallsAsync();
+        }
+
+        /// <summary>A button that opens a page in the browser.</summary>
+        void Link(GlassButton b, string text, string url)
+        {
+            b.Text = text;
+            b.FitToText(16);
+            b.Click += delegate
+            {
+                try { Process.Start(new ProcessStartInfo(url) { UseShellExecute = true }); }
+                catch (Exception ex) { Diag.Line("settings: open " + url + ": " + ex.Message); }
+            };
+            _body.Controls.Add(b);
         }
 
         void Toggle(PillToggle t, bool on, EventHandler changed)
@@ -214,7 +234,7 @@ namespace AbletonManager
         /// </summary>
         void ToggleCompat()
         {
-            _s.DisableGlass = _compat.Checked;
+            _s.DisableGlass = !_compat.Checked;
             _s.Save();
 
             // The offer to restart lives as a line in this same window: an accidentally clicked
@@ -451,8 +471,16 @@ namespace AbletonManager
 
             Line(x, ref y, w, h, _autoUpdate, "Check updates once a day", "");
 
+            // Two buttons in one row: the caption says what both are about, each button where.
+            Line(x, ref y, w, h, _telegram, "Source code and news", "");
+            Row links = _rows[_rows.Count - 1];
+            _github.SetBounds(_telegram.Left - Sc(10) - _github.Width, _telegram.Top, _github.Width, _telegram.Height);
+            links.Rect.Width = Math.Max(0, _github.Left - x - Sc(16));
+
+            // Not "temporary files": the tags, the notes and the history of the work live here
+            // too, and are nowhere else (see README, "Data folder").
             Line(x, ref y, w, h, _openCache,
-                 "Temporary files",
+                 "Data folder",
                  Settings.Dir);
 
             Separator(x, ref y, w);
@@ -461,8 +489,8 @@ namespace AbletonManager
                  "Smooth scrolling",
                  "");
             Line(x, ref y, w, h, _compat,
-                 "Disable transparency (Win10 Compatible)",
-                 "Turns off glass effect if window dragging lags. Applies after restart.");
+                 "Transparency",
+                 "Glass behind the windows. On Windows 10 it can make dragging a window lag. Applies after restart.");
 
             // A button with no caption: the line above has already said a restart is needed,
             // and repeating it as a heading with an explanation makes three statements of one
@@ -531,7 +559,7 @@ namespace AbletonManager
         /// threefold, and a frame jumping about from that reads as a different window rather
         /// than as different content. Whatever does not fit scrolls inside the panel.
         /// </summary>
-        int WindowH { get { return Sc(760); } }
+        int WindowH { get { return Sc(915); } }      // measured: 914 at 125% type on a 96-dpi layout, with the row of links
 
         /// <summary>Fit the window height to the content, but no taller than WindowH.</summary>
         void FitHeight(int need)
