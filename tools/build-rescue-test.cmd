@@ -45,9 +45,12 @@ if errorlevel 1 goto fail
 rem DialogShow opens Settings / Options the same way, for the same reason. It carries the
 rem app's manifest: without dpiAware Windows stretches the window as a bitmap on a scaled
 rem screen, the shot shows the unscaled layout, and clicks land beside the controls.
+rem Program.cs and nebula go in here after all (/main picks the Main): the main window's Stat
+rem button is attached there, and without it a shot of the main window lacks it.
 "%CSC%" /nologo /target:winexe /platform:anycpu /codepage:65001 /main:AliveTools.DialogShow ^
   /win32manifest:"%ROOT%\src\app.manifest" ^
-  /out:"%OUT%\DialogShow.exe" %REFS% @"%LIST%" "%ROOT%\tools\DialogShow.cs"
+  /out:"%OUT%\DialogShow.exe" %REFS% @"%LIST%" "%ROOT%\src\Program.cs" "%ROOT%\nebula\*.cs" ^
+  "%ROOT%\tools\DialogShow.cs"
 if errorlevel 1 goto fail
 
 rem Shot itself lives with the Reel prototype - same job, no reason for a second copy.

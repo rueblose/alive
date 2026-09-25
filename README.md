@@ -77,6 +77,8 @@ can pin it to one specific install, or switch to walking your VST2/VST3 folders 
 
 ### Samples
 
+<img src="docs/img/samples.png" alt="Sample library: the folder tree and one pack's usage">
+
 A tab of its own (`Ctrl 4`) for the sample library: which packs and folders your sets actually use,
 and which have sat untouched since the day they were downloaded.
 
@@ -87,6 +89,8 @@ and cached, so the tab opens at once even on a few hundred thousand files.
 **Usage is counted by projects, not by files.** Ten versions of one track are one use. A sample that
 Collect All copied into a project still counts for the pack it came from — the copy is recognised by
 its name and size.
+
+<img src="docs/img/samples-never.png" alt="Never used: the heaviest folders nothing was ever taken from">
 
 **Filters** here are four lenses: the folder tree; *Never used* — the biggest folders nothing was ever
 taken from, heaviest first, with the day each landed on the disk; *Most used*, your working sounds; and

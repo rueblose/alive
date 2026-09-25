@@ -85,6 +85,9 @@ namespace AliveTools
                 // menu of an inactive program closes the moment it opens. The tab and the lens
                 // are set the way the menu would set them.
                 MainForm m = new MainForm();
+                // The Stat button is not MainForm's own — Program attaches it.
+                typeof(Alive.Program).GetMethod("AttachStat", BindingFlags.NonPublic | BindingFlags.Static)
+                    .Invoke(null, new object[] { m });
                 string lens = args.Length > 1 ? args[1] : "";
                 System.Windows.Forms.Timer t = new System.Windows.Forms.Timer();
                 t.Interval = 2500;
