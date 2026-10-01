@@ -81,7 +81,7 @@ namespace AbletonManager
         public bool GroupByFolder = true;
 
         /// <summary>How loud a sample previews on the Samples tab, 0..1 — the slider under the
-        /// sample's panel. Its own, apart from the render player's: a sample is heard in passing,
+        /// sample's wave. Its own, apart from the render player's: a sample is heard in passing,
         /// a render is listened to.</summary>
         public float PreviewVolume = 0.8f;
 

@@ -12,6 +12,7 @@ namespace AliveTools
     /// sitting at the machine. The same trick as RescueShow, only for several windows at once:
     ///
     ///     Shot.exe DialogShow.exe out.png settings
+    ///     Shot.exe DialogShow.exe out.png settings -opaque   (the README's shot)
     ///     Shot.exe DialogShow.exe out.png settings-folders
     ///     Shot.exe DialogShow.exe out.png export  "set.als"
     ///     Shot.exe DialogShow.exe out.png preview "set.als"
@@ -34,7 +35,10 @@ namespace AliveTools
             CultureInfo.DefaultThreadCurrentUICulture = en;
             Thread.CurrentThread.CurrentUICulture = en;
 
-            if (Settings.Load().DisableGlass) Glass.Enabled = false;
+            // "-opaque" — no glass whatever this machine's settings say, and the settings dialog
+            // shows its switch off, as a fresh install has it: the README's shot is taken so.
+            bool opaque = Array.IndexOf(args, "-opaque") >= 0;
+            if (Settings.Load().DisableGlass || opaque) Glass.Enabled = false;
 
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
@@ -124,6 +128,7 @@ namespace AliveTools
                 // "settings-folders" — the same dialog, but already in folder-scanning mode: it
                 // has four more rows there, and that is exactly where the layout breaks.
                 if (which == "settings-folders") st.PluginsFromFolders = true;
+                if (opaque) st.DisableGlass = true;
                 f = new SettingsDialog(st);
             }
 
