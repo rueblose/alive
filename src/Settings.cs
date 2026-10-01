@@ -170,7 +170,28 @@ namespace AbletonManager
 
         static string FilePath { get { return Path.Combine(Dir, "settings.cfg"); } }
 
+        /// <summary>
+        /// Write one of the program's files whole or not at all: into a temporary file beside
+        /// it, then swapped in, with the previous version kept as .bak. Written straight over, a
+        /// computer switched off halfway left a stump in place of the file — and nothing can
+        /// rebuild notes.cfg (see README, "Data folder").
+        /// </summary>
+        internal static void WriteFile(string path, string text)
+        {
+            string tmp = path + ".tmp";
+            File.WriteAllText(tmp, text, new UTF8Encoding(false));
+            if (File.Exists(path)) File.Replace(tmp, path, path + ".bak");
+            else File.Move(tmp, path);
+        }
+
         public bool IsFirstRun { get { return Roots.Count == 0; } }
+
+        /// <summary>
+        /// settings.cfg is there but would not be read (another program held it). What this
+        /// copy holds is then defaults, and saving them would put them in place of everything
+        /// on disk — so nothing is saved until the next start reads the file.
+        /// </summary>
+        bool _unread;
 
         public static Settings Load()
         {
@@ -223,7 +244,7 @@ namespace AbletonManager
                     else if (key == "seenupdate") s.SeenUpdate = val;
                 }
             }
-            catch { }
+            catch (Exception ex) { s._unread = true; Diag.Fail("settings.cfg: read", ex); }
             Theme.SmoothScroll = s.SmoothScroll;
             return s;
         }
@@ -251,6 +272,7 @@ namespace AbletonManager
         public void ReloadRoots()
         {
             Settings s = Load();
+            if (s._unread) return;          // keep the roots we have rather than none
             Roots.Clear();
             Roots.AddRange(s.Roots);
             DisabledRoots.Clear();
@@ -259,6 +281,7 @@ namespace AbletonManager
 
         public void Save()
         {
+            if (_unread) return;
             try
             {
                 if (!Directory.Exists(Dir)) Directory.CreateDirectory(Dir);
@@ -294,7 +317,7 @@ namespace AbletonManager
                 sb.Append("checkupdates=").AppendLine(CheckUpdates ? "1" : "0");
                 if (LastUpdateCheck.Length > 0) sb.Append("lastupdatecheck=").AppendLine(LastUpdateCheck);
                 if (SeenUpdate.Length > 0) sb.Append("seenupdate=").AppendLine(SeenUpdate);
-                File.WriteAllText(FilePath, sb.ToString(), new UTF8Encoding(false));
+                WriteFile(FilePath, sb.ToString());
             }
             catch { }
         }

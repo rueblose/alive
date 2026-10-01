@@ -602,18 +602,29 @@ namespace AbletonManager
         public static Waveform Read(string path, int buckets)
         {
             if (buckets < 16) buckets = 16;
-
-            if (AiffReader.IsAiffName(path))
+            try
             {
-                Waveform a = AiffReader.Envelope(path, buckets);
-                if (a.Ok) return a;
+                if (AiffReader.IsAiffName(path))
+                {
+                    Waveform a = AiffReader.Envelope(path, buckets);
+                    if (a.Ok) return a;
+                }
+
+                if (!path.EndsWith(".wav", StringComparison.OrdinalIgnoreCase))
+                    return MediaDecoder.Read(path, buckets);
+
+                Waveform riff = ReadRiff(path, buckets);
+                return riff.Ok ? riff : MediaDecoder.Read(path, buckets);
             }
-
-            if (!path.EndsWith(".wav", StringComparison.OrdinalIgnoreCase))
-                return MediaDecoder.Read(path, buckets);
-
-            Waveform riff = ReadRiff(path, buckets);
-            return riff.Ok ? riff : MediaDecoder.Read(path, buckets);
+            catch (Exception ex)
+            {
+                // Asked on pool threads (the player, a sample's panel), where an exception ends
+                // the whole program — and a drive pulled out mid-read is exactly that.
+                Diag.Line("wave: " + path + ": " + ex.Message);
+                Waveform w = new Waveform();
+                w.Note = "cannot read";
+                return w;
+            }
         }
 
         /// <summary>

@@ -25,13 +25,14 @@ namespace AbletonManager
         public event Action<SetEntry> RevealRequested;
         public event Action<SetEntry> DetailsRequested; // right click → go to the set on the Sets tab
         public event Action<SetEntry> RescueRequested;  // right click → the rescue helper
+        public event Action<SetEntry> ExportRequested;  // right click → collect the project
         public event Action<SetEntry> NotesRequested;   // a click on the tags glyph — the tag editor
         public event Action NewProjectRequested;       // the first card in Recent
 
         public SetFilter SetFilter;
 
-        /// <summary>The filter from the shared search field — by set name and folder
-        /// name.</summary>
+        /// <summary>The filter from the shared search field — by the same rule as the Sets
+        /// table, see SetFilter.MatchesSearch.</summary>
         public string Filter = "";
 
         /// <summary>One tile per folder rather than per version of a set. See the
@@ -511,6 +512,7 @@ namespace AbletonManager
             get { return _selected; }
             set
             {
+                if (value != null && !HasTile(value)) value = null;
                 if (_selected == value) return;
                 _selected = value;
                 _newSelected = false;
@@ -562,6 +564,18 @@ namespace AbletonManager
             }
             if (best >= 0) SelectTile(best);
             return true;
+        }
+
+        /// <summary>
+        /// Only a set with a tile of its own can be selected. A selection the search or a
+        /// filter has hidden is invisible, yet it is still what Enter opens in Live (see
+        /// MainForm.OnKeyDown) — the table gives its selection up with every rebuild, and the
+        /// tiles kept theirs.
+        /// </summary>
+        bool HasTile(SetEntry s)
+        {
+            foreach (Tile t in _tiles) if (ReferenceEquals(t.Set, s)) return true;
+            return false;
         }
 
         void SelectTile(int i)
@@ -625,15 +639,7 @@ namespace AbletonManager
             if (SetFilter != null && !SetFilter.Matches(s)) return false;
 
             string q = (Filter ?? "").Trim();
-            if (q.Length == 0) return true;
-            if (s.Name.IndexOf(q, StringComparison.CurrentCultureIgnoreCase) >= 0) return true;
-            if (s.Place.IndexOf(q, StringComparison.CurrentCultureIgnoreCase) >= 0) return true;
-
-            // A render is the same "project name" for somebody searching by sound rather than
-            // by a set's name. The same selection as the preview uses (without Samples).
-            foreach (string r in s.RenderNames)
-                if (r.IndexOf(q, StringComparison.CurrentCultureIgnoreCase) >= 0) return true;
-            return false;
+            return q.Length == 0 || SetFilter.MatchesSearch(s, q);
         }
 
         List<SetEntry> Pinned()
@@ -719,6 +725,9 @@ namespace AbletonManager
 
             _contentHeight = y;
             ClampScroll();
+
+            // The search or a filter took the selected tile away — see HasTile.
+            if (_selected != null && !HasTile(_selected)) Selected = null;
         }
 
         void BuildLayout(bool animate)
@@ -1290,6 +1299,11 @@ namespace AbletonManager
             rescue.Click += delegate { if (RescueRequested != null) RescueRequested(s); };
             m.Items.Add(rescue);
 
+            ToolStripMenuItem export = new ToolStripMenuItem("Export…");
+            export.ShortcutKeyDisplayString = "Ctrl+E";
+            export.Click += delegate { if (ExportRequested != null) ExportRequested(s); };
+            m.Items.Add(export);
+
             ToolStripMenuItem reveal = new ToolStripMenuItem("Show in Explorer");
             reveal.ShortcutKeyDisplayString = "Shift+Enter";
             reveal.Click += delegate { if (RevealRequested != null) RevealRequested(s); };
@@ -1615,8 +1629,9 @@ namespace AbletonManager
             int hy = (int)Math.Round(h.AnimY) - scroll;
             Rectangle r = new Rectangle(h.Bounds.X, hy, h.Bounds.Width, h.Bounds.Height);
             if (r.Bottom < 0 || r.Top > Height) return;
-            Color textC = h.Alpha < 0.99f ? Color.FromArgb((int)Math.Round(Theme.Text.A * h.Alpha), Theme.Text) : Theme.Text;
-            Color noteC = h.Alpha < 0.99f ? Color.FromArgb((int)Math.Round(Theme.TextDim.A * h.Alpha), Theme.TextDim) : Theme.TextDim;
+            // TextRenderer ignores alpha, so fading text is mixed with the background instead.
+            Color textC = h.Alpha < 0.99f ? Theme.Interpolate(Theme.Bg, Theme.Text, h.Alpha) : Theme.Text;
+            Color noteC = h.Alpha < 0.99f ? Theme.Interpolate(Theme.Bg, Theme.TextDim, h.Alpha) : Theme.TextDim;
             if (h.Text.Length > 0)
                 Chrome.DrawText(g, h.Text, Theme.FHead, r, textC,
                                 Chrome.Left | TextFormatFlags.NoClipping);
@@ -1715,7 +1730,9 @@ namespace AbletonManager
             }
 
             Color ink = hoverFactor > 0.01f ? Theme.Interpolate(Theme.TextDim, Color.White, hoverFactor) : Theme.TextDim;
-            if (entrance < 1.0f) ink = Color.FromArgb((int)Math.Round(ink.A * entrance), ink);
+            // Mixed rather than made transparent: the caption below is GDI text, which ignores
+            // alpha. The card has no fill, so what lies under it is the window background.
+            if (entrance < 1.0f) ink = Theme.Interpolate(Theme.Bg, ink, entrance);
 
             string label = "New Live Set";
             int discDiam = Sc(44);
@@ -1771,6 +1788,11 @@ namespace AbletonManager
 
             PaintCard(g, b, cardR, alpha);
 
+            // What the words of the tile lie on — see PaintGlassSurface: an opaque window gets a
+            // solid card from the first frame. GDI text ignores alpha, so fading text is mixed
+            // with this instead.
+            Color under = Theme.IsBlurred(this) ? Theme.Bg : Theme.Surface;
+
             // Hover lights up the contour: on glass the fill barely changes, and without this
             // the card did not respond to the cursor at all.
             if (!selected && hoverFactor > 0.01f)
@@ -1803,13 +1825,13 @@ namespace AbletonManager
             if (!known)
             {
                 Want(t.Set.Path);
-                Color readC = entrance < 0.99f ? Color.FromArgb((int)Math.Round(Theme.TextDim.A * entrance), Theme.TextDim) : Theme.TextDim;
+                Color readC = entrance < 0.99f ? Theme.Interpolate(under, Theme.TextDim, entrance) : Theme.TextDim;
                 Chrome.DrawText(g, "reading…", Theme.FSmall, inner,
                                 readC, Chrome.Center);
             }
             else if (art == null)
             {
-                Color emptyText = Color.FromArgb((int)Math.Round(0xFF * entrance), 0x80, 0x80, 0x84);
+                Color emptyText = Theme.Interpolate(under, Color.FromArgb(0x80, 0x80, 0x84), entrance);
                 Chrome.DrawText(g, "no arrangement", Theme.FSmall, inner,
                                 emptyText, Chrome.Center);
             }
@@ -1849,12 +1871,12 @@ namespace AbletonManager
             // of the empty bottom.
             int textY = thumb.Bottom + Sc(4);
             Rectangle nameR = new Rectangle(b.X + Sc(16), textY, b.Width - Sc(32), Sc(26));
-            Color nameC = entrance < 0.99f ? Color.FromArgb((int)Math.Round(Theme.Text.A * entrance), Theme.Text) : Theme.Text;
+            Color nameC = entrance < 0.99f ? Theme.Interpolate(under, Theme.Text, entrance) : Theme.Text;
             Chrome.DrawText(g, t.Set.Name, Theme.FTitle, nameR, nameC,
                             Chrome.Left | TextFormatFlags.NoClipping);
 
             Rectangle dateR = new Rectangle(b.X + Sc(16), nameR.Bottom + Sc(4), b.Width - Sc(32), Sc(22));
-            Color dateC = entrance < 0.99f ? Color.FromArgb((int)Math.Round(Theme.TextDim.A * entrance), Theme.TextDim) : Theme.TextDim;
+            Color dateC = entrance < 0.99f ? Theme.Interpolate(under, Theme.TextDim, entrance) : Theme.TextDim;
             Chrome.DrawText(g, t.Subtitle ?? "", Theme.FLabel, dateR, dateC,
                             Chrome.Left | TextFormatFlags.NoClipping);
 

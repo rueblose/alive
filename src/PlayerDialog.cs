@@ -157,7 +157,7 @@ namespace AbletonManager
             _pin.Click += delegate { PinSelected(); };
             Controls.Add(_pin);
 
-            _reveal.Text = "Show in folder";
+            _reveal.Text = "Show in Explorer";
             _reveal.FitToText(18);
             _reveal.Click += delegate { Reveal(SelectedFile()); };
             Controls.Add(_reveal);
@@ -551,7 +551,7 @@ namespace AbletonManager
             pin.Click += delegate { Pin(f); };
             m.Items.Add(pin);
 
-            ToolStripMenuItem show = new ToolStripMenuItem("Show in folder");
+            ToolStripMenuItem show = new ToolStripMenuItem("Show in Explorer");
             show.Click += delegate { Reveal(f); };
             m.Items.Add(show);
 

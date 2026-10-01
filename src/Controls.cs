@@ -1745,44 +1745,21 @@ namespace AbletonManager
     }
 
     /// <summary>
-    /// A calendar under a date field. Inside is the native MonthCalendar: the month, the year
-    /// and choosing a day are already written for us, and writing our own for the sake of dark
-    /// colouring would be pointless.
-    ///
-    /// One subtlety: with visual styles enabled MonthCalendar is drawn by the Windows theme and
-    /// silently ignores its own BackColor/TitleBackColor — the calendar stays white.
-    /// SetWindowTheme with an empty name strips the theme off it, after which the colours start
-    /// working. It can only be called on an existing window, hence — after Show.
+    /// A calendar under a date field, drawn by hand: the native MonthCalendar cannot be made
+    /// to match the rest of the interface (the theme has to be stripped off it, the header
+    /// and the arrows stay system ones).
     /// </summary>
     public static class CalendarPopup
     {
-        [DllImport("uxtheme.dll", CharSet = CharSet.Unicode)]
-        static extern int SetWindowTheme(IntPtr hWnd, string appName, string partList);
-
         public static void Show(Control anchor, DateTime? current, Action<DateTime> picked)
         {
-            MonthCalendar cal = new MonthCalendar();
-            cal.MaxSelectionCount = 1;
-            cal.ShowTodayCircle = false;
+            MonthGrid grid = new MonthGrid(current ?? DateTime.Today);
 
-            // We strip the theme BEFORE showing: without it the calendar measures itself
-            // differently, and doing it after Show leaves the dropdown at its former size,
-            // cutting off the calendar's month header and its last week. Touching Handle
-            // creates the window by itself — SetWindowTheme will not work without it.
-            try { SetWindowTheme(cal.Handle, "", ""); } catch { }
-            cal.BackColor = Theme.SolidSurface;
-            cal.ForeColor = Theme.Text;
-            cal.TitleBackColor = Theme.Bg;
-            cal.TitleForeColor = Theme.Text;
-            cal.TrailingForeColor = Theme.TextDim;
-            if (current.HasValue) cal.SetDate(current.Value.Date);
-            cal.Size = cal.SingleMonthSize;
-
-            ToolStripControlHost slot = new ToolStripControlHost(cal);
+            ToolStripControlHost slot = new ToolStripControlHost(grid);
             slot.Margin = Padding.Empty;
             slot.Padding = Padding.Empty;
             slot.AutoSize = false;
-            slot.Size = cal.Size;
+            slot.Size = grid.Size;
 
             ToolStripDropDown host = new ToolStripDropDown();
             host.Padding = Padding.Empty;
@@ -1791,16 +1768,167 @@ namespace AbletonManager
             host.BackColor = Theme.SolidSurface;
             host.Items.Add(slot);
 
-            cal.DateSelected += delegate (object s, DateRangeEventArgs e)
-            {
-                picked(e.Start.Date);
-                host.Close();
-            };
+            grid.Picked += delegate (DateTime d) { picked(d); host.Close(); };
             // The dropdown must not be torn down inside its own Closed — at that moment it is
             // still finishing with its message. We remove it on the next turn of the queue.
             host.Closed += delegate { anchor.BeginInvoke((Action)delegate { host.Dispose(); }); };
 
             host.Show(anchor, 0, anchor.Height + 4);
+        }
+
+        class MonthGrid : Control
+        {
+            public event Action<DateTime> Picked;
+
+            DateTime _month;          // the first day of the month on show
+            readonly DateTime? _sel;
+            int _hot = -1;            // 0 prev, 1 next, 2 today, 100+i a day cell
+            // Forced English whatever the system language is; the week still starts on Monday.
+            readonly System.Globalization.CultureInfo _ci = System.Globalization.CultureInfo.GetCultureInfo("en-US");
+            const DayOfWeek FirstDay = DayOfWeek.Monday;
+
+            int Cell { get { return (int)Math.Round(34 * (DeviceDpi / 96f)); } }
+            int Head { get { return (int)Math.Round(44 * (DeviceDpi / 96f)); } }
+            int Dow { get { return (int)Math.Round(26 * (DeviceDpi / 96f)); } }
+            int Foot { get { return (int)Math.Round(40 * (DeviceDpi / 96f)); } }
+            int Pad { get { return (int)Math.Round(10 * (DeviceDpi / 96f)); } }
+
+            public MonthGrid(DateTime start)
+            {
+                SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer |
+                         ControlStyles.UserPaint | ControlStyles.ResizeRedraw, true);
+                _month = new DateTime(start.Year, start.Month, 1);
+                _sel = start.Date;
+                BackColor = Theme.SolidSurface;
+                Font = Theme.FBody;
+                Size = new Size(Cell * 7 + Pad * 2, Head + Dow + Cell * 6 + Foot);
+            }
+
+            Rectangle PrevR { get { return new Rectangle(Pad, (Head - Cell) / 2, Cell, Cell); } }
+            Rectangle NextR { get { return new Rectangle(Width - Pad - Cell, (Head - Cell) / 2, Cell, Cell); } }
+            Rectangle TodayR { get { return new Rectangle(Pad, Height - Foot, Width - Pad * 2, Foot - Pad / 2); } }
+
+            DateTime FirstShown()
+            {
+                int lead = ((int)_month.DayOfWeek - (int)FirstDay + 7) % 7;
+                return _month.AddDays(-lead);
+            }
+
+            Rectangle CellR(int i)
+            {
+                return new Rectangle(Pad + (i % 7) * Cell, Head + Dow + (i / 7) * Cell, Cell, Cell);
+            }
+
+            int HitTest(Point p)
+            {
+                if (PrevR.Contains(p)) return 0;
+                if (NextR.Contains(p)) return 1;
+                if (TodayR.Contains(p)) return 2;
+                for (int i = 0; i < 42; i++) if (CellR(i).Contains(p)) return 100 + i;
+                return -1;
+            }
+
+            protected override void OnMouseMove(MouseEventArgs e)
+            {
+                int h = HitTest(e.Location);
+                if (h != _hot) { _hot = h; Invalidate(); }
+                base.OnMouseMove(e);
+            }
+
+            protected override void OnMouseLeave(EventArgs e)
+            {
+                _hot = -1; Invalidate();
+                base.OnMouseLeave(e);
+            }
+
+            protected override void OnMouseWheel(MouseEventArgs e)
+            {
+                _month = _month.AddMonths(e.Delta > 0 ? -1 : 1);
+                Invalidate();
+                base.OnMouseWheel(e);
+            }
+
+            protected override void OnMouseUp(MouseEventArgs e)
+            {
+                if (e.Button != MouseButtons.Left) return;
+                int h = HitTest(e.Location);
+                if (h == 0) _month = _month.AddMonths(-1);
+                else if (h == 1) _month = _month.AddMonths(1);
+                else if (h == 2) { if (Picked != null) Picked(DateTime.Today); return; }
+                else if (h >= 100)
+                {
+                    if (Picked != null) Picked(FirstShown().AddDays(h - 100));
+                    return;
+                }
+                Invalidate();
+                base.OnMouseUp(e);
+            }
+
+            protected override void OnPaint(PaintEventArgs e)
+            {
+                Graphics g = e.Graphics;
+                g.Clear(Theme.SolidSurface);
+                Theme.Smooth(g);
+
+                string title = _ci.TextInfo.ToTitleCase(_month.ToString("MMMM yyyy", _ci));
+                Chrome.DrawText(g, title, Theme.FTitle, new Rectangle(0, 0, Width, Head),
+                                Theme.Text, Chrome.Center);
+                Arrow(g, PrevR, true, _hot == 0);
+                Arrow(g, NextR, false, _hot == 1);
+
+                DayOfWeek first = FirstDay;
+                for (int i = 0; i < 7; i++)
+                {
+                    string n = _ci.DateTimeFormat.GetShortestDayName((DayOfWeek)(((int)first + i) % 7));
+                    Chrome.DrawText(g, n, Theme.FBadge,
+                                    new Rectangle(Pad + i * Cell, Head, Cell, Dow),
+                                    Theme.TextDim, Chrome.Center);
+                }
+
+                DateTime d0 = FirstShown();
+                for (int i = 0; i < 42; i++)
+                {
+                    DateTime d = d0.AddDays(i);
+                    Rectangle r = CellR(i);
+                    r.Inflate(-2, -2);
+                    bool sel = _sel.HasValue && d == _sel.Value;
+                    bool today = d == DateTime.Today;
+                    bool other = d.Month != _month.Month;
+                    Color fg = other ? Theme.TextDim : Theme.Text;
+
+                    if (sel)
+                    {
+                        Theme.FillRound(g, r, 8f, Theme.Light);
+                        fg = Theme.OnLight;
+                    }
+                    else if (_hot == 100 + i)
+                        Theme.FillRound(g, r, 8f, Theme.SolidPressed);
+                    if (today && !sel)
+                        Theme.DrawRound(g, r, 8f, Theme.TextDim, 1f);
+
+                    Chrome.DrawText(g, d.Day.ToString(), Theme.FSmall, r, fg, Chrome.Center);
+                }
+
+                Rectangle tr = TodayR;
+                if (_hot == 2) Theme.FillRound(g, tr, 8f, Theme.SolidPressed);
+                Chrome.DrawText(g, "Today: " + DateTime.Today.ToString("yyyy-MM-dd"), Theme.FSmall, tr,
+                                Theme.Text, Chrome.Center);
+            }
+
+            static void Arrow(Graphics g, Rectangle r, bool left, bool hot)
+            {
+                if (hot) Theme.FillRound(g, r, 8f, Theme.SolidPressed);
+                float cx = r.X + r.Width / 2f, cy = r.Y + r.Height / 2f, s = r.Width / 8f;
+                float dx = left ? s : -s;
+                using (Pen p = new Pen(Theme.Text, 1.6f))
+                {
+                    p.StartCap = p.EndCap = LineCap.Round;
+                    p.LineJoin = LineJoin.Round;
+                    g.DrawLines(p, new PointF[] {
+                        new PointF(cx + dx, cy - s * 1.4f), new PointF(cx - dx, cy),
+                        new PointF(cx + dx, cy + s * 1.4f) });
+                }
+            }
         }
     }
 
@@ -1809,13 +1937,20 @@ namespace AbletonManager
         public static ContextMenuStrip Create()
         {
             ContextMenuStrip m = new ContextMenuStrip();
-            m.Renderer = new DarkRenderer();
+            DarkRenderer renderer = new DarkRenderer();
+            m.Renderer = renderer;
             m.BackColor = Theme.SolidSurface;
             m.ForeColor = Theme.Text;
             m.Font = Theme.FButton;
             m.ShowImageMargin = false;
             m.DropShadowEnabled = true;
-            m.Opening += delegate { RoundCorners(m); };
+            m.Opening += delegate
+            {
+                // Windows 11 rounds the menu itself, smoothly, hairline included; the region
+                // is left for Windows 10 — its corners come out stepped.
+                renderer.SystemCorners = Glass.RoundPopup(m.Handle, Theme.Hairline);
+                if (!renderer.SystemCorners) RoundCorners(m);
+            };
             return m;
         }
 
@@ -1856,6 +1991,9 @@ namespace AbletonManager
         {
             public DarkRenderer() : base(new DarkColors()) { }
 
+            /// <summary>DWM rounds this menu and draws its outline (see Glass.RoundPopup).</summary>
+            public bool SystemCorners;
+
             /// <summary>
             /// WinForms draws an item's shortcut with the same call as its name — we tell them
             /// apart by the text and shade it, so that the right column does not argue with the
@@ -1878,6 +2016,7 @@ namespace AbletonManager
             /// </summary>
             protected override void OnRenderToolStripBorder(ToolStripRenderEventArgs e)
             {
+                if (SystemCorners) return;
                 Graphics g = e.Graphics;
                 SmoothingMode old = g.SmoothingMode;
                 g.SmoothingMode = SmoothingMode.AntiAlias;

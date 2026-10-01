@@ -30,6 +30,13 @@ namespace AbletonManager
             new Dictionary<string, Entry>(StringComparer.OrdinalIgnoreCase);
         static bool _loaded;
 
+        /// <summary>
+        /// notes.cfg is there but would not be read (another program held it). Saving then
+        /// would put the few entries made since in place of every tag and note on disk, so
+        /// nothing is saved until the next start reads the file.
+        /// </summary>
+        static bool _unread;
+
         static string FilePath { get { return Path.Combine(Settings.Dir, "notes.cfg"); } }
 
         /// <summary>Has the tag set grown — time for the window to rebuild its list.</summary>
@@ -74,7 +81,7 @@ namespace AbletonManager
                     else if (key == "note") e.Note = Unescape(val);
                 }
             }
-            catch { }
+            catch (Exception ex) { _unread = true; Diag.Fail("notes.cfg: read", ex); }
         }
 
         static Entry Slot(string dir)
@@ -93,6 +100,7 @@ namespace AbletonManager
 
         static void Save()
         {
+            if (_unread) return;
             try
             {
                 if (!Directory.Exists(Settings.Dir)) Directory.CreateDirectory(Settings.Dir);
@@ -108,7 +116,7 @@ namespace AbletonManager
                         sb.Append("note=").Append(kv.Key).Append('\t')
                           .AppendLine(Escape(kv.Value.Note));
                 }
-                File.WriteAllText(FilePath, sb.ToString(), new UTF8Encoding(false));
+                Settings.WriteFile(FilePath, sb.ToString());
             }
             catch { }
         }

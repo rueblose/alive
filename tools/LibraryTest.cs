@@ -1,11 +1,15 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Drawing;
+using System.Globalization;
 using System.IO;
 using System.IO.Compression;
+using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading;
+using System.Windows.Forms;
 using AbletonManager;
 
 namespace AliveTools
@@ -22,6 +26,10 @@ namespace AliveTools
     ///     LibraryTest.exe sources    Live's Places and the From Live suggestions
     ///     LibraryTest.exe fit        names and paths cut to their cell
     ///     LibraryTest.exe copies     the same sample in several places
+    ///     LibraryTest.exe catalog    the scan, the search and the selection of the main window
+    ///     LibraryTest.exe data       the data folder's files survive a failed read and a crash mid-write
+    ///     LibraryTest.exe visual     what the interface draws: numbers, fades, counts
+    ///     LibraryTest.exe texts      what the words and small reactions say: pins, counts, dates
     ///     LibraryTest.exe real &lt;projects&gt; &lt;samples...&gt;   timings on a real library, no checks
     ///
     /// Runs with its own ALIVE_HOME under %TEMP% — the owner's settings and caches are never
@@ -53,10 +61,14 @@ namespace AliveTools
             if (cmd == "all" || cmd == "sources") Sources();
             if (cmd == "all" || cmd == "fit") Fit();
             if (cmd == "all" || cmd == "copies") CopiesCheck();
+            if (cmd == "all" || cmd == "catalog") Catalog();
+            if (cmd == "all" || cmd == "data") Data();
+            if (cmd == "all" || cmd == "visual") Visual();
+            if (cmd == "all" || cmd == "texts") Texts();
 
             if (_checks == 0)
             {
-                Console.WriteLine("usage: LibraryTest.exe all | index | walk | usage | aiff | sources | fit | copies | real <projects> <samples...>");
+                Console.WriteLine("usage: LibraryTest.exe all | index | walk | usage | aiff | sources | fit | copies | catalog | data | visual | texts | real <projects> <samples...>");
                 return 2;
             }
 
@@ -750,6 +762,553 @@ namespace AliveTools
             string k = RowListView.FitPath(pack, f, kw);
             Check(k.StartsWith(@"Samples\") && k.EndsWith("Vol 1") && k.Contains("…") && RowListView.TextW(k, f) <= kw,
                   "fit: a short first folder stays whole and the long name is cut, got '" + k + "'");
+        }
+
+        // ---------------------------------------------------------------- catalog
+
+        const BindingFlags Any = BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public;
+
+        static object Field(object o, string name) { return o.GetType().GetField(name, Any).GetValue(o); }
+
+        static object Call(object o, string name, params object[] args)
+        {
+            Type[] types = new Type[args.Length];
+            for (int i = 0; i < args.Length; i++) types[i] = args[i].GetType();
+            return o.GetType().GetMethod(name, Any, null, types, null).Invoke(o, args);
+        }
+
+        static void Catalog()
+        {
+            ScanKeepsItsRoots();
+            Views();
+            PanelPicture();
+
+            // A project folder whose name only begins like another one's is not inside it: "Song
+            // Project 2" is not in "Song Project".
+            Check(!SampleIndex.Inside(@"C:\Music\Song Project 2\Samples\x.wav", @"C:\Music\Song Project")
+                  && SampleIndex.Inside(@"C:\Music\Song Project\Samples\x.wav", @"C:\Music\Song Project"),
+                  "catalog: a folder that only begins like the project folder counts as inside it");
+        }
+
+        /// <summary>A folder dropped onto the window, or picked in Folders, while the scan walks
+        /// the roots: the walk under way must not break, and it finishes the roots it began
+        /// with. The progress report is the moment the window gets to run in the middle of the
+        /// walk, so that is where the folder is added here.</summary>
+        static void ScanKeepsItsRoots()
+        {
+            string root = Fresh("scan-roots");
+            string one = Path.Combine(root, "one"), two = Path.Combine(root, "two"), late = Path.Combine(root, "late");
+            // Sixteen: the walk reports progress once per sixteen sets found.
+            for (int i = 0; i < 16; i++) WriteAls(Path.Combine(one, "p" + i + @" Project\s" + i + ".als"));
+            WriteAls(Path.Combine(two, @"t Project\t.als"));
+            WriteAls(Path.Combine(late, @"l Project\l.als"));
+
+            Settings s = new Settings();
+            s.Roots.Add(one);
+            s.Roots.Add(two);
+            bool added = false;
+            string failure = null;
+            ProjectIndex idx = new ProjectIndex();
+            try
+            {
+                idx.Scan(s, delegate { if (!added) { added = true; s.Roots.Add(late); } }, CancellationToken.None);
+            }
+            catch (Exception ex) { failure = ex.GetType().Name + ": " + ex.Message; }
+
+            Check(added, "catalog: the walk reported no progress - the check proves nothing");
+            Check(failure == null, "catalog: a root added mid-scan broke the scan: " + failure);
+            Check(idx.Sets.Count == 17, "catalog: the scan must finish the roots it began with, got " + idx.Sets.Count + " sets");
+        }
+
+        /// <summary>
+        /// The main window, never shown, driven the way the search field and the keyboard drive
+        /// it. Its catalog comes from where OnShown takes it — the cache of the scan made here.
+        /// </summary>
+        static void Views()
+        {
+            string root = Fresh("views");
+            WriteAls(Path.Combine(root, @"Song Project\alpha.als"));
+            WriteAls(Path.Combine(root, @"Song Project 2\beta.als"));
+            Settings s = new Settings();
+            s.Roots.Add(root);
+            new ProjectIndex().Scan(s, null, CancellationToken.None);
+
+            MainForm m = new MainForm();
+            try
+            {
+                ProjectIndex idx = (ProjectIndex)Field(m, "_index");
+                idx.LoadFromCache();
+                SetEntry alpha = null;
+                foreach (SetEntry e in idx.Sets) if (e.Name == "alpha") alpha = e;
+                Check(alpha != null && idx.Sets.Count == 2, "catalog: setup - the two sets did not come back from the cache");
+                if (alpha == null) return;
+                ProjectMeta.Set(alpha.ProjectDir, new string[] { "riddim" }, "second drop still empty");
+
+                Segmented mode = (Segmented)Field(m, "_mode");
+                TextBox search = ((FieldBox)Field(m, "_search")).Box;
+                HomeView home = (HomeView)Field(m, "_home");
+                Call(m, "Refill");                      // the first fill OnShown does, on Home
+
+                // Home finds what Sets finds: a set by its tag, by its note.
+                search.Text = "riddim";
+                Check(home.VisibleSets().Count == 1 && home.VisibleSets()[0] == alpha,
+                      "catalog: Home does not find a set by its tag");
+                search.Text = "second drop";
+                Check(home.VisibleSets().Count == 1 && home.VisibleSets()[0] == alpha,
+                      "catalog: Home does not find a set by its note");
+
+                // A tile the search has hidden is no selection: Enter would open it in Live.
+                search.Text = "";
+                home.Select(alpha);
+                Check(Call(m, "SelectedSet") == alpha, "catalog: setup - the tile did not get selected");
+                search.Text = "beta";
+                Check(Call(m, "SelectedSet") == null,
+                      "catalog: Home keeps a selection the search has hidden - Enter opens it in Live");
+
+                // The set name in the mini player leads to the set even when the search hides it.
+                mode.SelectedIndex = 1;
+                search.Text = "beta";
+                Call(m, "NavigateToSet", alpha);
+                Check(search.Text.Length == 0 && Call(m, "SelectedSet") == alpha,
+                      "catalog: going to the playing set keeps the search that hides it");
+
+                // A scan asked for while another one runs is done afterwards, not dropped: that
+                // is how a folder added mid-scan gets scanned at all.
+                FieldInfo scanning = typeof(MainForm).GetField("_scanning", Any);
+                scanning.SetValue(m, true);
+                Call(m, "StartScan", true);
+                Check((bool)Field(m, "_rescanPending"), "catalog: a scan asked for during another one is dropped");
+                scanning.SetValue(m, false);
+            }
+            finally { m.Dispose(); }
+        }
+
+        /// <summary>
+        /// The panel draws a set's arrangement in the background. Pick another set while that
+        /// picture is on its way, and the late picture must not go up under the other set's
+        /// name. Nothing is timed here: the answer is marshalled back through BeginInvoke, so
+        /// it cannot land before the messages are pumped.
+        /// </summary>
+        static void PanelPicture()
+        {
+            DetailPanel p = new DetailPanel();
+            p.Size = new Size(332, 900);
+            IntPtr handle = p.Handle;                  // BeginInvoke needs one; the panel is never shown
+            SetEntry a = new SetEntry(), b = new SetEntry();
+            a.Name = "a"; a.Path = @"C:\nowhere\a Project\a.als";
+            b.Name = "b"; b.Path = @"C:\nowhere\b Project\b.als";
+            Arrangement ra = OneClip(a.Path, 0, 5), rb = OneClip(b.Path, 16, 20);
+
+            p.Show(a); p.OnArrangement(ra);
+            Paint(p);                                  // a's picture starts drawing...
+            p.Show(b); p.OnArrangement(rb);            // ...and b is picked before it arrives
+            Settle(p);
+            Paint(p);
+            Settle(p);
+
+            Bitmap shown = (Bitmap)Field(p, "_thumb");
+            Size size = (Size)Field(p, "_thumbSize");
+            RenderOptions o = new RenderOptions();
+            o.Dpi = p.DeviceDpi / 96f;
+            o.MaxLane = 10;
+            using (Bitmap want = ArrangementRender.ToBitmap(rb, size.Width, size.Height, o))
+                Check(shown != null && SamePixels(shown, want),
+                      "catalog: the panel shows the arrangement of the set picked before");
+            p.Dispose();
+        }
+
+        static Arrangement OneClip(string path, double start, int color)
+        {
+            Arrangement a = new Arrangement();
+            a.Path = path;
+            TrackLane t = new TrackLane();
+            ClipBlock c = new ClipBlock();
+            c.Start = start;
+            c.End = start + 16;
+            c.Color = color;
+            t.Clips.Add(c);
+            a.Tracks.Add(t);
+            a.ClipCount = 1;
+            a.End = 32;
+            return a;
+        }
+
+        static void Paint(Control c)
+        {
+            using (Bitmap bmp = new Bitmap(c.Width, c.Height))
+                c.DrawToBitmap(bmp, new Rectangle(0, 0, c.Width, c.Height));
+        }
+
+        /// <summary>Pump messages until the picture drawn in the background has come back — five
+        /// seconds at most.</summary>
+        static void Settle(DetailPanel p)
+        {
+            Stopwatch sw = Stopwatch.StartNew();
+            while ((bool)Field(p, "_thumbRendering") && sw.ElapsedMilliseconds < 5000)
+            {
+                Application.DoEvents();
+                Thread.Sleep(5);
+            }
+        }
+
+        static bool SamePixels(Bitmap x, Bitmap y)
+        {
+            if (x.Width != y.Width || x.Height != y.Height) return false;
+            for (int j = 0; j < x.Height; j++)
+                for (int i = 0; i < x.Width; i++)
+                    if (x.GetPixel(i, j).ToArgb() != y.GetPixel(i, j).ToArgb()) return false;
+            return true;
+        }
+
+        // ------------------------------------------------------------------- data
+
+        /// <summary>
+        /// The data folder's files are written whole or not at all, and a file that would not
+        /// be read at start is not written over: notes.cfg holds what nothing can rebuild.
+        /// "Would not be read" is played here by another handle holding the file shut.
+        /// </summary>
+        static void Data()
+        {
+            string notes = Path.Combine(Settings.Dir, "notes.cfg");
+            ForgetNotes();
+            ProjectMeta.Set(@"C:\data\A Project", new string[] { "first" }, "");
+            ProjectMeta.Set(@"C:\data\A Project", new string[] { "second" }, "");
+            Check(File.Exists(notes + ".bak") && File.ReadAllText(notes + ".bak").Contains("first")
+                  && File.ReadAllText(notes).Contains("second"),
+                  "data: a save does not keep the previous notes.cfg as notes.cfg.bak");
+            Check(!File.Exists(notes + ".tmp"), "data: a save leaves its temporary file behind");
+
+            // Another program holds notes.cfg while it is read at start; later the file is free
+            // and a tag gets saved. What was on disk must still be there.
+            File.WriteAllText(notes, "tags=C:\\data\\Old Project\tkeep\r\n", new UTF8Encoding(false));
+            ForgetNotes();
+            using (new FileStream(notes, FileMode.Open, FileAccess.ReadWrite, FileShare.None))
+                ProjectMeta.TagsOf(@"C:\data\Old Project");
+            ProjectMeta.Set(@"C:\data\New Project", new string[] { "new" }, "");
+            Check(File.ReadAllText(notes).Contains("keep"), "data: notes.cfg that would not be read got written over");
+            ForgetNotes();
+
+            // The same with the settings — the roots would be gone.
+            string cfg = Path.Combine(Settings.Dir, "settings.cfg");
+            File.WriteAllText(cfg, "root=C:\\data\\Projects\r\n", new UTF8Encoding(false));
+            Settings s;
+            using (new FileStream(cfg, FileMode.Open, FileAccess.ReadWrite, FileShare.None))
+                s = Settings.Load();
+            s.Save();
+            Check(File.ReadAllText(cfg).Contains(@"root=C:\data\Projects"),
+                  "data: settings.cfg that would not be read got written over");
+
+            // A read that fails halfway — a drive pulled out, here a locked range past the
+            // header — comes back as "no wave": the player asks on a pool thread, where an
+            // exception ends the program.
+            string aif = WriteAiff("halfway", 1, 16, 44100, new byte[256 * 1024], null);
+            using (FileStream holder = new FileStream(aif, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
+            {
+                long from = 160 * 1024;
+                holder.Lock(from, holder.Length - from);
+                string failure = null;
+                Waveform w = null;
+                try { w = WaveReader.Read(aif, 32); }
+                catch (Exception ex) { failure = ex.GetType().Name + ": " + ex.Message; }
+                holder.Unlock(from, holder.Length - from);
+                Check(failure == null && w != null && !w.Ok,
+                      "data: a read failing halfway throws out of WaveReader: " + failure);
+            }
+
+            InventoryAtOnce();
+        }
+
+        /// <summary>
+        /// Loads of the plugin inventory at once — the settings window makes two the moment it
+        /// opens, and a scan may be loading besides. They used to share one cache of file
+        /// checks, and a HashSet written from several threads can loop forever: measured, the
+        /// threads spinning and the window "Reading…" for good. The race is a matter of chance,
+        /// so it is given room: four loads a round, ten rounds — the shared cache hung by the
+        /// fifth round on every try. Needs Live's own database on this machine; without one
+        /// there is nothing to race over.
+        /// </summary>
+        static void InventoryAtOnce()
+        {
+            int alone = PluginInventory.Load(new Settings()).All.Count;
+            if (alone == 0)
+            {
+                Console.WriteLine("data: no plugin database on this machine - the loads-at-once check is skipped");
+                return;
+            }
+            for (int round = 0; round < 10; round++)
+            {
+                int[] got = new int[4];
+                Thread[] ts = new Thread[got.Length];
+                for (int i = 0; i < ts.Length; i++)
+                {
+                    int k = i;
+                    ts[k] = new Thread(delegate () { try { got[k] = PluginInventory.Load(new Settings()).All.Count; } catch { got[k] = -1; } });
+                    ts[k].IsBackground = true;      // a looping one must not keep the bench alive
+                    ts[k].Start();
+                }
+                bool done = true, right = true;
+                foreach (Thread t in ts) done &= t.Join(8000);
+                foreach (int g in got) right &= g == alone;
+                Check(done && right, "data: plugin loads at once " + (done ? "disagree with a lone load" : "never finished"));
+                if (!done || !right) return;
+            }
+        }
+
+        // ----------------------------------------------------------------- visual
+
+        static void Visual()
+        {
+            EnglishNumbers();
+            RowTextFades();
+            TileTextFades();
+            FilterCount();
+        }
+
+        /// <summary>The interface is English, and so are its numbers whatever the machine's
+        /// language: on a Russian Windows the preview said "128,5 BPM".</summary>
+        static void EnglishNumbers()
+        {
+            CultureInfo was = Thread.CurrentThread.CurrentCulture;
+            Thread.CurrentThread.CurrentCulture = new CultureInfo("ru-RU");
+            try
+            {
+                string tb = (string)typeof(OverviewPanel).GetMethod("Bytes", BindingFlags.Static | BindingFlags.NonPublic)
+                                     .Invoke(null, new object[] { 3L << 39 });          // 1.5 TB
+                Check(tb == "1.5 TB", "visual: the library size reads '" + tb + "' on a Russian machine");
+
+                SetEntry set = new SetEntry();
+                set.Name = "x";
+                set.Path = @"C:\nowhere\x Project\x.als";
+                Control host = new Control();
+                IntPtr handle = host.Handle;               // the loader answers through it
+                using (PreviewDialog d = new PreviewDialog(set, new ArrangementLoader(host)))
+                {
+                    Arrangement a = OneClip(set.Path, 0, 5);
+                    a.Tempo = 128.5;
+                    typeof(PreviewDialog).GetField("_arr", Any).SetValue(d, a);
+                    string sub = (string)Call(d, "Subtitle");
+                    Check(sub.StartsWith("128.5 BPM"), "visual: the preview's tempo reads '" + sub + "' on a Russian machine");
+                }
+                host.Dispose();
+            }
+            finally { Thread.CurrentThread.CurrentCulture = was; }
+        }
+
+        /// <summary>
+        /// Rows rising into place fade in, their text too. Text is drawn by GDI, which ignores a
+        /// colour's alpha: faded through it, the text stood at full strength from the first
+        /// frame while the rest of the row was still coming up.
+        /// </summary>
+        static void RowTextFades()
+        {
+            RowListView list = new RowListView();
+            list.Size = new Size(600, 200);
+            list.SetColumns(new Column("Name", 0));
+            RowData r = new RowData();
+            r.Cells = new string[] { "WWWWWWWWWW" };
+            r.Marks.Add(new CellMark(0, Theme.Red, "missing"));
+            list.SetRows(new List<RowData> { r }, true);
+            ((float[])Field(list, "_rowEntrance"))[0] = 0.3f;      // a third of the way in
+            int header = (int)typeof(RowListView).GetProperty("HeaderHeight", Any).GetValue(list, null);
+            int brightest = 0;
+            using (Bitmap bmp = new Bitmap(list.Width, list.Height))
+            {
+                list.DrawToBitmap(bmp, new Rectangle(0, 0, list.Width, list.Height));
+                for (int y = header + 1; y < bmp.Height; y++)
+                    for (int x = 0; x < bmp.Width; x++)
+                    {
+                        Color c = bmp.GetPixel(x, y);
+                        brightest = Math.Max(brightest, Math.Max(c.R, Math.Max(c.G, c.B)));
+                    }
+            }
+            list.Dispose();
+            Check(brightest < 0x90, "visual: a row's text stands at full strength while the row is a third of the way in ("
+                                    + brightest + " of 255)");
+        }
+
+        /// <summary>
+        /// Home fades its heading and tiles in the same way, the "New Live Set" card among them.
+        /// A tenth of the way in, every word under the year overview is still close to what it
+        /// lies on; the dim grey of the dates, unfaded, is already brighter than the limit.
+        /// </summary>
+        static void TileTextFades()
+        {
+            HomeView home = new HomeView();
+            home.Size = new Size(1200, 1400);
+            ProjectIndex idx = new ProjectIndex();
+            SetEntry s = new SetEntry();
+            s.Name = "WWWWWWWWWW";
+            s.Path = @"C:\nowhere\W Project\W.als";
+            s.Modified = new DateTime(2026, 1, 1, 12, 0, 0, DateTimeKind.Utc);
+            idx.Sets.Add(s);
+            home.Index = idx;
+            home.Rebuild(false);
+
+            float[] entrance = (float[])Field(home, "_tileEntrance");
+            for (int i = 0; i < entrance.Length; i++) entrance[i] = 0.1f;
+            System.Collections.IList heads = (System.Collections.IList)Field(home, "_heads");
+            int top = int.MaxValue;
+            foreach (object h in heads)
+            {
+                h.GetType().GetField("Alpha").SetValue(h, 0.1f);
+                top = Math.Min(top, ((Rectangle)h.GetType().GetField("Bounds").GetValue(h)).Top);
+            }
+
+            int brightest = 0;
+            using (Bitmap bmp = new Bitmap(home.Width, home.Height))
+            {
+                home.DrawToBitmap(bmp, new Rectangle(0, 0, home.Width, home.Height));
+                for (int y = Math.Max(0, top); y < bmp.Height; y++)
+                    for (int x = 0; x < bmp.Width; x++)
+                    {
+                        Color c = bmp.GetPixel(x, y);
+                        brightest = Math.Max(brightest, Math.Max(c.R, Math.Max(c.G, c.B)));
+                    }
+            }
+            home.Dispose();
+            Check(heads.Count == 1 && entrance.Length == 2, "visual: setup - Home did not lay out its heading and two tiles");
+            Check(brightest < 0x50, "visual: Home's words stand brighter than the tiles they lie on a tenth of the way in ("
+                                    + brightest + " of 255)");
+        }
+
+        /// <summary>
+        /// The filters window says how many will show, and it is the number the list behind it
+        /// shows: the search counts too, and with one row per folder the versions of a project
+        /// are one row. It counted every version and left the search out.
+        /// </summary>
+        static void FilterCount()
+        {
+            List<SetEntry> sets = new List<SetEntry>();
+            foreach (string p in new string[] { @"C:\f\A Project\a v1.als", @"C:\f\A Project\a v2.als", @"C:\f\B Project\b.als" })
+            {
+                SetEntry s = new SetEntry();
+                s.Path = p;
+                s.Name = Path.GetFileNameWithoutExtension(p);
+                sets.Add(s);
+            }
+            using (FiltersDialog d = new FiltersDialog(new SetFilter(), sets, new List<string>(), "a v", true))
+                Check((int)Field(d, "_matches") == 1,
+                      "visual: the filters count " + Field(d, "_matches") + " where the list shows 1 row");
+        }
+
+        // ------------------------------------------------------------------ texts
+
+        static void Texts()
+        {
+            PinMovesRow();
+            PluginCountInLog();
+            VersionTimes();
+            PreviewCounts();
+        }
+
+        /// <summary>
+        /// Q with the pinned first: the row goes up to the pinned at once, and the selection goes
+        /// with it. It used to light its star and stay where it was until the next rebuild.
+        /// </summary>
+        static void PinMovesRow()
+        {
+            string root = Fresh("pin");
+            string older = Path.Combine(root, @"Old Project\old.als");
+            WriteAls(older);
+            WriteAls(Path.Combine(root, @"New Project\new.als"));
+            File.SetLastWriteTimeUtc(older, new DateTime(2025, 1, 1, 12, 0, 0, DateTimeKind.Utc));
+            Settings s = new Settings();
+            s.Roots.Add(root);
+            new ProjectIndex().Scan(s, null, CancellationToken.None);
+
+            MainForm m = new MainForm();
+            SetEntry old = null;
+            try
+            {
+                ((ProjectIndex)Field(m, "_index")).LoadFromCache();
+                ((Settings)Field(m, "_settings")).PinnedFirst = true;
+                ((Segmented)Field(m, "_mode")).SelectedIndex = 1;          // Sets
+                Call(m, "Refill");
+                RowListView list = (RowListView)Field(m, "_list");
+                foreach (RowData r in list.Rows)
+                {
+                    SetEntry e = r.Tag as SetEntry;
+                    if (e != null && e.Name == "old") old = e;
+                }
+                Check(list.Rows.Count == 2 && old != null && list.Rows[1].Tag == old,
+                      "texts: setup - the older set should be the second of two rows");
+                if (old == null) return;
+
+                SetEntry target = old;
+                list.SelectRow(delegate (RowData r) { return r.Tag == target; });
+                Call(m, "TogglePinAndRefresh", old);
+                Check(list.Rows[0].Tag == old, "texts: Q with the pinned first leaves the row where it was");
+                Check(Call(m, "SelectedSet") == old, "texts: the selection does not go with the pinned row");
+            }
+            finally
+            {
+                if (old != null && HomeStore.IsPinned(old.Path)) HomeStore.TogglePin(old.Path);
+                m.Dispose();
+            }
+        }
+
+        /// <summary>
+        /// The log says how many plugins there are — the number the Plugins tab shows. It wrote
+        /// the sum of every Live install's snapshot before they were merged: 6446 against 736.
+        /// </summary>
+        static void PluginCountInLog()
+        {
+            Diag.Start();
+            PluginInventory inv = PluginInventory.Load(new Settings());
+            if (inv.All.Count == 0)
+            {
+                Console.WriteLine("texts: no plugin database on this machine - the log count check is skipped");
+                return;
+            }
+            string line = null;
+            foreach (string l in File.ReadAllLines(Diag.LogPath))
+                if (l.Contains("  plugins: ") && l.Contains(" from ")) line = l;
+            Check(line != null && line.Contains("plugins: " + inv.All.Count + " from "),
+                  "texts: the log says '" + line + "' where the list has " + inv.All.Count);
+        }
+
+        /// <summary>Two versions saved the same day read apart in the panel: the time joins the
+        /// date where the date alone repeats, and only there.</summary>
+        static void VersionTimes()
+        {
+            DateTime day = new DateTime(2026, 9, 25, 10, 0, 0, DateTimeKind.Local);
+            SetEntry a = new SetEntry(), b = new SetEntry(), c = new SetEntry();
+            a.Modified = day.ToUniversalTime();
+            b.Modified = day.AddHours(4).ToUniversalTime();
+            c.Modified = day.AddDays(-3).ToUniversalTime();
+            List<SetEntry> all = new List<SetEntry> { a, b, c };
+            string sa = DetailPanel.VersionStamp(a, all), sb = DetailPanel.VersionStamp(b, all);
+            Check(sa != sb, "texts: two versions of one day read the same: " + sa);
+            Check(DetailPanel.VersionStamp(c, all) == "2026-09-22",
+                  "texts: a version alone on its day reads " + DetailPanel.VersionStamp(c, all));
+        }
+
+        /// <summary>"1 track", not "1 tracks", in the preview's line under the name.</summary>
+        static void PreviewCounts()
+        {
+            SetEntry set = new SetEntry();
+            set.Name = "x";
+            set.Path = @"C:\nowhere\x Project\x.als";
+            Control host = new Control();
+            IntPtr handle = host.Handle;               // the loader answers through it
+            using (PreviewDialog d = new PreviewDialog(set, new ArrangementLoader(host)))
+            {
+                typeof(PreviewDialog).GetField("_arr", Any).SetValue(d, OneClip(set.Path, 0, 5));
+                string sub = (string)Call(d, "Subtitle");
+                Check(sub.EndsWith("1 track   ·   1 clip"), "texts: the preview counts '" + sub + "'");
+            }
+            host.Dispose();
+        }
+
+        /// <summary>Make ProjectMeta read notes.cfg again, as at the next start — it keeps what
+        /// it read in statics for the life of the process.</summary>
+        static void ForgetNotes()
+        {
+            const BindingFlags st = BindingFlags.Static | BindingFlags.NonPublic;
+            typeof(ProjectMeta).GetField("_loaded", st).SetValue(null, false);
+            FieldInfo unread = typeof(ProjectMeta).GetField("_unread", st);
+            if (unread != null) unread.SetValue(null, false);
+            ((System.Collections.IDictionary)typeof(ProjectMeta).GetField("_byDir", st).GetValue(null)).Clear();
         }
 
         // ------------------------------------------------------------------- real

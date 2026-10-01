@@ -341,13 +341,18 @@ namespace AbletonManager
 
             Dictionary<string, SetEntry> cache = LoadCache();
 
-            HashSet<string> disabled = new HashSet<string>(settings.DisabledRoots, StringComparer.OrdinalIgnoreCase);
+            // Copies, not the lists themselves: the window edits them while the walk goes on (a
+            // folder dropped onto it, the Folders dialog), and walking the live list broke the
+            // whole scan off with "collection was modified". A folder added now is the next
+            // scan's — see MainForm.StartScan.
+            string[] roots = settings.Roots.ToArray();
+            HashSet<string> disabled = new HashSet<string>(settings.DisabledRoots.ToArray(), StringComparer.OrdinalIgnoreCase);
             List<string> files = new List<string>();
             // One and the same .als turns up twice easily: roots are sometimes nested inside
             // each other ("…\Music" and "…\Music\Ableton" both in the list). Without filtering,
             // the set then doubles in the catalog and each copy is parsed anew.
             HashSet<string> seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            foreach (string root in settings.Roots)
+            foreach (string root in roots)
             {
                 if (disabled.Contains(root)) continue;   // temporarily off — the folder stays in the list
                 int before = files.Count;
@@ -413,7 +418,7 @@ namespace AbletonManager
             // separate pass and do not get into the cache: exporting a new file does not change
             // the .als. We also remember their names — RenderScan.Find already gives exactly
             // the selection the preview uses (without Samples and the housekeeping folders),
-            // and MatchesSet searches through it afterwards.
+            // and SetFilter.MatchesSearch searches through it afterwards.
             try
             {
                 Parallel.ForEach(fresh, po, delegate (SetEntry e)

@@ -137,10 +137,11 @@ namespace AbletonManager
             Surface = Theme.Backdrop;
 
             _action.Primary = true;
-            // The button lies on the panel's card rather than on the bare window — we repeat
-            // both layers.
-            _action.Surface = Theme.Backdrop;
-            _action.SurfaceOverlay = Theme.Surface;
+            // The button lies on the panel's card rather than on the bare window, so its corners
+            // are filled with the card's own fill. The window background with an opaque Surface
+            // over it matched the card only without glass: on glass the button stood in a solid
+            // grey rectangle.
+            _action.Surface = Theme.CardFill;
             _action.Click += delegate
             {
                 if (_mode != PanelMode.Set) { if (RevealRequested != null) RevealRequested(); }
@@ -464,11 +465,12 @@ namespace AbletonManager
             else
             {
                 // The order is that of the former column of pills: Collect All on top.
-                ToolStripMenuItem collect = new ToolStripMenuItem("Export");
+                ToolStripMenuItem collect = new ToolStripMenuItem("Export…");
+                collect.ShortcutKeyDisplayString = "Ctrl+E";
                 collect.Click += delegate { if (CollectRequested != null) CollectRequested(); };
                 m.Items.Add(collect);
 
-                ToolStripMenuItem rescue = new ToolStripMenuItem("Rescue Project");
+                ToolStripMenuItem rescue = new ToolStripMenuItem("Rescue project…");
                 rescue.ShortcutKeyDisplayString = "Ctrl+R";
                 rescue.Click += delegate { if (RescueRequested != null) RescueRequested(); };
                 m.Items.Add(rescue);
@@ -729,7 +731,8 @@ namespace AbletonManager
             y = Line(g, "Files:", Theme.FLabel, Theme.TextDim, Pad, y, w) + Sc(8);
             if (!Below(y + Sc(28)))
             {
-                Chrome.DrawText(g, Chrome.Plural(_set.TotalRefs, "file"), Theme.FLabel,
+                // The number alone: "Files:" above already names it, and "78 files" said it twice.
+                Chrome.DrawText(g, _set.TotalRefs.ToString("N0", Inv), Theme.FLabel,
                     new Rectangle(Pad, y, w, Sc(28)), Theme.Text, PanelLeft);
                 // Colour only when things are bad. A green zero promised an event that is not
                 // there, and red among it stopped catching the eye.
@@ -947,12 +950,12 @@ namespace AbletonManager
                 Rectangle rr = new Rectangle(Pad, y, w, Sc(24));
 
                 Color c = current ? Theme.Text : Theme.TextDim;
-                Size ds = TextRenderer.MeasureText(g, v.Modified.ToLocalTime().ToString("yyyy-MM-dd"), Theme.FBadge, new Size(rr.Width, rr.Height), PanelRight);
+                string stamp = VersionStamp(v, all);
+                Size ds = TextRenderer.MeasureText(g, stamp, Theme.FBadge, new Size(rr.Width, rr.Height), PanelRight);
                 Chrome.DrawText(g, v.Name, Theme.FBadge,
                                 new Rectangle(rr.X, rr.Y, rr.Width - ds.Width - Sc(8), rr.Height),
                                 hot ? Color.White : c, PanelLeft);
-                Chrome.DrawText(g, v.Modified.ToLocalTime().ToString("yyyy-MM-dd"), Theme.FBadge,
-                                rr, Theme.TextDim, PanelRight);
+                Chrome.DrawText(g, stamp, Theme.FBadge, rr, Theme.TextDim, PanelRight);
 
                 // We do not underline the current one even under the cursor: there is no point
                 // clicking it.
@@ -963,6 +966,17 @@ namespace AbletonManager
                 y += Sc(24);
             }
             return y + Sc(14);
+        }
+
+        /// <summary>A version's date in the Versions block, with the time when another version
+        /// of the folder was saved the same day — two equal dates told nothing apart.</summary>
+        internal static string VersionStamp(SetEntry v, List<SetEntry> all)
+        {
+            DateTime t = v.Modified.ToLocalTime();
+            foreach (SetEntry o in all)
+                if (!ReferenceEquals(o, v) && o.Modified.ToLocalTime().Date == t.Date)
+                    return t.ToString("yyyy-MM-dd HH:mm", Inv);
+            return t.ToString("yyyy-MM-dd", Inv);
         }
 
         /// <summary>
@@ -990,7 +1004,7 @@ namespace AbletonManager
             PluginStat p = _plugin;
             if (p == null)
             {
-                PaintEmpty(g, pad, w, "No plug-in selected", "Pick one to see where it is used");
+                PaintEmpty(g, pad, w, "No plugin selected", "Pick one to see where it is used");
                 return;
             }
             InstalledPlugin inst = p.Installed;
@@ -1145,7 +1159,7 @@ namespace AbletonManager
             SampleFile f = _sample;
             if (f == null)
             {
-                PaintEmpty(g, Pad, w, "No folder selected", "Pick a folder or a sample");
+                PaintEmpty(g, Pad, w, "No sample selected", "Pick a folder or a sample");
                 return;
             }
 
@@ -1477,10 +1491,20 @@ namespace AbletonManager
                             {
                                 BeginInvoke((MethodInvoker)delegate
                                 {
+                                    _thumbRendering = false;
+                                    // Another set was picked while this one was drawing (the
+                                    // arrows run through the list faster than a picture draws):
+                                    // the late picture is not this set's, and it went up under
+                                    // the new name. The repaint draws the set on show instead.
+                                    if (!ReferenceEquals(arr, _arr))
+                                    {
+                                        if (bmp != null) bmp.Dispose();
+                                        Invalidate(_thumbRect);
+                                        return;
+                                    }
                                     DropThumb();
                                     _thumb = bmp;
                                     _thumbSize = sz;
-                                    _thumbRendering = false;
                                     Invalidate(_thumbRect);
                                 });
                             }

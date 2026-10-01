@@ -51,6 +51,7 @@ namespace AbletonManager
 
         const int DWMWA_USE_IMMERSIVE_DARK_MODE = 20;
         const int DWMWA_WINDOW_CORNER_PREFERENCE = 33;
+        const int DWMWA_BORDER_COLOR = 34;
         const int DWMWA_SYSTEMBACKDROP_TYPE = 38;
         const int DWMWA_DISALLOW_PEEK = 11;
         const int DWMWA_EXCLUDED_FROM_PEEK = 12;
@@ -152,6 +153,24 @@ namespace AbletonManager
                 DwmSetWindowAttribute(f.Handle, DWMWA_WINDOW_CORNER_PREFERENCE, ref pref, 4);
             }
             catch { }
+        }
+
+        /// <summary>
+        /// Rounding for a popup — a menu — done by DWM: antialiased corners, and the hairline
+        /// along them in the given colour. False where the system has no such attribute
+        /// (Windows 10): the caller rounds by a region there, whose cut is one bit deep.
+        /// </summary>
+        public static bool RoundPopup(IntPtr h, Color border)
+        {
+            try
+            {
+                int pref = DWMWCP_ROUND;
+                if (DwmSetWindowAttribute(h, DWMWA_WINDOW_CORNER_PREFERENCE, ref pref, 4) != 0) return false;
+                int bgr = border.R | border.G << 8 | border.B << 16;
+                DwmSetWindowAttribute(h, DWMWA_BORDER_COLOR, ref bgr, 4);
+                return true;
+            }
+            catch { return false; }
         }
 
         static void ApplyBackdrop(IntPtr h)

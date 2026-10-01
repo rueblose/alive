@@ -16,6 +16,7 @@ namespace AbletonManager
     {
         static readonly List<string> _pins = new List<string>();
         static bool _loaded;
+        static bool _unread;        // home.cfg would not be read — nothing is saved over it, see ProjectMeta
 
         static string FilePath { get { return Path.Combine(Settings.Dir, "home.cfg"); } }
 
@@ -38,7 +39,7 @@ namespace AbletonManager
                     if (key == "pin" && val.Length > 0 && !Contains(_pins, val)) _pins.Add(val);
                 }
             }
-            catch { }
+            catch (Exception ex) { _unread = true; Diag.Fail("home.cfg: read", ex); }
         }
 
         static bool Contains(List<string> list, string value)
@@ -50,13 +51,14 @@ namespace AbletonManager
 
         static void Save()
         {
+            if (_unread) return;
             try
             {
                 if (!Directory.Exists(Settings.Dir)) Directory.CreateDirectory(Settings.Dir);
                 StringBuilder sb = new StringBuilder();
                 sb.AppendLine("# Alive - home page: pinned projects");
                 foreach (string p in _pins) sb.Append("pin=").AppendLine(p);
-                File.WriteAllText(FilePath, sb.ToString(), new UTF8Encoding(false));
+                Settings.WriteFile(FilePath, sb.ToString());
             }
             catch { }
         }

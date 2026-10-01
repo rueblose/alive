@@ -89,8 +89,15 @@ namespace AbletonManager.Nebula
             Text = "Stat — Alive";
             FormBorderStyle = FormBorderStyle.None;
             StartPosition = FormStartPosition.CenterScreen;
-            ClientSize = new Size(1360, 860);
-            MinimumSize = new Size(1120, 680);
+
+            // Scaled by the screen DC, as MainForm sizes itself: the text is in points and grows
+            // with the screen's scale, and at 125% the unscaled 1360 × 860 cut the hint line
+            // under the cloud short. DeviceDpi is no help — it said 96 on that 125% screen.
+            float k;
+            using (Graphics g = Graphics.FromHwnd(IntPtr.Zero)) k = g.DpiX / 96f;
+            Rectangle work = Screen.PrimaryScreen.WorkingArea;
+            ClientSize = new Size(Math.Min((int)(1360 * k), work.Width), Math.Min((int)(860 * k), work.Height));
+            MinimumSize = new Size(Math.Min((int)(1120 * k), work.Width), Math.Min((int)(680 * k), work.Height));
             BackColor = Theme.Bg;
             if (Glass.AppIcon != null) Icon = Glass.AppIcon;
             KeyPreview = true;
@@ -336,7 +343,7 @@ namespace AbletonManager.Nebula
                 sb.Append("minsize=").AppendLine(_cloud.MinPointRadius.ToString("0.##", CultureInfo.InvariantCulture));
                 sb.Append("maxsize=").AppendLine(_cloud.MaxPointRadius.ToString("0.##", CultureInfo.InvariantCulture));
                 sb.Append("gradient=").AppendLine(GradientOf(_dgrad).Id);
-                File.WriteAllText(ConfigPath, sb.ToString(), new UTF8Encoding(false));
+                Settings.WriteFile(ConfigPath, sb.ToString());
             }
             catch { }
         }
@@ -746,7 +753,7 @@ namespace AbletonManager.Nebula
                      ? "Scanning " + _scanDone + " / " + _scanTotal
                      : "Looking for sets… " + _scanDone;
 
-            string s = _cloud.Sets.Count + " projects";
+            string s = Chrome.Plural(_cloud.Sets.Count, "project");
             if (_weighing) s += "  ·  weighing project folders…";
             s += "   ·   drag — rotate   ·   wheel — zoom   ·   right drag — pan   ·   double click — open folder";
             return s;

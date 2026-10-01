@@ -10,7 +10,7 @@ One `.exe`. No installer, no external DLLs, no runtime to download.
 
 ![version](https://img.shields.io/badge/version-1.3-2ea043)
 ![platform](https://img.shields.io/badge/platform-Windows%2010%20%7C%2011-0078d4)
-![framework](https://img.shields.io/badge/.NET%20Framework-4.6%2B-512BD4)
+![framework](https://img.shields.io/badge/.NET%20Framework-4.7%2B-512BD4)
 ![license](https://img.shields.io/badge/license-MIT-blue)
 
 [**Download**](../../releases) · [Features](#features) · [Shortcuts](#keyboard-shortcuts) · [Build](#building-from-source) · [Русский](README.ru.md)
@@ -104,6 +104,8 @@ and gigabytes each group adds. The original set stays as it is.
 `Ctrl Space` shows the whole arrangement as one picture, in Live's clip colours. `Space` plays the
 render lying next to the set; you can pick which file counts as the main one.
 
+<img src="docs/img/player.png" alt="Player: the render's waveform and the set's renders" width="560">
+
 ### Stat
 
 <img src="docs/img/stat.png" alt="Stat — the whole library as a point cloud">
@@ -135,7 +137,7 @@ Grab the archive from [Releases](../../releases).
 2. Run `Alive.exe`.
 3. Point it at your Ableton project folders and press **Scan**.
 
-Needs **.NET Framework 4.6+**, which comes with Windows 10 and 11.
+Needs **.NET Framework 4.7+**, which comes with Windows 11 and with Windows 10 since version 1703.
 
 ---
 
@@ -149,8 +151,9 @@ Needs **.NET Framework 4.6+**, which comes with Windows 10 and 11.
 | `Shift F` | Scan folders | `Ctrl Space` | Arrangement preview |
 | `Ctrl F` | Search | `Q` | Pin set |
 | `Ctrl ,` | Settings | `Ctrl T` | Tags and notes |
-| `F11` / `Ctrl M` | Fullscreen / minimize | `Ctrl R` | Rescue a set |
-| `Ctrl Q` | Quit | `F5` | Rescan |
+| `F11` / `Ctrl M` | Maximize / minimize | `Ctrl R` | Rescue a set |
+| `Ctrl Q` | Quit | `Ctrl E` | Export a set |
+| | | `F5` | Rescan |
 | | | `Ctrl N` | Launch Live |
 
 ---
@@ -190,6 +193,7 @@ nothing anywhere else, not even to the registry, so deleting the folder resets i
 | `thumbs\` | Arrangement pictures for the Home tiles | Drawn again when needed |
 | `alive.log` | What happened during the last run | Nothing |
 | `probes.txt` | Rescue's temporary copies, so they get cleaned up after a crash | Leftover `*.alive-probe.als` files stay behind |
+| `*.cfg.bak` | The previous version of each `.cfg`, kept by every save. If a file gets damaged, rename its `.bak` back | Nothing |
 
 Want to keep all this somewhere else, like next to a portable copy? Set the `ALIVE_HOME` environment
 variable to a folder before you start Alive.

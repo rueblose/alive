@@ -547,7 +547,7 @@ namespace AbletonManager
 
         static string Bytes(long b)
         {
-            if (b >= 1L << 40) return (b / (double)(1L << 40)).ToString("0.0") + " TB";
+            if (b >= 1L << 40) return (b / (double)(1L << 40)).ToString("0.0", System.Globalization.CultureInfo.InvariantCulture) + " TB";
             if (b >= 1L << 30) return (b / (double)(1L << 30)).ToString("0") + " GB";
             if (b >= 1L << 20) return (b / (double)(1L << 20)).ToString("0") + " MB";
             return b / 1024 + " KB";

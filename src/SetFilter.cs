@@ -107,6 +107,35 @@ namespace AbletonManager
             return true;
         }
 
+        /// <summary>
+        /// The search field's rule — one for both views of the catalog. The tiles used to look
+        /// at the name alone while the table also searched plugins, tags and notes, and one
+        /// query gave two different answers on Home and on Sets.
+        /// </summary>
+        public static bool MatchesSearch(SetEntry s, string q)
+        {
+            if (s.Name.IndexOf(q, StringComparison.CurrentCultureIgnoreCase) >= 0) return true;
+            if (s.ProjectName.IndexOf(q, StringComparison.CurrentCultureIgnoreCase) >= 0) return true;
+            if (s.Path.IndexOf(q, StringComparison.CurrentCultureIgnoreCase) >= 0) return true;
+            foreach (string p in s.Plugins)
+                if (p.IndexOf(q, StringComparison.CurrentCultureIgnoreCase) >= 0) return true;
+
+            // A render is the same "project name" for somebody searching by sound rather than
+            // by a set's name. The selection is the same as the preview uses (without Samples),
+            // see RenderNames.
+            foreach (string r in s.RenderNames)
+                if (r.IndexOf(q, StringComparison.CurrentCultureIgnoreCase) >= 0) return true;
+
+            // One's own tags and notes are search material too: otherwise a label put on by
+            // hand would be visible only to the eye in the panel on the right.
+            foreach (string tag in ProjectMeta.TagsOf(s.ProjectDir))
+                if (tag.IndexOf(q, StringComparison.CurrentCultureIgnoreCase) >= 0) return true;
+            if (ProjectMeta.NoteOf(s.ProjectDir).IndexOf(q, StringComparison.CurrentCultureIgnoreCase) >= 0)
+                return true;
+
+            return false;
+        }
+
         public void Clear()
         {
             From = To = null;

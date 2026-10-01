@@ -127,12 +127,12 @@ namespace AbletonManager
 
             Browse(_vst2Browse, delegate
             {
-                string p = Pick("VST2 plug-in folder", _s.Vst2CustomPath);
+                string p = Pick("VST2 plugin folder", _s.Vst2CustomPath);
                 if (p != null) { _s.Vst2CustomPath = p; _s.Vst2CustomOn = true; _vst2On.Checked = true; }
             });
             Browse(_vst3Browse, delegate
             {
-                string p = Pick("VST3 plug-in folder", _s.Vst3CustomPath);
+                string p = Pick("VST3 plugin folder", _s.Vst3CustomPath);
                 if (p != null) { _s.Vst3CustomPath = p; _s.Vst3CustomOn = true; _vst3On.Checked = true; }
             });
 
@@ -335,7 +335,7 @@ namespace AbletonManager
                       : "";
                 string text = inv.All.Count == 0
                     ? (inv.Error ?? "nothing found")
-                    : inv.All.Count + " plug-ins"
+                    : Chrome.Plural(inv.All.Count, "plugin")
                       + (where.Length > 0 ? "   ·   " + where : "");
                 try
                 {
@@ -503,9 +503,9 @@ namespace AbletonManager
             }
 
             Separator(x, ref y, w);
-            Section(x, ref y, w, "Plug-ins");
+            Section(x, ref y, w, "Plugins");
             Line(x, ref y, w, h, _source,
-                 "Plug-in source",
+                 "Plugin source",
                  Folders
                  ? "Direct folder scan (VST2 / VST3 files)."
                  : "Uses internal database from installed Live versions.");

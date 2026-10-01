@@ -449,7 +449,7 @@ namespace AbletonManager
                 Key("Shift F", "Open scan folders window"),
                 Key("Ctrl F", "Focus search field"),
                 Key("Ctrl ,", "Open settings"),
-                Key("F11", "Toggle fullscreen"),
+                Key("F11", "Maximize or restore window"),
                 Key("Ctrl M", "Minimize window"),
                 Key("Ctrl Q", "Quit application"),
             };
@@ -458,12 +458,13 @@ namespace AbletonManager
             {
                 Section("Actions & Controls"),
                 Key("Enter", "Open set in Live"),
-                Key("Shift Enter", "Open set in Explorer"),
+                Key("Shift Enter", "Show set in Explorer"),
                 Key("Space", "Play or pause audio render"),
                 Key("Ctrl Space", "Open or close set preview"),
                 Key("Q", "Pin or unpin selected set"),
                 Key("Ctrl T", "Edit set tags and notes"),
                 Key("Ctrl R", "Rescue a set that will not open"),
+                Key("Ctrl E", "Export a set with everything it uses"),
                 Key("F5", "Rescan catalog"),
                 Key("Ctrl N", "Launch Live"),
 

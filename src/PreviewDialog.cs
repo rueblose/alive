@@ -95,10 +95,10 @@ namespace AbletonManager
             if (_arr == null) return s + "   ·   reading…";
 
             if (_arr.Error != null) return s + "   ·   " + _arr.Error;
-            string tempo = _arr.Tempo > 0 ? _arr.Tempo.ToString("0.##") + " BPM" : "";
+            string tempo = _arr.Tempo > 0 ? _arr.Tempo.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture) + " BPM" : "";
             string key = _set.Key.Length > 0 ? "   ·   " + _set.Key : "";
-            string body = _arr.Bars + " bars   ·   " + _arr.Tracks.Count + " tracks   ·   "
-                        + _arr.ClipCount + " clips";
+            string body = Chrome.Plural(_arr.Bars, "bar") + "   ·   " + Chrome.Plural(_arr.Tracks.Count, "track")
+                        + "   ·   " + Chrome.Plural(_arr.ClipCount, "clip");
             return (tempo.Length > 0 ? tempo + key + "   ·   " : "") + body;
         }
     }

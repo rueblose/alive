@@ -150,7 +150,11 @@ namespace AbletonManager
     /// </summary>
     public static class PreviewPins
     {
+        // Get is asked from the scan's parallel threads (RenderScan.Find) while the player may
+        // Set or Clear: a Dictionary must not be read while it is being filled or changed.
+        static readonly object Gate = new object();
         static Dictionary<string, string> _map;
+        static bool _unread;        // previews.cfg would not be read — nothing is saved over it, see ProjectMeta
 
         static string FilePath { get { return Path.Combine(Settings.Dir, "previews.cfg"); } }
 
@@ -168,34 +172,44 @@ namespace AbletonManager
                     _map[line.Substring(0, tab)] = line.Substring(tab + 1);
                 }
             }
-            catch { }
+            catch (Exception ex) { _unread = true; Diag.Fail("previews.cfg: read", ex); }
         }
 
         public static string Get(string projectRoot)
         {
-            Load();
-            string v;
-            return _map.TryGetValue(Key(projectRoot), out v) ? v : "";
+            lock (Gate)
+            {
+                Load();
+                string v;
+                return _map.TryGetValue(Key(projectRoot), out v) ? v : "";
+            }
         }
 
         public static void Set(string projectRoot, string file)
         {
-            Load();
-            _map[Key(projectRoot)] = file ?? "";
-            Save();
+            lock (Gate)
+            {
+                Load();
+                _map[Key(projectRoot)] = file ?? "";
+                Save();
+            }
         }
 
         public static void Clear(string projectRoot)
         {
-            Load();
-            _map.Remove(Key(projectRoot));
-            Save();
+            lock (Gate)
+            {
+                Load();
+                _map.Remove(Key(projectRoot));
+                Save();
+            }
         }
 
         static string Key(string projectRoot) { return (projectRoot ?? "").TrimEnd('\\'); }
 
         static void Save()
         {
+            if (_unread) return;
             try
             {
                 if (!Directory.Exists(Settings.Dir)) Directory.CreateDirectory(Settings.Dir);
@@ -205,7 +219,7 @@ namespace AbletonManager
                     if (kv.Value.Length == 0) continue;
                     sb.Append(kv.Key).Append('\t').AppendLine(kv.Value);
                 }
-                File.WriteAllText(FilePath, sb.ToString(), new UTF8Encoding(false));
+                Settings.WriteFile(FilePath, sb.ToString());
             }
             catch { }
         }

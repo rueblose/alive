@@ -15,6 +15,11 @@ namespace AbletonManager
         readonly SetFilter _filter = new SetFilter();
         readonly List<SetEntry> _sets;
 
+        // What else decides the rows of the list behind: the search, and one row per project
+        // folder. Without them the count below disagreed with the list's "N shown".
+        readonly string _search;
+        readonly bool _perFolder;
+
         readonly FieldBox _from = new FieldBox();
         readonly FieldBox _to = new FieldBox();
         readonly TagField _versions = new TagField();
@@ -42,7 +47,7 @@ namespace AbletonManager
 
         /// <summary>
         /// Conditions apply live: the window covers the list it filters, and without a live
-        /// response filters had to be set blind. The button at the bottom is now simply "Ok" —
+        /// response filters had to be set blind. The button at the bottom is now simply "OK" —
         /// close, not "apply".
         /// </summary>
         public event Action Changed;
@@ -56,9 +61,11 @@ namespace AbletonManager
         /// DialogResult.OK.</summary>
         public SetFilter Result { get { return _filter; } }
 
-        public FiltersDialog(SetFilter current, List<SetEntry> sets, List<string> versions)
+        public FiltersDialog(SetFilter current, List<SetEntry> sets, List<string> versions, string search, bool perFolder)
         {
             _sets = sets;
+            _search = search ?? "";
+            _perFolder = perFolder;
             _filter.CopyFrom(current);
             Caption = "Filters";
             ClientSize = new Size(Sc(760), Sc(568));
@@ -158,13 +165,13 @@ namespace AbletonManager
             _reset.FitToText(18);
             Controls.Add(_reset);
 
-            _apply.Text = "Ok";
+            _apply.Text = "OK";
             _apply.Primary = true;
             _apply.Click += delegate { DialogResult = DialogResult.OK; Close(); };
             _apply.FitToText(18);
             Controls.Add(_apply);
 
-            // Exactly one width for both buttons: "Ok" is shorter than "Reset" and came out
+            // Exactly one width for both buttons: "OK" is shorter than "Reset" and came out
             // noticeably narrower on its own text — the pair read as accidental rather than as
             // a pair.
             int pairW = Math.Max(_reset.Width, _apply.Width);
@@ -290,9 +297,17 @@ namespace AbletonManager
             _filter.PreviewHasRenders = _previewHasRenders.Checked;
             _filter.PreviewNoRenders = _previewNoRenders.Checked;
 
+            // Counted the way MainForm.FillSets builds the rows: the filter, the search, then
+            // one row per folder (ProjectIndex.CollapseByFolder keys on the same Directory).
             _matches = 0;
+            HashSet<string> folders = _perFolder ? new HashSet<string>(StringComparer.OrdinalIgnoreCase) : null;
             if (_sets != null)
-                foreach (SetEntry s in _sets) if (_filter.Matches(s)) _matches++;
+                foreach (SetEntry s in _sets)
+                {
+                    if (!_filter.Matches(s)) continue;
+                    if (_search.Length > 0 && !SetFilter.MatchesSearch(s, _search)) continue;
+                    if (folders == null || folders.Add(s.Directory ?? "")) _matches++;
+                }
 
             UpdateFacets();
             Invalidate();
@@ -545,7 +560,8 @@ namespace AbletonManager
             for (int i = 0; i < _labels.Count; i++)
                 Chrome.DrawText(g, _labelTexts[i], Theme.FBody, _labels[i], Theme.TextDim, Chrome.Left);
 
-            string count = _matches + " sets match";
+            string noun = _perFolder ? "project" : "set";
+            string count = _matches == 1 ? "1 " + noun + " matches" : _matches + " " + noun + "s match";
             Chrome.DrawText(g, count, Theme.FBody,
                 new Rectangle(Sc(Theme.Pad), _apply.Top, Math.Max(0, _reset.Left - Sc(40)), _apply.Height),
                 _matches == 0 ? Theme.Red : Theme.TextDim, Chrome.Left);
