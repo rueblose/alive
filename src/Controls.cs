@@ -1753,7 +1753,7 @@ namespace AbletonManager
     {
         public static void Show(Control anchor, DateTime? current, Action<DateTime> picked)
         {
-            MonthGrid grid = new MonthGrid(current ?? DateTime.Today);
+            MonthGrid grid = new MonthGrid(current);
 
             ToolStripControlHost slot = new ToolStripControlHost(grid);
             slot.Margin = Padding.Empty;
@@ -1774,6 +1774,7 @@ namespace AbletonManager
             host.Closed += delegate { anchor.BeginInvoke((Action)delegate { host.Dispose(); }); };
 
             host.Show(anchor, 0, anchor.Height + 4);
+            grid.Focus();           // or the keys stay with the date field under the popup
         }
 
         class MonthGrid : Control
@@ -1781,7 +1782,8 @@ namespace AbletonManager
             public event Action<DateTime> Picked;
 
             DateTime _month;          // the first day of the month on show
-            readonly DateTime? _sel;
+            readonly DateTime? _sel;  // the field's date; none while the field is empty
+            DateTime _cursor;         // the day the keyboard stands on
             int _hot = -1;            // 0 prev, 1 next, 2 today, 100+i a day cell
             // Forced English whatever the system language is; the week still starts on Monday.
             readonly System.Globalization.CultureInfo _ci = System.Globalization.CultureInfo.GetCultureInfo("en-US");
@@ -1792,13 +1794,17 @@ namespace AbletonManager
             int Dow { get { return (int)Math.Round(26 * (DeviceDpi / 96f)); } }
             int Foot { get { return (int)Math.Round(40 * (DeviceDpi / 96f)); } }
             int Pad { get { return (int)Math.Round(10 * (DeviceDpi / 96f)); } }
+            int S(int v) { return (int)Math.Round(v * (DeviceDpi / 96f)); }
 
-            public MonthGrid(DateTime start)
+            public MonthGrid(DateTime? current)
             {
                 SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer |
                          ControlStyles.UserPaint | ControlStyles.ResizeRedraw, true);
-                _month = new DateTime(start.Year, start.Month, 1);
-                _sel = start.Date;
+                // An empty field picks nothing: today keeps only its ring. Painted as picked, it
+                // could not be told from a picked today.
+                _sel = current.HasValue ? current.Value.Date : (DateTime?)null;
+                _cursor = (current ?? DateTime.Today).Date;
+                _month = new DateTime(_cursor.Year, _cursor.Month, 1);
                 BackColor = Theme.SolidSurface;
                 Font = Theme.FBody;
                 Size = new Size(Cell * 7 + Pad * 2, Head + Dow + Cell * 6 + Foot);
@@ -1848,6 +1854,48 @@ namespace AbletonManager
                 base.OnMouseWheel(e);
             }
 
+            // The keys the native MonthCalendar had: the arrows walk the days, PageUp and
+            // PageDown the months, Home and End the ends of the month, Enter picks.
+            protected override bool IsInputKey(Keys keyData)
+            {
+                switch (keyData & Keys.KeyCode)
+                {
+                    case Keys.Left: case Keys.Right: case Keys.Up: case Keys.Down:
+                    case Keys.PageUp: case Keys.PageDown: case Keys.Home: case Keys.End:
+                    case Keys.Enter:
+                        return true;
+                }
+                return base.IsInputKey(keyData);
+            }
+
+            protected override void OnKeyDown(KeyEventArgs e)
+            {
+                DateTime c = _cursor;
+                switch (e.KeyCode)
+                {
+                    case Keys.Left: c = c.AddDays(-1); break;
+                    case Keys.Right: c = c.AddDays(1); break;
+                    case Keys.Up: c = c.AddDays(-7); break;
+                    case Keys.Down: c = c.AddDays(7); break;
+                    case Keys.PageUp: c = c.AddMonths(-1); break;
+                    case Keys.PageDown: c = c.AddMonths(1); break;
+                    case Keys.Home: c = c.AddDays(1 - c.Day); break;
+                    case Keys.End: c = c.AddDays(DateTime.DaysInMonth(c.Year, c.Month) - c.Day); break;
+                    case Keys.Enter:
+                        e.Handled = true;
+                        if (Picked != null) Picked(_cursor);
+                        return;
+                    default:
+                        base.OnKeyDown(e);
+                        return;
+                }
+                e.Handled = true;
+                _cursor = c;
+                _month = new DateTime(c.Year, c.Month, 1);
+                _hot = 100 + (c - FirstShown()).Days;      // the cursor is lit the way hover is
+                Invalidate();
+            }
+
             protected override void OnMouseUp(MouseEventArgs e)
             {
                 if (e.Button != MouseButtons.Left) return;
@@ -1873,8 +1921,9 @@ namespace AbletonManager
                 string title = _ci.TextInfo.ToTitleCase(_month.ToString("MMMM yyyy", _ci));
                 Chrome.DrawText(g, title, Theme.FTitle, new Rectangle(0, 0, Width, Head),
                                 Theme.Text, Chrome.Center);
-                Arrow(g, PrevR, true, _hot == 0);
-                Arrow(g, NextR, false, _hot == 1);
+                float radius = S(8);
+                Arrow(g, PrevR, true, _hot == 0, radius);
+                Arrow(g, NextR, false, _hot == 1, radius);
 
                 DayOfWeek first = FirstDay;
                 for (int i = 0; i < 7; i++)
@@ -1890,7 +1939,7 @@ namespace AbletonManager
                 {
                     DateTime d = d0.AddDays(i);
                     Rectangle r = CellR(i);
-                    r.Inflate(-2, -2);
+                    r.Inflate(-S(2), -S(2));
                     bool sel = _sel.HasValue && d == _sel.Value;
                     bool today = d == DateTime.Today;
                     bool other = d.Month != _month.Month;
@@ -1898,26 +1947,26 @@ namespace AbletonManager
 
                     if (sel)
                     {
-                        Theme.FillRound(g, r, 8f, Theme.Light);
+                        Theme.FillRound(g, r, radius, Theme.Light);
                         fg = Theme.OnLight;
                     }
                     else if (_hot == 100 + i)
-                        Theme.FillRound(g, r, 8f, Theme.SolidPressed);
+                        Theme.FillRound(g, r, radius, Theme.SolidPressed);
                     if (today && !sel)
-                        Theme.DrawRound(g, r, 8f, Theme.TextDim, 1f);
+                        Theme.DrawRound(g, r, radius, Theme.TextDim, 1f);
 
                     Chrome.DrawText(g, d.Day.ToString(), Theme.FSmall, r, fg, Chrome.Center);
                 }
 
                 Rectangle tr = TodayR;
-                if (_hot == 2) Theme.FillRound(g, tr, 8f, Theme.SolidPressed);
+                if (_hot == 2) Theme.FillRound(g, tr, radius, Theme.SolidPressed);
                 Chrome.DrawText(g, "Today: " + DateTime.Today.ToString("yyyy-MM-dd"), Theme.FSmall, tr,
                                 Theme.Text, Chrome.Center);
             }
 
-            static void Arrow(Graphics g, Rectangle r, bool left, bool hot)
+            static void Arrow(Graphics g, Rectangle r, bool left, bool hot, float radius)
             {
-                if (hot) Theme.FillRound(g, r, 8f, Theme.SolidPressed);
+                if (hot) Theme.FillRound(g, r, radius, Theme.SolidPressed);
                 float cx = r.X + r.Width / 2f, cy = r.Y + r.Height / 2f, s = r.Width / 8f;
                 float dx = left ? s : -s;
                 using (Pen p = new Pen(Theme.Text, 1.6f))

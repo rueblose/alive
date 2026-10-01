@@ -952,18 +952,19 @@ namespace AbletonManager
             }
         }
 
-        Rectangle Track
+        /// <summary>The track within a slider's box — for the control, and for an owner drawing
+        /// the slider itself (the sample panel's row under the wave).</summary>
+        public static Rectangle TrackOf(Rectangle r, float dpi)
         {
-            get
-            {
-                int x = Sc(28);
-                return new Rectangle(x, Height / 2 - Sc(2), Math.Max(Sc(20), Width - x - Sc(8)), Sc(4));
-            }
+            int x = r.X + S(28, dpi);
+            return new Rectangle(x, r.Y + r.Height / 2 - S(2, dpi), Math.Max(S(20, dpi), r.Right - x - S(8, dpi)), S(4, dpi));
         }
+
+        static int S(int v, float dpi) { return (int)Math.Round(v * dpi); }
 
         void Grab(int x)
         {
-            Rectangle t = Track;
+            Rectangle t = TrackOf(ClientRectangle, DeviceDpi / 96f);
             Value = (x - t.X) / (float)Math.Max(1, t.Width);
         }
 
@@ -988,25 +989,34 @@ namespace AbletonManager
             Graphics g = e.Graphics;
             Chrome.PaintBase(this, g, Surface);
             Theme.Smooth(g);
+            PaintSlider(g, ClientRectangle, _value, Hot || _drag, Theme.Surface, DeviceDpi / 96f);
+        }
 
-            float iconW = Sc(17);
-            float iconH = Sc(13);
-            RectangleF iconRect = new RectangleF(Sc(3), (Height - iconH) / 2f, iconW, iconH);
-            Color iconColor = Hot || _drag ? Color.White : Theme.Light;
-            Glyph volGlyph = _value <= 0.001f ? Glyph.Volume0
-                           : _value <= 0.5f ? Glyph.VolumeLow
+        /// <summary>
+        /// The slider's look in a box: the glyph, the track with its filled part, the knob. The
+        /// sample panel draws one with it under the wave, on its card — where an empty track in
+        /// Surface, the card's own fill, would vanish, so the track's colour is given.
+        /// </summary>
+        public static void PaintSlider(Graphics g, Rectangle r, float value, bool hot, Color track, float dpi)
+        {
+            float iconW = S(17, dpi);
+            float iconH = S(13, dpi);
+            RectangleF iconRect = new RectangleF(r.X + S(3, dpi), r.Y + (r.Height - iconH) / 2f, iconW, iconH);
+            Color iconColor = hot ? Color.White : Theme.Light;
+            Glyph volGlyph = value <= 0.001f ? Glyph.Volume0
+                           : value <= 0.5f ? Glyph.VolumeLow
                            : Glyph.VolumeHigh;
             Icons.Draw(g, volGlyph, iconRect, iconColor, 1.5f);
 
-            Rectangle t = Track;
-            Theme.FillRound(g, t, t.Height / 2f, Theme.Surface);
-            int done = (int)(t.Width * _value);
+            Rectangle t = TrackOf(r, dpi);
+            Theme.FillRound(g, t, t.Height / 2f, track);
+            int done = (int)(t.Width * value);
             if (done > 0)
                 Theme.FillRound(g, new Rectangle(t.X, t.Y, done, t.Height), t.Height / 2f, Theme.Light);
 
-            float knob = Sc(11);
-            Theme.FillRound(g, new RectangleF(t.X + done - knob / 2f, Height / 2f - knob / 2f, knob, knob),
-                            knob / 2f, Hot || _drag ? Color.White : Theme.Light);
+            float knob = S(11, dpi);
+            Theme.FillRound(g, new RectangleF(t.X + done - knob / 2f, r.Y + r.Height / 2f - knob / 2f, knob, knob),
+                            knob / 2f, hot ? Color.White : Theme.Light);
         }
     }
 }

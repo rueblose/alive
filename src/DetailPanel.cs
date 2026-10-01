@@ -64,6 +64,11 @@ namespace AbletonManager
         Rectangle _waveRect;
         bool _waveHot;
 
+        // The preview's volume: a slider drawn right under the wave, scrolling with it.
+        Rectangle _volRect;
+        bool _volHot, _volDrag;
+        float _volume = 0.8f;
+
         int _scroll;
         int _contentHeight;
         float _scrollTarget, _scrollCurrent;
@@ -164,6 +169,35 @@ namespace AbletonManager
         }
 
         int Pad { get { return Sc(Theme.PanelPad); } }
+
+        /// <summary>The sample preview's volume, 0..1 — the slider right under a sample's wave.
+        /// Set from outside quietly; moved by hand, it raises PreviewVolumeChanged.</summary>
+        public float PreviewVolume
+        {
+            get { return _volume; }
+            set { _volume = Math.Max(0f, Math.Min(1f, value)); Invalidate(_volRect); }
+        }
+
+        public event Action<float> PreviewVolumeChanged;
+
+        /// <summary>A press on an empty spot of the panel — nothing there to click. A playing
+        /// sample stops on it.</summary>
+        public event Action EmptyClicked;
+
+        void MoveVolume(float v)
+        {
+            v = Math.Max(0f, Math.Min(1f, v));
+            if (Math.Abs(v - _volume) < 0.001f) return;
+            _volume = v;
+            Invalidate(_volRect);
+            if (PreviewVolumeChanged != null) PreviewVolumeChanged(v);
+        }
+
+        void VolumeAt(int x)
+        {
+            Rectangle t = VolumeSlider.TrackOf(_volRect, DeviceDpi / 96f);
+            MoveVolume((x - t.X) / (float)Math.Max(1, t.Width));
+        }
 
         static readonly TextFormatFlags PanelLeft =
             TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.SingleLine |
@@ -540,7 +574,14 @@ namespace AbletonManager
 
         protected override void OnMouseWheel(MouseEventArgs e)
         {
-            _scroller.OnMouseWheel(e.Delta, Sc(60));
+            // Over the volume the wheel turns it, in the player slider's steps of 5%.
+            if (!_volRect.IsEmpty && _volRect.Contains(e.Location))
+            {
+                int steps = e.Delta / 120;
+                if (steps == 0) steps = e.Delta > 0 ? 1 : -1;
+                MoveVolume((float)Math.Round((_volume + steps * 0.05f) / 0.05f) * 0.05f);
+            }
+            else _scroller.OnMouseWheel(e.Delta, Sc(60));
             base.OnMouseWheel(e);
         }
 
@@ -548,8 +589,15 @@ namespace AbletonManager
 
         protected override void OnMouseMove(MouseEventArgs e)
         {
-            UpdateHot(e.Location);
+            if (_volDrag) VolumeAt(e.X);
+            else UpdateHot(e.Location);
             base.OnMouseMove(e);
+        }
+
+        protected override void OnMouseUp(MouseEventArgs e)
+        {
+            if (_volDrag) { _volDrag = false; Invalidate(_volRect); }
+            base.OnMouseUp(e);
         }
 
         /// <summary>
@@ -586,16 +634,18 @@ namespace AbletonManager
                      && !_waveRect.IsEmpty && _waveRect.Contains(p);
 
             bool n = _set != null && _mode == PanelMode.Set && _notesRect.Contains(p);
+            bool vol = !_volRect.IsEmpty && _volRect.Contains(p);
             bool up = !_topRect.IsEmpty && _topRect.Contains(p);
-            if (up) { t = l = n = wave = false; rowHot = pluginRowHot = linkRowHot = chartHot = -1; }
+            if (up) { t = l = n = wave = vol = false; rowHot = pluginRowHot = linkRowHot = chartHot = -1; }
 
             if (t != _thumbHot || l != _linkHot || n != _notesHot || up != _topHot || wave != _waveHot
+                || vol != _volHot
                 || rowHot != _setRowHot || pluginRowHot != _pluginRowHot || linkRowHot != _linkRowHot
                 || chartHot != _chartHot)
             {
-                _thumbHot = t; _linkHot = l; _notesHot = n; _topHot = up; _waveHot = wave;
+                _thumbHot = t; _linkHot = l; _notesHot = n; _topHot = up; _waveHot = wave; _volHot = vol;
                 _setRowHot = rowHot; _pluginRowHot = pluginRowHot; _linkRowHot = linkRowHot; _chartHot = chartHot;
-                Cursor = (t || l || n || up || wave || rowHot >= 0 || pluginRowHot >= 0 || linkRowHot >= 0)
+                Cursor = (t || l || n || up || wave || vol || rowHot >= 0 || pluginRowHot >= 0 || linkRowHot >= 0)
                        ? Cursors.Hand : Cursors.Default;
                 Invalidate();
             }
@@ -603,10 +653,10 @@ namespace AbletonManager
 
         protected override void OnMouseLeave(EventArgs e)
         {
-            if (_thumbHot || _linkHot || _notesHot || _topHot || _waveHot
+            if (_thumbHot || _linkHot || _notesHot || _topHot || _waveHot || _volHot
                 || _setRowHot >= 0 || _pluginRowHot >= 0 || _linkRowHot >= 0 || _chartHot >= 0)
             {
-                _thumbHot = _linkHot = _notesHot = _topHot = _waveHot = false;
+                _thumbHot = _linkHot = _notesHot = _topHot = _waveHot = _volHot = false;
                 _setRowHot = -1;
                 _pluginRowHot = -1;
                 _linkRowHot = -1;
@@ -622,6 +672,12 @@ namespace AbletonManager
             if (e.Button == MouseButtons.Left)
             {
                 UpdateHot(e.Location);
+                if (_volHot)
+                {
+                    _volDrag = true;
+                    VolumeAt(e.X);
+                    return;
+                }
                 if (_topHot)
                 {
                     _scroll = 0;
@@ -661,6 +717,7 @@ namespace AbletonManager
                     WaveClicked(Math.Max(0f, Math.Min(1f, at)));
                     return;
                 }
+                if (EmptyClicked != null) EmptyClicked();
             }
             base.OnMouseDown(e);
         }
@@ -692,7 +749,7 @@ namespace AbletonManager
             int y = Pad - _scroll - over;
 
             // Every clickable rectangle is laid out anew by the paint below.
-            _thumbRect = _linkRect = _topRect = _waveRect = _chartRect = Rectangle.Empty;
+            _thumbRect = _linkRect = _topRect = _waveRect = _chartRect = _volRect = Rectangle.Empty;
             _setRowRects.Clear();
             _setRowSets.Clear();
             _pluginRowRects.Clear();
@@ -1172,6 +1229,15 @@ namespace AbletonManager
                         : _wave.Ok ? "" : _wave.Note;
             WaveView.PaintWave(g, _waveRect, _wave, _waveProgress, _wavePlaying, hint, DeviceDpi / 96f);
             y = _waveRect.Bottom + Sc(16);
+
+            // How loud it previews, right under what is heard — at the bottom of the panel it
+            // was far from it. A file only Live plays has nothing to turn up.
+            if (f.CanPreview)
+            {
+                _volRect = new Rectangle(Pad, _waveRect.Bottom + Sc(4), w, Sc(30));
+                VolumeSlider.PaintSlider(g, _volRect, _volume, _volHot || _volDrag, Theme.SurfacePressed, DeviceDpi / 96f);
+                y = _volRect.Bottom + Sc(10);
+            }
 
             y = PathLink(g, f.Path, y, w) + Sc(16);
 

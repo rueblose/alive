@@ -100,6 +100,37 @@ namespace AbletonManager
 
         static string CachePath { get { return System.IO.Path.Combine(Settings.Dir, "samples.cache"); } }
 
+        /// <summary>When the last whole walk ended — the cache is written by nothing else;
+        /// DateTime.MinValue without one.</summary>
+        public static DateTime WalkedUtc
+        {
+            get
+            {
+                try { return System.IO.File.Exists(CachePath) ? System.IO.File.GetLastWriteTimeUtc(CachePath) : DateTime.MinValue; }
+                catch { return DateTime.MinValue; }
+            }
+        }
+
+        /// <summary>
+        /// Whether a start has to walk the library: the last whole walk is over a day old, or
+        /// the cache lacks a folder that is switched on now. It walked on every start — 41 s on
+        /// 190 thousand samples from a cold disk, the first start after a reboot, fighting Live
+        /// for that disk while it loaded a set. F5 and a newly added folder still walk at once.
+        /// </summary>
+        public static bool WalkDue(SampleIndex cached, IList<string> roots, IList<string> disabled,
+                                   DateTime walkedUtc, DateTime nowUtc)
+        {
+            if (nowUtc - walkedUtc > TimeSpan.FromDays(1)) return true;
+            foreach (string r in Effective(roots, disabled))
+            {
+                bool have = false;
+                foreach (SampleFolder f in cached.Roots)
+                    if (string.Equals(Norm(f.Path), Norm(r), StringComparison.OrdinalIgnoreCase)) { have = true; break; }
+                if (!have) return true;
+            }
+            return false;
+        }
+
         // ------------------------------------------------------------ what counts
 
         static readonly HashSet<string> Extensions = new HashSet<string>(StringComparer.OrdinalIgnoreCase)

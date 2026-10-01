@@ -166,7 +166,7 @@ namespace AbletonManager
             using (System.Drawing.Drawing2D.GraphicsPath p = Theme.Round(_card, Sc(Theme.CardR)))
                 g.DrawPath(edge, p);
 
-            int pad = Sc(34);
+            int pad = Sc(PadPx);
             int x = _card.Left + pad;
             int top = _card.Top + pad;
             int innerW = _card.Width - pad * 2;
@@ -211,7 +211,7 @@ namespace AbletonManager
             Chrome.DrawText(g, "Esc", Theme.FBadge, escCap, escFg, Chrome.Center | TextFormatFlags.NoClipping);
             Icons.Draw(g, Glyph.Close, iconRect, iconFg, 1.5f);
 
-            int listTop = top + Sc(48);
+            int listTop = top + Sc(HeaderPx);
             _viewH = _card.Bottom - pad - listTop;
             if (_viewH <= 0) return;
 
@@ -227,8 +227,8 @@ namespace AbletonManager
         /// </summary>
         void PaintColumns(Graphics g, int x, int listTop, int innerW)
         {
-            int gap = Sc(30);
-            int colW = (innerW - gap * (_columns.Length - 1)) / _columns.Length;
+            int gap = Sc(GapPx);
+            int colW = ColumnW(innerW);
 
             using (Bitmap buf = new Bitmap(innerW, _viewH))
             {
@@ -286,10 +286,32 @@ namespace AbletonManager
         void LayoutCard()
         {
             int w = Math.Min(Sc(900), Width - Sc(104));
-            // 740 holds both columns whole since the Samples section joined the second one;
-            // a lower window scrolls, as before.
-            int h = Math.Min(Sc(740), Height - Sc(84));
+            // As tall as the longer column with the header and paddings around it: a window with
+            // the room shows all of it at once, a lower one scrolls. A fixed 740 held both
+            // columns until more sections came, and then scrolled on any screen.
+            int columns = ColumnsH(ColumnW(w - Sc(PadPx) * 2));
+            int h = Math.Min(Sc(PadPx) * 2 + Sc(HeaderPx) + columns, Height - Sc(84));
             _card = new Rectangle((Width - w) / 2, (Height - h) / 2, w, h);
+        }
+
+        // The card's padding, the header above the columns and the gap between them — the card
+        // is sized with the same numbers it is laid out with.
+        const int PadPx = 34, HeaderPx = 48, GapPx = 30;
+
+        int ColumnW(int innerW) { return (innerW - Sc(GapPx) * (_columns.Length - 1)) / _columns.Length; }
+
+        /// <summary>The longer column's height, measured on a buffer set up as the one
+        /// PaintColumns draws into — see Wrap for why that matters.</summary>
+        int ColumnsH(int colW)
+        {
+            int h = 0;
+            using (Bitmap one = new Bitmap(1, 1))
+            using (Graphics g = Graphics.FromImage(one))
+            {
+                Theme.Smooth(g);
+                foreach (List<Entry> col in _columns) h = Math.Max(h, Flow(g, col, 0, 0, colW, false));
+            }
+            return h;
         }
 
         /// <summary>
@@ -448,6 +470,8 @@ namespace AbletonManager
                 Key("F", "Open filters dialog"),
                 Key("Shift F", "Open scan folders window"),
                 Key("Ctrl F", "Focus search field"),
+                Key("↓", "From the search field into the results"),
+                Key("Home End", "First or last item of the list"),
                 Key("Ctrl ,", "Open settings"),
                 Key("F11", "Maximize or restore window"),
                 Key("Ctrl M", "Minimize window"),
@@ -468,10 +492,18 @@ namespace AbletonManager
                 Key("F5", "Rescan catalog"),
                 Key("Ctrl N", "Launch Live"),
 
+                Section("Arrangement preview"),
+                Key("Wheel", "Scroll the tracks"),
+                Key("Shift Wheel", "Move along the time"),
+                Key("Ctrl Wheel", "Zoom the time"),
+                Key("Alt Wheel", "Make the tracks taller or lower"),
+                Key("Middle drag", "Move both ways"),
+
                 Section("Samples"),
                 Key("Space", "Play or stop the sample"),
                 Key("Enter", "Open folder / play sample"),
-                Key("← →", "Collapse or expand a folder"),
+                Key("→", "Play sample / open folder"),
+                Key("←", "Collapse folder"),
             };
         }
     }

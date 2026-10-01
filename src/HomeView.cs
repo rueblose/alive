@@ -178,6 +178,9 @@ namespace AbletonManager
         /// <summary>The cursor is on the heading's star — it lights up.</summary>
         bool _headStarHot;
 
+        /// <summary>The cursor is on a day of the year of work that opens its projects.</summary>
+        bool _dayHot;
+
         /// <summary>The cursor is on the tags glyph of the _hot tile — the tags themselves then
         /// pop up under it.</summary>
         bool _tagsHot;
@@ -455,6 +458,7 @@ namespace AbletonManager
             // the same.
             Overview.LayoutChanged += delegate { RebuildTransition(); };
             Overview.Repaint += delegate { Invalidate(); };
+            Overview.DayClicked += ShowDay;
             Overview.StateChanged += delegate
             {
                 if (OverviewStateChanged != null) OverviewStateChanged();
@@ -543,7 +547,8 @@ namespace AbletonManager
                 for (int k = 0; k < cells.Count; k++)
                     if (ReferenceEquals(_tiles[cells[k]].Set, _selected)) { cur = k; break; }
 
-            if (cur < 0) { SelectTile(cells[0]); return true; }
+            // Nothing picked yet: a key starts at the first tile, End at the last.
+            if (cur < 0) { SelectTile(cells[dx >= cells.Count ? cells.Count - 1 : 0]); return true; }
 
             if (dx != 0)
             {
@@ -611,6 +616,48 @@ namespace AbletonManager
             ClampScroll();
             Invalidate();
         }
+
+        /// <summary>A project picked from a day of the year of work — the owner takes it to its
+        /// tile, past a search or a filter that hides it.</summary>
+        public event Action<SetEntry> SetPicked;
+
+        /// <summary>
+        /// A day of the year of work, clicked: the projects saved on it, the busiest first, as a
+        /// menu; a pick goes to the project's tile. A project gone from the catalog stays in the
+        /// list, greyed — that day was worked on all the same.
+        /// </summary>
+        void ShowDay(DateTime day)
+        {
+            if (Index == null) return;
+            ContextMenuStrip m = DarkMenu.Create();
+            foreach (string dir in Index.History.ProjectsOn(day))
+            {
+                // The project's newest set is the one its tile shows.
+                SetEntry newest = null;
+                foreach (SetEntry s in Index.Sets)
+                    if (!s.IsBackup && string.Equals(s.ProjectDir, dir, StringComparison.OrdinalIgnoreCase)
+                        && (newest == null || s.Modified > newest.Modified)) newest = s;
+
+                ToolStripMenuItem item = new ToolStripMenuItem(newest != null ? newest.Name : System.IO.Path.GetFileName(dir));
+                if (newest == null) item.Enabled = false;
+                else
+                {
+                    SetEntry pick = newest;
+                    item.Click += delegate { if (SetPicked != null) SetPicked(pick); };
+                }
+                m.Items.Add(item);
+            }
+            if (m.Items.Count == 0)
+            {
+                // A day from before the history kept its projects.
+                ToolStripMenuItem none = new ToolStripMenuItem("Projects were not recorded that day");
+                none.Enabled = false;
+                m.Items.Add(none);
+            }
+            m.Show(this, _dayMenuAt);
+        }
+
+        Point _dayMenuAt;
 
         /// <summary>The menu of the selected tile — for the context menu key on the
         /// keyboard.</summary>
@@ -1084,6 +1131,13 @@ namespace AbletonManager
             bool starHot = OnHeadStar(e.Location);
             if (starHot != _headStarHot) { _headStarHot = starHot; Invalidate(); }
 
+            // A day with saves opens its projects, so it takes the hand as a tile does.
+            if (Overview.DayHot != _dayHot)
+            {
+                _dayHot = Overview.DayHot;
+                Cursor = _dayHot || _hot >= 0 || starHot ? Cursors.Hand : Cursors.Default;
+            }
+
             bool play, pin, tags;
             int hot = TileAt(e.Location, out play, out pin, out tags);
 
@@ -1095,7 +1149,7 @@ namespace AbletonManager
                     PickNextSplash();
 
                 _hot = hot; _playHot = play; _pinHot = pin; _tagsHot = tags;
-                Cursor = hot >= 0 || starHot ? Cursors.Hand : Cursors.Default;
+                Cursor = hot >= 0 || starHot || _dayHot ? Cursors.Hand : Cursors.Default;
                 AnimEngine.Register(this);
                 Invalidate();
             }
@@ -1105,6 +1159,7 @@ namespace AbletonManager
         protected override void OnMouseLeave(EventArgs e)
         {
             if (Overview.MouseLeave()) Invalidate();
+            if (_dayHot) { _dayHot = false; Cursor = Cursors.Default; }
             if (_headStarHot) { _headStarHot = false; Invalidate(); }
             if (_hot >= 0)
             {
@@ -1137,6 +1192,7 @@ namespace AbletonManager
                 }
             }
 
+            _dayMenuAt = e.Location;              // where a day's menu opens, see ShowDay
             if (e.Button == MouseButtons.Left && Overview.MouseDown(Content(e.Location))) return;
 
             if (e.Button == MouseButtons.Left && OnHeadStar(e.Location))

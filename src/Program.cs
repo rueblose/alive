@@ -140,6 +140,17 @@ namespace Alive
                 }
             };
 
+            // One catalog for both windows: Stat shows the main window's index and hears its
+            // rescans, and its F5 is the main window's.
+            MainForm main = owner as MainForm;
+            if (main != null)
+            {
+                nf.Share(main.Index, main.Rescan);
+                Action rebuilt = nf.CatalogRebuilt;
+                main.CatalogRebuilt += rebuilt;
+                nf.FormClosed += delegate { main.CatalogRebuilt -= rebuilt; };
+            }
+
             _stat = nf;
             _stat.FormClosed += delegate { _stat = null; };
             if (owner != null)

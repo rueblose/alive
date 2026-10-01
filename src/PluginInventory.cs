@@ -677,9 +677,11 @@ namespace AbletonManager
 
                     // For VST3 the "file" routinely turns out to be a bundle folder
                     // (C:\...\VST3\Serum2.vst3 is a directory), so File.Exists alone is not
-                    // enough: it honestly returns false for an installed plugin.
-                    p.FileMissing = p.Path.Length > 0
-                                 && !File.Exists(p.Path) && !Directory.Exists(p.Path);
+                    // enough: it honestly returns false for an installed plugin. Asked through
+                    // the load's path cache: ten installs list the same few hundred files, and
+                    // asking the disk for each of their 6446 records was nearly all of a 350 ms
+                    // load.
+                    p.FileMissing = p.Path.Length > 0 && !FastPathExists(p.Path);
                     All.Add(p);
                 }
             }

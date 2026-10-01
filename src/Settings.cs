@@ -80,6 +80,11 @@ namespace AbletonManager
         /// </summary>
         public bool GroupByFolder = true;
 
+        /// <summary>How loud a sample previews on the Samples tab, 0..1 — the slider under the
+        /// sample's panel. Its own, apart from the render player's: a sample is heard in passing,
+        /// a render is listened to.</summary>
+        public float PreviewVolume = 0.8f;
+
         // ------------------------------------------------------------------ plugins
 
         /// <summary>
@@ -225,6 +230,13 @@ namespace AbletonManager
                     else if (key == "smoothscroll") s.SmoothScroll = val == "1";
                     else if (key == "nosmoothscroll") s.SmoothScroll = val == "0";
                     else if (key == "groupbyfolder") s.GroupByFolder = val == "1";
+                    else if (key == "previewvolume")
+                    {
+                        float v;
+                        if (float.TryParse(val, System.Globalization.NumberStyles.Float,
+                                           System.Globalization.CultureInfo.InvariantCulture, out v))
+                            s.PreviewVolume = Math.Max(0f, Math.Min(1f, v));
+                    }
                     else if (key == "pluginfolders") s.PluginsFromFolders = val == "1";
                     else if (key == "pluginsource") s.PluginSource = val;
                     else if (key == "vst2custom") s.Vst2CustomOn = val == "1";
@@ -296,6 +308,7 @@ namespace AbletonManager
                 sb.Append("noglass=").AppendLine(DisableGlass ? "1" : "0");
                 sb.Append("smoothscroll=").AppendLine(SmoothScroll ? "1" : "0");
                 sb.Append("groupbyfolder=").AppendLine(GroupByFolder ? "1" : "0");
+                sb.Append("previewvolume=").AppendLine(PreviewVolume.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture));
                 sb.Append("pluginfolders=").AppendLine(PluginsFromFolders ? "1" : "0");
                 sb.Append("pluginsource=").AppendLine(PluginSource);
                 sb.Append("vst2custom=").AppendLine(Vst2CustomOn ? "1" : "0");

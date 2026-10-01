@@ -179,6 +179,7 @@ namespace AbletonManager
         public event Action<int> RowCountClicked;      // a click on the "+3" / "−3" tail
         public event Action<int> RowTagsClicked;       // a click on a row's tags (or on the "+" in an empty cell)
         public event Action<int> SelectedRowClicked;   // a left click on the row already selected — SelectionChanged stays silent
+        public event Action EmptyClicked;              // a left press past the rows, on nothing
 
         public int SortColumn = -1;
         public bool SortDescending;
@@ -1157,6 +1158,8 @@ namespace AbletonManager
                 return;
             }
 
+            if (idx < 0 && e.Button == MouseButtons.Left && EmptyClicked != null) EmptyClicked();
+
             // The "+3" tail is an independent "show the other versions" button, like play and
             // the star: it does not touch the row selection, or the details panel would jump on
             // every expansion.
@@ -1318,7 +1321,8 @@ namespace AbletonManager
 
         protected override bool IsInputKey(Keys k)
         {
-            return k == Keys.Up || k == Keys.Down || k == Keys.PageUp || k == Keys.PageDown || base.IsInputKey(k);
+            return k == Keys.Up || k == Keys.Down || k == Keys.PageUp || k == Keys.PageDown
+                || k == Keys.Home || k == Keys.End || base.IsInputKey(k);
         }
 
         protected override void OnKeyDown(KeyEventArgs e)
@@ -1328,6 +1332,8 @@ namespace AbletonManager
             else if (e.KeyCode == Keys.Up) step = -1;
             else if (e.KeyCode == Keys.PageDown) step = PageStep;
             else if (e.KeyCode == Keys.PageUp) step = -PageStep;
+            else if (e.KeyCode == Keys.End) step = _rows.Count;
+            else if (e.KeyCode == Keys.Home) step = -_rows.Count;
 
             if (step != 0 && MoveSelection(step)) e.Handled = true;
             base.OnKeyDown(e);
@@ -1364,7 +1370,9 @@ namespace AbletonManager
         public bool MoveSelection(int step)
         {
             if (_rows.Count == 0) return false;
-            int want = Math.Max(0, Math.Min(_rows.Count - 1, (_selected < 0 ? 0 : _selected) + step));
+            // With nothing selected the walk starts just above the first row: Down lands on it
+            // rather than on the second, and End on the last.
+            int want = Math.Max(0, Math.Min(_rows.Count - 1, (_selected < 0 ? -1 : _selected) + step));
             if (want != _selected)
             {
                 _selected = want;

@@ -36,7 +36,8 @@ you read the name. A star keeps a project at the front; the play button plays th
 the set.
 
 Above the tiles is your year in Live: the days you worked, your current streak and your record, the
-hour you usually start, and how much the whole library weighs.
+hour you usually start, and how much the whole library weighs. Click a day to see which projects
+you saved on it.
 
 ### Sets
 
@@ -73,7 +74,8 @@ folders, or take the ones Live already knows about.
 - **Never used**: the biggest folders you never took a single sound from.
 - **Most used**: your go-to sounds.
 - **Duplicates**: the same file sitting in several places, biggest waste first.
-- Click a sample to hear it, like in Live's browser, and drag it straight into Live.
+- Click a sample to hear it, like in Live's browser, and drag it straight into Live. `→` plays the
+  selected one, a click on empty space stops it, and the slider under its wave sets how loud.
 - A set's panel on the Sets tab lists the sample folders it uses; a click opens that folder here.
 
 <img src="docs/img/samples-never.png" alt="Never used: the heaviest folders nothing was ever taken from">
@@ -101,8 +103,10 @@ and gigabytes each group adds. The original set stays as it is.
 
 <img src="docs/img/preview.png" alt="Arrangement preview">
 
-`Ctrl Space` shows the whole arrangement as one picture, in Live's clip colours. `Space` plays the
-render lying next to the set; you can pick which file counts as the main one.
+`Ctrl Space` shows the whole arrangement as one picture, in Live's clip colours, with the track
+names. It moves as Live's arrangement does: the wheel scrolls the tracks, `Shift` + wheel the time,
+`Ctrl` + wheel zooms, `Alt` + wheel sets the track height, and the middle button drags. `Space`
+plays the render lying next to the set; you can pick which file counts as the main one.
 
 <img src="docs/img/player.png" alt="Player: the render's waveform and the set's renders" width="560">
 

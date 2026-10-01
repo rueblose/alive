@@ -21,7 +21,8 @@ if not exist "%CSC%" (
 set ROOT=%~dp0..
 set REFS=/reference:System.dll /reference:System.Core.dll /reference:System.Drawing.dll /reference:System.Windows.Forms.dll /reference:System.Xml.dll /reference:System.IO.Compression.dll /reference:System.IO.Compression.FileSystem.dll
 
-rem Whole src except Program.cs - LibraryTest brings its own Main.
+rem Whole src except Program.cs - LibraryTest brings its own Main. nebula goes in too:
+rem Stat reads the main window's catalog, and that is checked here.
 set LIST=%TEMP%\alive-library-sources.rsp
 if exist "%LIST%" del "%LIST%"
 for /f "delims=" %%F in ('dir /b "%ROOT%\src\*.cs" ^| findstr /v /i /x "Program.cs"') do (
@@ -29,7 +30,7 @@ for /f "delims=" %%F in ('dir /b "%ROOT%\src\*.cs" ^| findstr /v /i /x "Program.
 )
 
 "%CSC%" /nologo /target:exe /platform:anycpu /codepage:65001 /main:AliveTools.LibraryTest ^
-  /out:"%OUT%\LibraryTest.exe" %REFS% @"%LIST%" "%ROOT%\tools\LibraryTest.cs"
+  /out:"%OUT%\LibraryTest.exe" %REFS% @"%LIST%" "%ROOT%\nebula\*.cs" "%ROOT%\tools\LibraryTest.cs"
 if errorlevel 1 goto fail
 
 echo OK: %OUT%\LibraryTest.exe

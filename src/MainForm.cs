@@ -887,6 +887,9 @@ namespace AbletonManager
             _list.RowRightClicked += OnListRowRightClick;
             _list.RowCountClicked += OnRowCountClicked;
             _list.SelectedRowClicked += delegate (int idx) { if (SamplesDomain) OnSelectedRowClicked(idx); };
+            // A press on nothing stops the sample — under the rows here, on the panel and on
+            // the window below.
+            _list.EmptyClicked += delegate { StopSample(); };
             _list.RowTagsClicked += delegate (int idx)
             {
                 if (idx >= 0 && idx < _list.Rows.Count) EditNotes(_list.Rows[idx].Tag as SetEntry);
@@ -916,6 +919,10 @@ namespace AbletonManager
             _detail.LibraryFolderRequested += OnLibraryFolderRequested;
             _detail.WaveClicked += OnWaveClicked;
             _detail.NotesRequested += EditNotes;
+            _detail.PreviewVolume = _settings.PreviewVolume;
+            // Kept in the settings, written with them when the window closes.
+            _detail.PreviewVolumeChanged += delegate (float v) { _settings.PreviewVolume = v; _preview.Volume = v; };
+            _detail.EmptyClicked += delegate { StopSample(); };
             Controls.Add(_detail);
 
             _home.Overview.Open = _settings.OverviewOpen;
@@ -938,6 +945,7 @@ namespace AbletonManager
             _home.DetailsRequested += OnSetRequested;   // "Show details" — go to the set in Sets
             _home.RescueRequested += RescueSet;
             _home.ExportRequested += CollectSet;
+            _home.SetPicked += NavigateToSet;          // a project from a day of the year of work
             _home.NotesRequested += EditNotes;
             _home.SelectionChanged += delegate { OnSelectionChanged(); };
             _home.NewProjectRequested += delegate { NewProject(); };
@@ -1314,7 +1322,7 @@ namespace AbletonManager
             StartScan(false);
             // No project folders means no scan of the sets to wait for — the library is walked
             // right away.
-            if (!_scanning && !_samplesWalked) { _samplesWalked = true; StartSampleScan(false); }
+            if (!_scanning) WalkSamplesOnce();
             Rewatch();
             // If there was nothing to scan, the paths we were started with are all we have to
             // go on — otherwise they wait for the scan to finish.
@@ -1393,10 +1401,16 @@ namespace AbletonManager
         /// Windows loop is running between WM_ENTERSIZEMOVE and WM_EXITSIZEMOVE.</summary>
         bool _inSizeMove;
 
+        const int WM_NCLBUTTONDOWN = 0x00A1, HTCAPTION = 2;
+
         protected override void WndProc(ref Message m)
         {
             // A click outside an open modal window — this is where the system sound comes from.
             if (Chrome.SwallowBlockedClick(ref m)) return;
+
+            // The empty toolbar strip is a caption to Windows (see WM_NCHITTEST below), so a
+            // press there never reaches OnMouseDown — it stops a sample all the same.
+            if (m.Msg == WM_NCLBUTTONDOWN && m.WParam.ToInt64() == HTCAPTION) StopSample();
 
             // A second copy was started: it handed us its command line and left. Even an empty
             // one is an instruction — "show me the window I already have".
@@ -1474,6 +1488,14 @@ namespace AbletonManager
             // little, is a caption as far as Windows is concerned. The buttons standing in that
             // strip are separate windows of their own and never see this message.
             if (p.Y < Sc(Theme.ContentY) - Sc(10)) m.Result = (IntPtr)2;
+        }
+
+        /// <summary>A press on the window's own empty space — between and around its controls —
+        /// stops a sample, as a press on nothing in the list or the panel does.</summary>
+        protected override void OnMouseDown(MouseEventArgs e)
+        {
+            if (e.Button == MouseButtons.Left) StopSample();
+            base.OnMouseDown(e);
         }
 
         protected override void OnMouseDoubleClick(MouseEventArgs e)
@@ -1557,9 +1579,11 @@ namespace AbletonManager
             {
                 Keys k = keyData & Keys.KeyCode;
                 if ((k == Keys.Up || k == Keys.Down || k == Keys.Left || k == Keys.Right
-                     || k == Keys.PageUp || k == Keys.PageDown) && MoveSelection(k))
+                     || k == Keys.PageUp || k == Keys.PageDown || k == Keys.Home || k == Keys.End)
+                    && MoveSelection(k))
                     return true;
             }
+            if (keyData == Keys.Down && _search.Box.Focused) { IntoResults(); return true; }
 
             if (keyData == (Keys.Control | Keys.D1) || keyData == (Keys.Control | Keys.NumPad1))
             {
@@ -2996,10 +3020,13 @@ namespace AbletonManager
                     case Keys.Right: return _home.MoveSelection(+1, 0);
                     case Keys.Up: case Keys.PageUp: return _home.MoveSelection(0, -1);
                     case Keys.Down: case Keys.PageDown: return _home.MoveSelection(0, +1);
+                    case Keys.Home: return _home.MoveSelection(-int.MaxValue / 2, 0);
+                    case Keys.End: return _home.MoveSelection(int.MaxValue / 2, 0);
                 }
                 return false;
             }
 
+            if (SamplesDomain && k == Keys.Right && PlaySelectedSample()) return true;
             if (SamplesDomain && (k == Keys.Left || k == Keys.Right)) return SampleTreeKey(k == Keys.Right);
 
             switch (k)
@@ -3008,8 +3035,26 @@ namespace AbletonManager
                 case Keys.Down: return _list.MoveSelection(+1);
                 case Keys.PageUp: return _list.MoveSelection(-_list.PageStep);
                 case Keys.PageDown: return _list.MoveSelection(+_list.PageStep);
+                case Keys.Home: return _list.MoveSelection(-_list.Rows.Count);
+                case Keys.End: return _list.MoveSelection(+_list.Rows.Count);
             }
             return false;   // there is nowhere to go left and right in a list
+        }
+
+        /// <summary>Down from the search field: on into what it found, as from a browser's
+        /// address bar. The first result is picked if none was; a picked one stays.</summary>
+        void IntoResults()
+        {
+            if (Tiles)
+            {
+                _home.Focus();
+                if (_home.Selected == null) _home.MoveSelection(0, +1);
+            }
+            else
+            {
+                _list.Focus();
+                if (_list.Selected == null) _list.MoveSelection(+1);
+            }
         }
 
         /// <summary>The context menu key — the same menu as on the right mouse
@@ -3729,6 +3774,16 @@ namespace AbletonManager
             Rewatch();
         }
 
+        /// <summary>The catalog itself — Stat shows this one rather than reading a copy of its
+        /// own (see Program.OpenStat).</summary>
+        public ProjectIndex Index { get { return _index; } }
+
+        /// <summary>A scan has published new sets. Raised on the UI thread.</summary>
+        public event Action CatalogRebuilt;
+
+        /// <summary>F5 in Stat: the catalog is scanned here, where its roots are watched.</summary>
+        public void Rescan() { StartScan(true); }
+
         // -------------------------------------------------------- auto-refresh
 
         /// <summary>
@@ -3805,6 +3860,7 @@ namespace AbletonManager
                         _scanning = false;
                         RefreshVersions();
                         if (wasManual) Refill(); else RefillPreservingView();
+                        if (CatalogRebuilt != null) CatalogRebuilt();
                         // We no longer write the final summary ("Indexed N sets · M with
                         // missing files"): how many sets are shown stands at the top as it is,
                         // and the losses are visible as coloured marks in the rows themselves.
@@ -3816,9 +3872,9 @@ namespace AbletonManager
                         FlushPending();
                         CheckUpdatesInBackground();
 
-                        // The library is walked once per session, after the sets: two walks on
-                        // one disk at once only slow each other down.
-                        if (!_samplesWalked) { _samplesWalked = true; StartSampleScan(false); }
+                        // The library is walked at most once per session, after the sets: two
+                        // walks on one disk at once only slow each other down.
+                        WalkSamplesOnce();
 
                         // Something else on disk changed while we were scanning — we go round
                         // once more, or those edits would wait for the next occasion.

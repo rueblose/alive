@@ -18,7 +18,11 @@ namespace AbletonManager.Nebula
     public sealed class NebulaForm : Form
     {
         readonly Settings _settings;
-        readonly ProjectIndex _index = new ProjectIndex();
+        ProjectIndex _index = new ProjectIndex();
+
+        /// <summary>Set when the catalog is the main window's — see Share. Rescans are its
+        /// business then.</summary>
+        Action _rescan;
 
         readonly CloudView _cloud = new CloudView();
         readonly DetailPanel _detail = new DetailPanel();
@@ -112,6 +116,26 @@ namespace AbletonManager.Nebula
         }
 
         int Sc(int v) { return (int)Math.Round(v * (DeviceDpi / 96f)); }
+
+        /// <summary>
+        /// Show the main window's catalog instead of an index of its own. Stat used to read the
+        /// cache into a second index on every open, load the plugin database again, weigh every
+        /// project folder again, and never see the main window's rescans. F5 and new folders go
+        /// to the main window through rescan; it answers with CatalogRebuilt.
+        /// </summary>
+        public void Share(ProjectIndex catalog, Action rescan)
+        {
+            _index = catalog;
+            _detail.Index = catalog;
+            _rescan = rescan;
+        }
+
+        /// <summary>The shared catalog has new sets — the selection is kept by path.</summary>
+        public void CatalogRebuilt()
+        {
+            Apply();
+            StartWeighing();
+        }
 
         // -------------------------------------------------------------------- building
 
@@ -227,6 +251,14 @@ namespace AbletonManager.Nebula
         {
             base.OnShown(e);
             Glass.Apply(this);
+
+            if (_rescan != null)
+            {
+                Apply();
+                StartWeighing();        // only what the main window has not weighed yet
+                Invalidate();
+                return;
+            }
 
             // The catalog has already been built by Alive — we read its cache and show the
             // cloud at once. There is no scan of our own at startup: it would achieve nothing
@@ -429,14 +461,15 @@ namespace AbletonManager.Nebula
                 _settings.DisabledRoots.AddRange(d.DisabledRoots);
                 _settings.Save();
                 Settings.NotifyRootsChanged(this);
-                StartScan();
+                // A shared catalog is rescanned by the main window, which hears the change.
+                if (_rescan == null) StartScan();
                 return true;
             }
         }
 
         void OnGlobalRootsChanged(object source)
         {
-            if (source == this || IsDisposed) return;
+            if (source == this || IsDisposed || _rescan != null) return;
             if (InvokeRequired)
             {
                 try { BeginInvoke((MethodInvoker)delegate { OnGlobalRootsChanged(source); }); } catch { }
@@ -448,6 +481,7 @@ namespace AbletonManager.Nebula
 
         void StartScan()
         {
+            if (_rescan != null) { _rescan(); return; }
             if (_scanning)
             {
                 _rescanPending = true;
@@ -520,7 +554,8 @@ namespace AbletonManager.Nebula
                     foreach (SetEntry s in sets)
                     {
                         string dir = s.ProjectDir;
-                        if (dir.Length == 0) continue;
+                        // A shared catalog arrives weighed by the main window's scan.
+                        if (dir.Length == 0 || s.ProjectSize != 0) continue;
                         FolderScan.Weight w;
                         if (!done.TryGetValue(dir, out w))
                         {

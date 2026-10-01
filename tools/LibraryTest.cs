@@ -30,6 +30,10 @@ namespace AliveTools
     ///     LibraryTest.exe data       the data folder's files survive a failed read and a crash mid-write
     ///     LibraryTest.exe visual     what the interface draws: numbers, fades, counts
     ///     LibraryTest.exe texts      what the words and small reactions say: pins, counts, dates
+    ///     LibraryTest.exe calendar   the date picker under the filters' date fields
+    ///     LibraryTest.exe perf       work not done twice: the sample walk, Stat's catalog
+    ///     LibraryTest.exe add        the additions: list keys, the preview, preview volume, a day's projects
+    ///     LibraryTest.exe play       hearing samples: the volume by the wave, → plays, an empty click stops
     ///     LibraryTest.exe real &lt;projects&gt; &lt;samples...&gt;   timings on a real library, no checks
     ///
     /// Runs with its own ALIVE_HOME under %TEMP% — the owner's settings and caches are never
@@ -65,10 +69,14 @@ namespace AliveTools
             if (cmd == "all" || cmd == "data") Data();
             if (cmd == "all" || cmd == "visual") Visual();
             if (cmd == "all" || cmd == "texts") Texts();
+            if (cmd == "all" || cmd == "calendar") Calendar();
+            if (cmd == "all" || cmd == "perf") Perf();
+            if (cmd == "all" || cmd == "add") Add();
+            if (cmd == "all" || cmd == "play") Play();
 
             if (_checks == 0)
             {
-                Console.WriteLine("usage: LibraryTest.exe all | index | walk | usage | aiff | sources | fit | copies | catalog | data | visual | texts | real <projects> <samples...>");
+                Console.WriteLine("usage: LibraryTest.exe all | index | walk | usage | aiff | sources | fit | copies | catalog | data | visual | texts | calendar | perf | add | play | real <projects> <samples...>");
                 return 2;
             }
 
@@ -1062,6 +1070,28 @@ namespace AliveTools
             RowTextFades();
             TileTextFades();
             FilterCount();
+            HelpFits();
+        }
+
+        /// <summary>
+        /// The help card is as tall as its columns: on a window with the room all of it shows at
+        /// once — a fixed 740 had the Samples keys scroll away even on a tall screen — and a low
+        /// window scrolls.
+        /// </summary>
+        static void HelpFits()
+        {
+            HelpOverlay h = new HelpOverlay();
+            h.Size = new Size(1400, 1300);
+            IntPtr handle = h.Handle;
+            Paint(h);
+            int content = (int)Field(h, "_contentH"), view = (int)Field(h, "_viewH");
+            Check(content > 0 && content <= view,
+                  "visual: the help scrolls on a window with room for all of it (" + content + " in " + view + ")");
+            h.Size = new Size(1400, 500);
+            Paint(h);
+            content = (int)Field(h, "_contentH"); view = (int)Field(h, "_viewH");
+            Check(content > view, "visual: the help does not scroll on a low window (" + content + " in " + view + ")");
+            h.Dispose();
         }
 
         /// <summary>The interface is English, and so are its numbers whatever the machine's
@@ -1298,6 +1328,517 @@ namespace AliveTools
                 Check(sub.EndsWith("1 track   ·   1 clip"), "texts: the preview counts '" + sub + "'");
             }
             host.Dispose();
+        }
+
+        // --------------------------------------------------------------- calendar
+
+        static void Calendar()
+        {
+            NothingPicked();
+            CalendarKeys();
+        }
+
+        /// <summary>The calendar is CalendarPopup's own; it is private, the bench reaches it the
+        /// way it reaches the rest.</summary>
+        static Control Grid(DateTime? current)
+        {
+            Type t = typeof(CalendarPopup).GetNestedType("MonthGrid", BindingFlags.NonPublic);
+            return (Control)Activator.CreateInstance(t, Any, null, new object[] { current }, null);
+        }
+
+        /// <summary>
+        /// An empty date field opens the calendar with nothing picked. It used to fill today in
+        /// the colour of a picked day, and "nothing" could not be told from "today".
+        /// </summary>
+        static void NothingPicked()
+        {
+            int filled = 0;
+            using (Control g = Grid(null))
+            using (Bitmap b = new Bitmap(g.Width, g.Height))
+            {
+                g.DrawToBitmap(b, new Rectangle(0, 0, g.Width, g.Height));
+                for (int y = 0; y < b.Height; y++)
+                    for (int x = 0; x < b.Width; x++)
+                        if (b.GetPixel(x, y).ToArgb() == Theme.Light.ToArgb()) filled++;
+            }
+            Check(filled < 20, "calendar: an empty field shows today as the picked day (" + filled + " px of the pick colour)");
+        }
+
+        /// <summary>
+        /// The keyboard the native MonthCalendar had: arrows walk the days, PageDown turns the
+        /// month, Enter picks. The drawn one took none of it.
+        /// </summary>
+        static void CalendarKeys()
+        {
+            DateTime? got = null;
+            using (Control g = Grid(new DateTime(2026, 9, 15)))
+            {
+                g.GetType().GetEvent("Picked").AddEventHandler(g, (Action<DateTime>)delegate (DateTime d) { got = d; });
+                Check((bool)Call(g, "IsInputKey", Keys.Right) && (bool)Call(g, "IsInputKey", Keys.Enter),
+                      "calendar: the arrows and Enter never reach it - the dialog takes them");
+                foreach (Keys k in new Keys[] { Keys.Right, Keys.Down, Keys.PageDown, Keys.Enter })
+                    Call(g, "OnKeyDown", new KeyEventArgs(k));
+            }
+            Check(got == new DateTime(2026, 10, 23), "calendar: Right, Down, PageDown, Enter from 2026-09-15 picked "
+                                                     + (got.HasValue ? got.Value.ToString("yyyy-MM-dd") : "nothing"));
+        }
+
+        // ------------------------------------------------------------------- perf
+
+        static void Perf()
+        {
+            SamplesWalkDue();
+            StatSharesCatalog();
+            MainAnnouncesRebuild();
+        }
+
+        /// <summary>
+        /// The library is walked at a start only when the last whole walk is a day old or
+        /// misses a folder: on every start the walk took 41 s on 190 thousand samples from a cold
+        /// disk, and fought Live for it while it loaded a set.
+        /// </summary>
+        static void SamplesWalkDue()
+        {
+            string lib = Fresh("due");
+            string a = Path.Combine(lib, "A"), b = Path.Combine(lib, "B");
+            WriteWav(Path.Combine(a, "kick.wav"), 100);
+            WriteWav(Path.Combine(b, "snare.wav"), 100);
+            SampleIndex idx = SampleIndex.Build(new List<string> { a }, new List<string>(), null, CancellationToken.None);
+            List<string> none = new List<string>();
+            DateTime now = new DateTime(2026, 10, 1, 12, 0, 0, DateTimeKind.Utc);
+
+            Check(!SampleIndex.WalkDue(idx, new List<string> { a }, none, now.AddHours(-3), now),
+                  "perf: a walk three hours old is walked again at the start");
+            Check(SampleIndex.WalkDue(idx, new List<string> { a }, none, now.AddHours(-25), now),
+                  "perf: a walk a day old is not walked again");
+            Check(SampleIndex.WalkDue(idx, new List<string> { a, b }, none, now.AddHours(-3), now),
+                  "perf: a folder the last walk never saw is not walked");
+            Check(!SampleIndex.WalkDue(idx, new List<string> { a, b }, new List<string> { b }, now.AddHours(-3), now),
+                  "perf: a folder switched off asks for a walk");
+            Check(SampleIndex.WalkDue(SampleIndex.Empty, new List<string> { a }, none, DateTime.MinValue, now),
+                  "perf: no cache at all and still no walk");
+        }
+
+        /// <summary>
+        /// Stat shows the main window's catalog: it reads no cache of its own, and a rescan made
+        /// in the main window reaches it. It used to keep an index of its own, read on every
+        /// open, weigh every project folder again, and never see the main window's rescans.
+        /// </summary>
+        static void StatSharesCatalog()
+        {
+            string root = Fresh("stat");
+            WriteAls(Path.Combine(root, @"One Project\one.als"));
+            Settings s = new Settings();
+            s.Roots.Add(root);
+            new ProjectIndex().Scan(s, null, CancellationToken.None);
+
+            ProjectIndex catalog = new ProjectIndex();
+            catalog.LoadFromCache();
+            AbletonManager.Nebula.NebulaForm nf = new AbletonManager.Nebula.NebulaForm();
+            try
+            {
+                nf.Share(catalog, delegate { });
+                Call(nf, "OnShown", EventArgs.Empty);
+                Check(Field(nf, "_index") == catalog, "perf: Stat reads a catalog of its own");
+
+                WriteAls(Path.Combine(root, @"Two Project\two.als"));
+                catalog.Scan(s, null, CancellationToken.None);         // the main window's scan
+                nf.CatalogRebuilt();
+                List<SetEntry> shown = ((AbletonManager.Nebula.CloudView)Field(nf, "_cloud")).Sets;
+                Check(shown.Count == 2, "perf: Stat shows " + shown.Count + " sets after the main window found 2");
+            }
+            finally { nf.Dispose(); }
+        }
+
+        /// <summary>The main window says when a scan has published new sets — Stat waits on
+        /// exactly that.</summary>
+        static void MainAnnouncesRebuild()
+        {
+            string root = Fresh("announce");
+            WriteAls(Path.Combine(root, @"Song Project\song.als"));
+            MainForm m = new MainForm();
+            try
+            {
+                IntPtr handle = m.Handle;                  // the scan answers through BeginInvoke
+                ((Settings)Field(m, "_settings")).Roots.Add(root);
+                int told = 0;
+                m.CatalogRebuilt += delegate { told++; };
+                Call(m, "StartScan", true);
+                Stopwatch sw = Stopwatch.StartNew();
+                while ((bool)Field(m, "_scanning") && sw.ElapsedMilliseconds < 15000) Application.DoEvents();
+                Application.DoEvents();
+                Check(told == 1 && m.Index.Sets.Count == 1,
+                      "perf: the main window's scan ended with " + told + " announcements and " + m.Index.Sets.Count + " sets");
+            }
+            finally { m.Dispose(); }
+        }
+
+        // -------------------------------------------------------------------- add
+
+        static void Add()
+        {
+            ListKeys();
+            PreviewNamesAndMeter();
+            SampleVolume();
+            DayProjects();
+            DayClick();
+            PreviewNavigation();
+        }
+
+        /// <summary>A mouse message through the control's own WndProc — the way Windows hands
+        /// it over, filters included.</summary>
+        static void Send(Control c, int msg, int wparam, Point at)
+        {
+            Message m = Message.Create(c.Handle, msg, (IntPtr)wparam, (IntPtr)((at.Y << 16) | (at.X & 0xFFFF)));
+            c.GetType().GetMethod("WndProc", Any).Invoke(c, new object[] { m });
+        }
+
+        /// <summary>
+        /// The full-screen preview moves as Live's arrangement does. A track is never lower than
+        /// its name — sixty of them scroll rather than squeeze the names into each other; the
+        /// wheel scrolls the tracks, Shift+wheel the time, Ctrl+wheel zooms the time around the
+        /// cursor, Alt+wheel makes the tracks taller (never lower than a name), and the middle
+        /// button drags both ways.
+        /// </summary>
+        static void PreviewNavigation()
+        {
+            Arrangement a = new Arrangement();
+            for (int i = 0; i < 60; i++)
+            {
+                TrackLane t = new TrackLane();
+                t.Name = "Track " + i;
+                ClipBlock c = new ClipBlock();
+                c.Start = 0;
+                c.End = 256;
+                c.Color = 5;
+                t.Clips.Add(c);
+                a.Tracks.Add(t);
+            }
+            a.ClipCount = 60;
+            a.End = 256;
+
+            ArrangementView v = new ArrangementView();
+            v.Size = new Size(900, 500);
+            v.Options.ShowRuler = true;
+            v.Options.ShowNames = true;
+            v.Options.MaxLane = 40;
+            v.Set(a);
+            Call(v, "EnsureView");
+
+            int lane = (int)Field(v, "_laneH");
+            int font = TextRenderer.MeasureText("Ag", Theme.FBadge).Height;
+            Check(lane > font, "add: sixty tracks are squeezed to " + lane + " px, lower than a name (" + font + " px)");
+
+            Rectangle plot = (Rectangle)typeof(ArrangementView).GetProperty("Plot", Any).GetValue(v, null);
+            Point mid = new Point(plot.X + plot.Width / 2, plot.Y + plot.Height / 2);
+            v.Wheel(-120, mid, Keys.None);
+            Check((int)Field(v, "_scrollY") > 0, "add: the wheel does not scroll the tracks");
+
+            double fit = (double)Field(v, "_pxPerBeat");
+            double beat = (mid.X - plot.X + (double)Field(v, "_scrollX")) / fit;
+            v.Wheel(120, mid, Keys.Control);
+            double px = (double)Field(v, "_pxPerBeat");
+            double still = (mid.X - plot.X + (double)Field(v, "_scrollX")) / px;
+            Check(px > fit && Math.Abs(still - beat) * px < 1.5, "add: Ctrl+wheel does not zoom the time around the cursor");
+
+            double sx = (double)Field(v, "_scrollX");
+            v.Wheel(-120, mid, Keys.Shift);
+            Check((double)Field(v, "_scrollX") > sx, "add: Shift+wheel does not move along the time");
+
+            v.Wheel(120, mid, Keys.Alt);
+            Check((int)Field(v, "_laneH") > lane, "add: Alt+wheel does not make the tracks taller");
+            for (int i = 0; i < 60; i++) v.Wheel(-120, mid, Keys.Alt);
+            Check((int)Field(v, "_laneH") > font, "add: Alt+wheel squeezes the tracks below a name");
+
+            sx = (double)Field(v, "_scrollX");
+            int sy = (int)Field(v, "_scrollY");
+            Point to = new Point(mid.X + 40, mid.Y - 30);       // the time back, the tracks on
+            const int WM_MOUSEMOVE = 0x0200, WM_MBUTTONDOWN = 0x0207, WM_MBUTTONUP = 0x0208, MK_MBUTTON = 0x10;
+            Send(v, WM_MBUTTONDOWN, MK_MBUTTON, mid);
+            Send(v, WM_MOUSEMOVE, MK_MBUTTON, to);
+            Send(v, WM_MBUTTONUP, 0, to);
+            Check((double)Field(v, "_scrollX") < sx && (int)Field(v, "_scrollY") > sy,
+                  "add: the middle button does not drag the view (x " + sx + " -> " + Field(v, "_scrollX")
+                  + ", y " + sy + " -> " + Field(v, "_scrollY") + ", panning " + Field(v, "_panning") + ")");
+            v.Dispose();
+        }
+
+        /// <summary>A click on a day of the calendar with saves says which day; a click on an
+        /// empty day says nothing.</summary>
+        static void DayClick()
+        {
+            DateTime day = DateTime.Today.AddDays(-2);
+            FolderScan.Weight w = new FolderScan.Weight();
+            w.Saves = new List<FolderScan.Save> { Save(day.AddHours(13), "song") };
+            ProjectIndex idx = new ProjectIndex();
+            idx.History = Activity.Build(new List<string> { @"C:\music\Song Project" }, new FolderScan.Weight[] { w }, null, null);
+
+            OverviewPanel ov = new OverviewPanel();
+            ov.Index = idx;
+            ov.Layout(1200, 0);
+            Rectangle grid = (Rectangle)Field(ov, "_grid");
+            int step = (int)typeof(OverviewPanel).GetProperty("Step", Any).GetValue(ov, null);
+            DateTime got = default(DateTime);
+            ov.DayClicked += delegate (DateTime d) { got = d; };
+
+            foreach (DateTime d in new DateTime[] { day.AddDays(-1), day })
+            {
+                object[] cell = { d, 0, 0 };
+                typeof(OverviewPanel).GetMethod("CellOf", Any).Invoke(ov, cell);
+                ov.MouseDown(new Point(grid.X + (int)cell[1] * step + 2, grid.Y + (int)cell[2] * step + 2));
+            }
+            Check(got == day, "add: a click on a day with a save opens " + (got == default(DateTime) ? "nothing" : got.ToString("yyyy-MM-dd")));
+        }
+
+        static void Press(MainForm m, Keys k)
+        {
+            Message msg = new Message();
+            typeof(MainForm).GetMethod("ProcessCmdKey", Any).Invoke(m, new object[] { msg, k });
+        }
+
+        /// <summary>
+        /// Home and End take the list to its ends; Down with nothing selected starts at the first
+        /// row (it skipped to the second); Down from the search field carries on into what it
+        /// found.
+        /// </summary>
+        static void ListKeys()
+        {
+            string root = Fresh("keys");
+            foreach (string n in new string[] { "a", "b", "c" })
+                WriteAls(Path.Combine(root, n + @" Project\" + n + ".als"));
+            Settings s = new Settings();
+            s.Roots.Add(root);
+            new ProjectIndex().Scan(s, null, CancellationToken.None);
+
+            MainForm m = new MainForm();
+            try
+            {
+                ((ProjectIndex)Field(m, "_index")).LoadFromCache();
+                ((Segmented)Field(m, "_mode")).SelectedIndex = 1;      // Sets
+                RowListView list = (RowListView)Field(m, "_list");
+                Call(m, "Refill");
+                Check(list.Rows.Count == 3, "add: setup - three rows expected, got " + list.Rows.Count);
+
+                Press(m, Keys.Down);
+                Check(list.Selected == list.Rows[0], "add: Down with nothing selected skips the first row");
+                Press(m, Keys.End);
+                Check(list.Selected == list.Rows[2], "add: End does not reach the last row");
+                Press(m, Keys.Home);
+                Check(list.Selected == list.Rows[0], "add: Home does not reach the first row");
+
+                Call(m, "Refill");                                      // the selection is gone again
+                Call(m, "IntoResults");
+                Check(list.Selected == list.Rows[0], "add: Down from the search field does not reach the results");
+            }
+            finally { m.Dispose(); }
+        }
+
+        /// <summary>A set gzip-written around the given LiveSet body.</summary>
+        static void WriteSet(string path, string body)
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(path));
+            string xml = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<Ableton Creator=\"Ableton Live 12.1\">\n<LiveSet>\n"
+                       + body + "</LiveSet>\n</Ableton>\n";
+            using (FileStream fs = File.Create(path))
+            using (GZipStream gz = new GZipStream(fs, CompressionMode.Compress))
+            {
+                byte[] b = Encoding.UTF8.GetBytes(xml);
+                gz.Write(b, 0, b.Length);
+            }
+        }
+
+        /// <summary>
+        /// The full-screen preview names the tracks and clips — the drawing could, the dialog
+        /// had it off — and counts bars in the set's own meter: a waltz of 12 beats is 4 bars,
+        /// not 3. Live writes the meter as 99 × log2(denominator) + numerator − 1, 200 for 3/4.
+        /// </summary>
+        static void PreviewNamesAndMeter()
+        {
+            string path = Path.Combine(Fresh("meter"), @"Waltz Project\waltz.als");
+            WriteSet(path,
+                "<Tracks><MidiTrack Id=\"1\"><Name><EffectiveName Value=\"Keys\" /></Name><DeviceChain><MainSequencer>"
+              + "<ClipTimeable><ArrangerAutomation><Events><MidiClip Id=\"0\" Time=\"0\">"
+              + "<CurrentStart Value=\"0\" /><CurrentEnd Value=\"12\" /><Name Value=\"intro\" />"
+              + "</MidiClip></Events></ArrangerAutomation></ClipTimeable></MainSequencer></DeviceChain></MidiTrack></Tracks>\n"
+              + "<MainTrack><DeviceChain><Mixer>"
+              + "<Tempo><LomId Value=\"0\" /><Manual Value=\"90\" /></Tempo>"
+              + "<TimeSignature><LomId Value=\"0\" /><Manual Value=\"200\" /><AutomationTarget Id=\"8\" /></TimeSignature>"
+              + "</Mixer></DeviceChain></MainTrack>\n");
+            Arrangement a = Arrangement.Read(path);
+            Check(a.Error == null && a.ClipCount == 1, "add: setup - the waltz did not parse: " + a.Error);
+            Check(a.BarBeats == 3 && a.Bars == 4, "add: a 3/4 waltz of 12 beats reads as " + a.Bars + " bars of " + a.BarBeats + " beats");
+
+            SetEntry set = new SetEntry();
+            set.Name = "waltz";
+            set.Path = path;
+            Control host = new Control();
+            IntPtr handle = host.Handle;
+            using (PreviewDialog d = new PreviewDialog(set, new ArrangementLoader(host)))
+            {
+                RenderOptions o = ((ArrangementView)Field(d, "_view")).Options;
+                Check(o.ShowNames, "add: the full-screen preview does not name the tracks");
+            }
+            host.Dispose();
+        }
+
+        /// <summary>
+        /// Samples are previewed at a volume of their own: a slider under the sample's panel,
+        /// kept between runs. It was fixed at 0.8 with the player closed.
+        /// </summary>
+        static void SampleVolume()
+        {
+            Settings s = Settings.Load();
+            s.PreviewVolume = 0.35f;
+            s.Save();
+            Check(Math.Abs(Settings.Load().PreviewVolume - 0.35f) < 0.001f, "add: the preview volume is not kept between runs");
+
+            MainForm m = new MainForm();
+            try
+            {
+                DetailPanel p = (DetailPanel)Field(m, "_detail");
+                Check(Math.Abs(p.PreviewVolume - 0.35f) < 0.001f, "add: the slider does not start at the kept volume (" + p.PreviewVolume + ")");
+                Call(p, "MoveVolume", 0.6f);                     // moved by hand
+                AudioPlayer preview = (AudioPlayer)Field(m, "_preview");
+                Check(Math.Abs(((Settings)Field(m, "_settings")).PreviewVolume - 0.6f) < 0.001f
+                      && Math.Abs(preview.Volume - 0.6f) < 0.001f,
+                      "add: the slider moves neither the kept volume nor the preview (" + preview.Volume + ")");
+            }
+            finally { m.Dispose(); }
+        }
+
+        /// <summary>
+        /// A day in the year of work names the projects saved on it. The history kept only the
+        /// moments, so it now keeps whose they were; a history written before that still reads,
+        /// its days without names, and a later scan names whatever Live's Backup still holds.
+        /// </summary>
+        static void DayProjects()
+        {
+            DateTime day = new DateTime(2026, 9, 20);
+            string a = @"C:\music\Alpha Project", b = @"C:\music\Beta Project";
+            FolderScan.Weight wa = new FolderScan.Weight(), wb = new FolderScan.Weight();
+            wa.Saves = new List<FolderScan.Save> { Save(day.AddHours(14), "alpha"), Save(day.AddHours(15), "alpha") };
+            wb.Saves = new List<FolderScan.Save> { Save(day.AddHours(22), "beta"), Save(day.AddDays(1).AddHours(1), "beta") };
+            Activity h = Activity.Build(new List<string> { a, b }, new FolderScan.Weight[] { wa, wb }, null, null);
+            List<string> on = h.ProjectsOn(day);
+            Check(on.Count == 2 && on.Contains(a) && on.Contains(b), "add: the day names " + on.Count + " projects, 2 saved on it");
+
+            // A history from before: moments only.
+            string cache = Path.Combine(Settings.Dir, "activity.cache");
+            using (BinaryWriter w = new BinaryWriter(File.Create(cache)))
+            {
+                w.Write(1);
+                w.Write(1);
+                w.Write(day.AddHours(14).Ticks);
+            }
+            Activity old = Activity.LoadCache();
+            Check(old.SavesOn(day) == 1 && old.ProjectsOn(day).Count == 0, "add: a history from before does not read");
+
+            // The next scan finds the same save in Backup and names it; the name survives the cache.
+            Activity named = Activity.Build(new List<string> { a }, new FolderScan.Weight[] { wa }, null, old);
+            named.SaveCache();
+            Activity back = Activity.LoadCache();
+            Check(back.SavesOn(day) == 2 && back.ProjectsOn(day).Count == 1 && back.ProjectsOn(day)[0] == a,
+                  "add: a save found again in Backup is not named, or the name does not survive the cache");
+            File.Delete(cache);
+        }
+
+        static FolderScan.Save Save(DateTime when, string set)
+        {
+            FolderScan.Save s = new FolderScan.Save();
+            s.When = when;
+            s.Set = set;
+            return s;
+        }
+
+        // ------------------------------------------------------------------- play
+
+        const int WM_LBUTTONDOWN = 0x0201, WM_LBUTTONUP = 0x0202, MK_LBUTTON = 0x1;
+
+        static void Play()
+        {
+            VolumeUnderWave();
+            PlayAndStop();
+        }
+
+        static void Click(Control c, Point at)
+        {
+            Send(c, WM_LBUTTONDOWN, MK_LBUTTON, at);
+            Send(c, WM_LBUTTONUP, 0, at);
+        }
+
+        /// <summary>
+        /// The preview's volume sits right under the sample's wave — it was at the bottom of the
+        /// panel, far from what it is about — and a press on it sets it there and then.
+        /// </summary>
+        static void VolumeUnderWave()
+        {
+            string lib = Fresh("volume");
+            WriteWav(Path.Combine(lib, @"Drums\kick.wav"), 4410);
+            SampleIndex idx = SampleIndex.Build(new List<string> { lib }, new List<string>(), null, CancellationToken.None);
+            DetailPanel p = new DetailPanel();
+            p.Size = new Size(332, 700);
+            IntPtr handle = p.Handle;
+            p.ShowSample(idx.Files[0], SampleUsage.Empty, SampleCopies.Empty, false);
+            p.PreviewVolume = 0.2f;
+            float told = -1;
+            p.PreviewVolumeChanged += delegate (float v) { told = v; };
+            Paint(p);                                          // lays the panel out
+            Rectangle wave = (Rectangle)Field(p, "_waveRect"), vol = (Rectangle)Field(p, "_volRect");
+            Check(!vol.IsEmpty && vol.Top >= wave.Bottom && vol.Top - wave.Bottom <= 16,
+                  "play: the volume is not right under the wave (the wave ends at " + wave.Bottom + ", the volume is " + vol + ")");
+            Click(p, new Point(vol.Right - 20, vol.Y + vol.Height / 2));
+            Check(told > 0.8f && Math.Abs(p.PreviewVolume - told) < 0.001f,
+                  "play: a press near the right end of the volume set it to " + told);
+            p.Dispose();
+        }
+
+        /// <summary>
+        /// → on a sample plays it from the start, as in Live's browser (Space still toggles); a
+        /// press on an empty spot — under the rows, on the panel, on the window — stops it.
+        /// </summary>
+        static void PlayAndStop()
+        {
+            string lib = Fresh("play");
+            WriteWav(Path.Combine(lib, @"Drums\kick.wav"), 44100);     // a second of silence
+            SampleIndex idx = SampleIndex.Build(new List<string> { lib }, new List<string>(), null, CancellationToken.None);
+
+            MainForm m = new MainForm();
+            try
+            {
+                IntPtr handle = m.Handle;
+                typeof(MainForm).GetField("_samples", Any).SetValue(m, idx);
+                ((Segmented)Field(m, "_mode")).SelectedIndex = 3;           // Samples
+                ((FieldBox)Field(m, "_search")).Box.Text = "kick";          // a flat list of the one sample
+                RowListView list = (RowListView)Field(m, "_list");
+                Check(list.Rows.Count == 1 && list.Rows[0].Tag is SampleFile, "play: setup - the sample is not listed");
+                if (list.Rows.Count != 1) return;
+
+                SampleFile f = (SampleFile)list.Rows[0].Tag;
+                list.SelectRow(delegate (RowData r) { return true; });      // selecting plays it...
+                Call(m, "StopSample");                                     // ...and this silences it
+                Press(m, Keys.Right);
+                Check(Field(m, "_previewing") == f, "play: → on a sample does not play it");
+
+                Call(m, "PlaySample", f);
+                Click(list, new Point(list.Width / 3, 45 + 57 * 3));        // under the only row
+                Check(Field(m, "_previewing") == null, "play: a press under the rows does not stop the sample");
+
+                Call(m, "PlaySample", f);
+                DetailPanel p = (DetailPanel)Field(m, "_detail");
+                Paint(p);
+                Click(p, new Point(p.Width / 2, p.Height - 60));
+                Check(Field(m, "_previewing") == null, "play: a press on an empty spot of the panel does not stop the sample");
+
+                Call(m, "PlaySample", f);
+                Click(m, new Point(m.ClientSize.Width / 2, m.ClientSize.Height - 6));
+                Check(Field(m, "_previewing") == null, "play: a press on the window's empty space does not stop the sample");
+
+                Call(m, "PlaySample", f);
+                Send(m, 0x00A1, 2, new Point(m.Width / 2, 10));            // WM_NCLBUTTONDOWN, HTCAPTION: the toolbar strip
+                Check(Field(m, "_previewing") == null, "play: a press on the empty toolbar strip does not stop the sample");
+                Call(m, "StopSample");
+            }
+            finally { m.Dispose(); }
         }
 
         /// <summary>Make ProjectMeta read notes.cfg again, as at the next start — it keeps what
