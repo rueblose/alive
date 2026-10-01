@@ -29,13 +29,21 @@ namespace AbletonManager
     /// </summary>
     public sealed class Activity
     {
-        public static readonly Activity Empty = new Activity(new List<DateTime>());
+        public static readonly Activity Empty = new Activity(new List<Mark>());
 
-        readonly List<DateTime> _stamps;                 // ascending
+        /// <summary>One save: when, and the project folder it was made in — "" for a save the
+        /// history took in before it kept folders.</summary>
+        struct Mark
+        {
+            public DateTime When;
+            public string Project;
+        }
+
+        readonly List<Mark> _marks;                      // ascending by When
         readonly Dictionary<DateTime, int> _byDay = new Dictionary<DateTime, int>();
         readonly int[] _byHour = new int[24];
 
-        public int Total { get { return _stamps.Count; } }
+        public int Total { get { return _marks.Count; } }
         public int ActiveDays { get { return _byDay.Count; } }
 
         public DateTime First, Last;
@@ -53,19 +61,47 @@ namespace AbletonManager
 
         public int[] HourHistogram { get { return _byHour; } }
 
+        /// <summary>
+        /// The project folders saved in on that day, the busiest first — what a day's cell in
+        /// the year of work opens. Saves the history took in before it kept folders name
+        /// nothing, so a day of those alone gives an empty list.
+        /// </summary>
+        public List<string> ProjectsOn(DateTime day)
+        {
+            Dictionary<string, int> saves = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+            List<string> order = new List<string>();
+            DateTime d = day.Date;
+            foreach (Mark m in _marks)
+            {
+                if (m.When.Date != d || m.Project.Length == 0) continue;
+                int n;
+                if (!saves.TryGetValue(m.Project, out n)) order.Add(m.Project);
+                saves[m.Project] = n + 1;
+            }
+            // Stable on ties: the one saved first that day stays first.
+            List<string> sorted = new List<string>(order);
+            sorted.Sort(delegate (string x, string y)
+            {
+                int c = saves[y].CompareTo(saves[x]);
+                return c != 0 ? c : order.IndexOf(x).CompareTo(order.IndexOf(y));
+            });
+            return sorted;
+        }
+
         // ------------------------------------------------------------------ building
 
-        Activity(List<DateTime> stamps)
+        Activity(List<Mark> marks)
         {
-            stamps.Sort();
-            _stamps = stamps;
-            if (stamps.Count == 0) return;
+            marks.Sort(delegate (Mark x, Mark y) { return x.When.CompareTo(y.When); });
+            _marks = marks;
+            if (marks.Count == 0) return;
 
-            First = stamps[0];
-            Last = stamps[stamps.Count - 1];
+            First = marks[0].When;
+            Last = marks[marks.Count - 1].When;
 
-            foreach (DateTime t in stamps)
+            foreach (Mark m in marks)
             {
+                DateTime t = m.When;
                 DateTime day = t.Date;
                 int n;
                 _byDay.TryGetValue(day, out n);
@@ -132,12 +168,12 @@ namespace AbletonManager
             // Project", its own folder counts as the project folder, and that can be the parent
             // of other people's projects — whose copies then get walked twice. Measured: 1,143
             // copy files give 1,135 marks, eight arrived a second time.
-            HashSet<long> seen = new HashSet<long>();
-            List<DateTime> stamps = new List<DateTime>();
+            Dictionary<long, int> seen = new Dictionary<long, int>();     // a moment -> its place in marks
+            List<Mark> marks = new List<Mark>();
 
             if (previous != null)
-                foreach (DateTime t in previous._stamps)
-                    if (Sane(t) && seen.Add(t.Ticks)) stamps.Add(t);
+                foreach (Mark m in previous._marks)
+                    Add(marks, seen, m.When, m.Project);
 
             // The key is the folder plus the set name: one project folder holds different
             // versions, and each has copies of its own, carrying its own name at the front.
@@ -150,7 +186,7 @@ namespace AbletonManager
                     if (saves == null) continue;
                     foreach (FolderScan.Save sv in saves)
                     {
-                        if (Sane(sv.When) && seen.Add(sv.When.Ticks)) stamps.Add(sv.When);
+                        Add(marks, seen, sv.When, dirs[i]);
 
                         // Note that this set has copies — the .als time itself is filtered out
                         // below on the strength of this.
@@ -164,11 +200,37 @@ namespace AbletonManager
                     if (s.IsBackup || s.Modified == default(DateTime)) continue;
                     if (newest.Contains(s.ProjectDir + "|" + s.Name)) continue;
 
-                    DateTime when = s.Modified.ToLocalTime();
-                    if (Sane(when) && seen.Add(when.Ticks)) stamps.Add(when);
+                    Add(marks, seen, s.Modified.ToLocalTime(), s.ProjectDir);
                 }
 
-            return new Activity(stamps);
+            return new Activity(marks);
+        }
+
+        /// <summary>
+        /// A save taken in once. A moment already known is not counted again — but if it came
+        /// without a project (a history from before folders were kept) and the walk has just
+        /// found it in a Backup folder, it gets that folder now.
+        /// </summary>
+        static void Add(List<Mark> marks, Dictionary<long, int> seen, DateTime when, string project)
+        {
+            if (!Sane(when)) return;
+            project = project ?? "";
+            int i;
+            if (seen.TryGetValue(when.Ticks, out i))
+            {
+                if (marks[i].Project.Length == 0 && project.Length > 0)
+                {
+                    Mark named = marks[i];
+                    named.Project = project;
+                    marks[i] = named;
+                }
+                return;
+            }
+            seen[when.Ticks] = marks.Count;
+            Mark m = new Mark();
+            m.When = when;
+            m.Project = project;
+            marks.Add(m);
         }
 
         /// <summary>
@@ -193,11 +255,19 @@ namespace AbletonManager
         /// </summary>
         const int CacheVersion = 1;
 
+        /// <summary>
+        /// The projects follow the moments as a tail behind this mark, one folder per moment in
+        /// the same order. Not a new version: a copy of Alive from before would read a new
+        /// version as nothing and, at its next scan, write the history over with only what is
+        /// left in Backup. A tail it simply does not reach.
+        /// </summary>
+        const int ProjectsMark = 0x6A6F7270;     // "proj"
+
         static string CachePath { get { return Path.Combine(Settings.Dir, "activity.cache"); } }
 
         public static Activity LoadCache()
         {
-            List<DateTime> stamps = new List<DateTime>();
+            List<Mark> marks = new List<Mark>();
             try
             {
                 if (!File.Exists(CachePath)) return Empty;
@@ -211,11 +281,25 @@ namespace AbletonManager
                     // to throw away years: returning Empty would also have us overwrite the
                     // remainder with a blank at the next scan.
                     for (int i = 0; i < n; i++)
-                        stamps.Add(new DateTime(r.ReadInt64(), DateTimeKind.Local));
+                    {
+                        Mark m = new Mark();
+                        m.When = new DateTime(r.ReadInt64(), DateTimeKind.Local);
+                        m.Project = "";
+                        marks.Add(m);
+                    }
+
+                    // The projects, if this history has them — see ProjectsMark.
+                    if (r.BaseStream.Position < r.BaseStream.Length && r.ReadInt32() == ProjectsMark)
+                        for (int i = 0; i < marks.Count; i++)
+                        {
+                            Mark m = marks[i];
+                            m.Project = r.ReadString();
+                            marks[i] = m;
+                        }
                 }
             }
             catch { }
-            return stamps.Count == 0 ? Empty : new Activity(stamps);
+            return marks.Count == 0 ? Empty : new Activity(marks);
         }
 
         public void SaveCache()
@@ -231,8 +315,10 @@ namespace AbletonManager
                 using (BinaryWriter w = new BinaryWriter(File.Create(tmp)))
                 {
                     w.Write(CacheVersion);
-                    w.Write(_stamps.Count);
-                    foreach (DateTime t in _stamps) w.Write(t.Ticks);
+                    w.Write(_marks.Count);
+                    foreach (Mark m in _marks) w.Write(m.When.Ticks);
+                    w.Write(ProjectsMark);
+                    foreach (Mark m in _marks) w.Write(m.Project);
                 }
                 if (File.Exists(CachePath)) File.Replace(tmp, CachePath, null);
                 else File.Move(tmp, CachePath);

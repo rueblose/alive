@@ -59,9 +59,32 @@ namespace AbletonManager
 
         public bool HasContent { get { return ClipCount > 0; } }
 
-        /// <summary>Length in bars at 4/4 — for the caption; the grid is counted the same
-        /// way.</summary>
-        public int Bars { get { return (int)Math.Ceiling(End / 4.0); } }
+        /// <summary>
+        /// How many beats (quarter notes) a bar holds, from the set's time signature: 4 for 4/4,
+        /// 3 for 3/4, 3.5 for 7/8.
+        ///
+        /// ponytail: one meter for the whole song — the main track's TimeSignature. A meter
+        /// changed mid-song is an automation envelope of that parameter (2 sets of 398 on the
+        /// development machine) and keeps the bars of the first; reading its EnumEvents would
+        /// lift that.
+        /// </summary>
+        public double BarBeats = 4;
+
+        /// <summary>Length in bars — for the caption; the grid is counted the same way.</summary>
+        public int Bars { get { return (int)Math.Ceiling(End / BarBeats); } }
+
+        /// <summary>
+        /// Live writes the meter as one number: 99 × log2(denominator) + numerator − 1 — 201 is
+        /// 4/4, 200 is 3/4, 302 is 6/8. 396 sets of 398 on the development machine said 201.
+        /// Anything that does not decode keeps 4/4.
+        /// </summary>
+        static double Meter(int code)
+        {
+            if (code < 0) return 4;
+            int numerator = code % 99 + 1, power = code / 99;
+            if (power > 5) return 4;
+            return numerator * 4.0 / (1 << power);
+        }
 
         // A cap for the whole set: large projects have hundreds of thousands of notes, and the
         // preview reduces them to a couple of pixels anyway.
@@ -100,6 +123,7 @@ namespace AbletonManager
             int loopDepth = -1;
             int keyTrackDepth = -1, keyNoteStart = 0;
             int mainTrackDepth = -1, tempoDepth = -1; bool tempoSeen = false;
+            int meterDepth = -1;
 
             while (r.Read())
             {
@@ -120,6 +144,7 @@ namespace AbletonManager
                     if (trackDepth >= 0 && d <= trackDepth) { track = null; trackDepth = -1; }
                     if (mainTrackDepth >= 0 && d <= mainTrackDepth) mainTrackDepth = -1;
                     if (tempoDepth >= 0 && d <= tempoDepth) tempoDepth = -1;
+                    if (meterDepth >= 0 && d <= meterDepth) meterDepth = -1;
                     continue;
                 }
                 if (r.NodeType != XmlNodeType.Element) continue;
@@ -223,6 +248,12 @@ namespace AbletonManager
                     case "Tempo":
                         if (!empty && mainTrackDepth >= 0 && !tempoSeen) tempoDepth = depth;
                         break;
+
+                    // The song's meter, beside the tempo in the main track's mixer. A clip has a
+                    // TimeSignature of its own, but clips never sit in the main track.
+                    case "TimeSignature":
+                        if (!empty && mainTrackDepth >= 0) meterDepth = depth;
+                        break;
                 }
 
                 // --- values inside nodes that are already open
@@ -270,6 +301,9 @@ namespace AbletonManager
                     double t = Dbl(r.GetAttribute("Value"), 0);
                     if (t > 0) { a.Tempo = t; tempoSeen = true; }
                 }
+
+                if (meterDepth >= 0 && name == "Manual" && depth == meterDepth + 1)
+                    a.BarBeats = Meter(Int(r.GetAttribute("Value"), -1));
 
                 if (!empty) stack.Add(name);
             }

@@ -80,6 +80,11 @@ namespace AbletonManager
         /// </summary>
         public bool GroupByFolder = true;
 
+        /// <summary>How loud a sample previews on the Samples tab, 0..1 — the slider under the
+        /// sample's panel. Its own, apart from the render player's: a sample is heard in passing,
+        /// a render is listened to.</summary>
+        public float PreviewVolume = 0.8f;
+
         // ------------------------------------------------------------------ plugins
 
         /// <summary>
@@ -170,7 +175,28 @@ namespace AbletonManager
 
         static string FilePath { get { return Path.Combine(Dir, "settings.cfg"); } }
 
+        /// <summary>
+        /// Write one of the program's files whole or not at all: into a temporary file beside
+        /// it, then swapped in, with the previous version kept as .bak. Written straight over, a
+        /// computer switched off halfway left a stump in place of the file — and nothing can
+        /// rebuild notes.cfg (see README, "Data folder").
+        /// </summary>
+        internal static void WriteFile(string path, string text)
+        {
+            string tmp = path + ".tmp";
+            File.WriteAllText(tmp, text, new UTF8Encoding(false));
+            if (File.Exists(path)) File.Replace(tmp, path, path + ".bak");
+            else File.Move(tmp, path);
+        }
+
         public bool IsFirstRun { get { return Roots.Count == 0; } }
+
+        /// <summary>
+        /// settings.cfg is there but would not be read (another program held it). What this
+        /// copy holds is then defaults, and saving them would put them in place of everything
+        /// on disk — so nothing is saved until the next start reads the file.
+        /// </summary>
+        bool _unread;
 
         public static Settings Load()
         {
@@ -204,6 +230,13 @@ namespace AbletonManager
                     else if (key == "smoothscroll") s.SmoothScroll = val == "1";
                     else if (key == "nosmoothscroll") s.SmoothScroll = val == "0";
                     else if (key == "groupbyfolder") s.GroupByFolder = val == "1";
+                    else if (key == "previewvolume")
+                    {
+                        float v;
+                        if (float.TryParse(val, System.Globalization.NumberStyles.Float,
+                                           System.Globalization.CultureInfo.InvariantCulture, out v))
+                            s.PreviewVolume = Math.Max(0f, Math.Min(1f, v));
+                    }
                     else if (key == "pluginfolders") s.PluginsFromFolders = val == "1";
                     else if (key == "pluginsource") s.PluginSource = val;
                     else if (key == "vst2custom") s.Vst2CustomOn = val == "1";
@@ -223,7 +256,7 @@ namespace AbletonManager
                     else if (key == "seenupdate") s.SeenUpdate = val;
                 }
             }
-            catch { }
+            catch (Exception ex) { s._unread = true; Diag.Fail("settings.cfg: read", ex); }
             Theme.SmoothScroll = s.SmoothScroll;
             return s;
         }
@@ -251,6 +284,7 @@ namespace AbletonManager
         public void ReloadRoots()
         {
             Settings s = Load();
+            if (s._unread) return;          // keep the roots we have rather than none
             Roots.Clear();
             Roots.AddRange(s.Roots);
             DisabledRoots.Clear();
@@ -259,6 +293,7 @@ namespace AbletonManager
 
         public void Save()
         {
+            if (_unread) return;
             try
             {
                 if (!Directory.Exists(Dir)) Directory.CreateDirectory(Dir);
@@ -273,6 +308,7 @@ namespace AbletonManager
                 sb.Append("noglass=").AppendLine(DisableGlass ? "1" : "0");
                 sb.Append("smoothscroll=").AppendLine(SmoothScroll ? "1" : "0");
                 sb.Append("groupbyfolder=").AppendLine(GroupByFolder ? "1" : "0");
+                sb.Append("previewvolume=").AppendLine(PreviewVolume.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture));
                 sb.Append("pluginfolders=").AppendLine(PluginsFromFolders ? "1" : "0");
                 sb.Append("pluginsource=").AppendLine(PluginSource);
                 sb.Append("vst2custom=").AppendLine(Vst2CustomOn ? "1" : "0");
@@ -294,7 +330,7 @@ namespace AbletonManager
                 sb.Append("checkupdates=").AppendLine(CheckUpdates ? "1" : "0");
                 if (LastUpdateCheck.Length > 0) sb.Append("lastupdatecheck=").AppendLine(LastUpdateCheck);
                 if (SeenUpdate.Length > 0) sb.Append("seenupdate=").AppendLine(SeenUpdate);
-                File.WriteAllText(FilePath, sb.ToString(), new UTF8Encoding(false));
+                WriteFile(FilePath, sb.ToString());
             }
             catch { }
         }

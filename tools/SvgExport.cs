@@ -90,7 +90,7 @@ namespace AbletonManager
                 foreach (SetEntry e in index.Sets)
                     if (e.ShortVersion.Length > 0 && !versions.Contains(e.ShortVersion))
                         versions.Add(e.ShortVersion);
-                return new FiltersDialog(new SetFilter(), index.Sets, versions);
+                return new FiltersDialog(new SetFilter(), index.Sets, versions, "", true);
             });
 
             Try("07-plugin-filters", "Plugin filters dialog", 1500, delegate

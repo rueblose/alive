@@ -198,6 +198,19 @@ namespace AbletonManager
             t.Start();
         }
 
+        /// <summary>The quiet walk of a session, when one is due — see SampleIndex.WalkDue.
+        /// Otherwise the cache read at the start is the library as it stands.</summary>
+        void WalkSamplesOnce()
+        {
+            if (_samplesWalked) return;
+            _samplesWalked = true;
+            DateTime walked = SampleIndex.WalkedUtc;
+            if (SampleIndex.WalkDue(_samples, _settings.SampleRoots, _settings.DisabledSampleRoots, walked, DateTime.UtcNow))
+                StartSampleScan(false);
+            else
+                Diag.Line("samples: last walked " + walked.ToLocalTime().ToString("yyyy-MM-dd HH:mm", Inv) + ", not walked again");
+        }
+
         /// <summary>A walk already under way is called off and started again — it would have
         /// walked yesterday's list of folders.</summary>
         void RescanSamples()
@@ -685,7 +698,7 @@ namespace AbletonManager
             // One sound at a time: a render that is playing makes way.
             bool player = _player != null && !_player.IsDisposed;
             if (player && _player.IsPlaying) _player.PlayPause();
-            _preview.Volume = player ? _player.Volume : 0.8f;
+            _preview.Volume = _settings.PreviewVolume;
             _preview.Open(f.Path, true);
             _previewing = f;
             _auditioned = f.Path;
@@ -710,6 +723,17 @@ namespace AbletonManager
             if (f == null) return;
             if (SamePath(_previewing, f.Path) || !f.CanPreview) { StopSample(); return; }
             PlaySample(f);
+        }
+
+        /// <summary>→ on a sample: play it from the start, as in Live's browser (Space still
+        /// toggles). false when the selection is not a sample — then → opens a folder.</summary>
+        bool PlaySelectedSample()
+        {
+            RowData r = _list.Selected;
+            SampleFile f = r != null ? r.Tag as SampleFile : null;
+            if (f == null) return false;
+            if (f.CanPreview) PlaySample(f);
+            return true;
         }
 
         void ToggleSelectedSample()

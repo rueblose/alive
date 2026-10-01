@@ -39,6 +39,10 @@ namespace AbletonManager
         /// <summary>The user collapsed the panel — that is worth remembering.</summary>
         public event Action StateChanged;
 
+        /// <summary>A day of the calendar with saves on it was clicked — its projects are the
+        /// owner's to show.</summary>
+        public event Action<DateTime> DayClicked;
+
         /// <summary>The panel's place without the scroll — like Bounds on a section
         /// heading.</summary>
         public Rectangle Bounds;
@@ -448,20 +452,28 @@ namespace AbletonManager
 
             _headHot = _toggle.Contains(p);
             _hover = "";
-            _hoverDay = default(DateTime);
-            if (Open && Index != null && _grid.Contains(p))
+            _hoverDay = DayUnder(p);
+            if (_hoverDay != default(DateTime))
             {
-                DateTime day = DayAt((p.X - _grid.X) / Math.Max(1, Step),
-                                     (p.Y - _grid.Y) / Math.Max(1, Step));
-                if (day >= _gridFrom && day <= _gridTo)
-                {
-                    int n = Index.History.SavesOn(day);
-                    _hoverDay = day;
-                    _hover = (n == 0 ? "nothing saved" : n + (n == 1 ? " save" : " saves"))
-                           + "  ·  " + Date(day);
-                }
+                int n = Index.History.SavesOn(_hoverDay);
+                _hover = (n == 0 ? "nothing saved" : n + (n == 1 ? " save" : " saves"))
+                       + "  ·  " + Date(_hoverDay);
             }
             return was != _headHot || wasHover != _hover;
+        }
+
+        /// <summary>The calendar day at the point, or default(DateTime) off the grid.</summary>
+        DateTime DayUnder(Point p)
+        {
+            if (!Open || Index == null || !_grid.Contains(p)) return default(DateTime);
+            DateTime day = DayAt((p.X - _grid.X) / Math.Max(1, Step), (p.Y - _grid.Y) / Math.Max(1, Step));
+            return day >= _gridFrom && day <= _gridTo ? day : default(DateTime);
+        }
+
+        /// <summary>The cursor is on a day a click opens — one with saves on it.</summary>
+        public bool DayHot
+        {
+            get { return _hoverDay != default(DateTime) && Index != null && Index.History.SavesOn(_hoverDay) > 0; }
         }
 
         public bool MouseLeave()
@@ -475,6 +487,12 @@ namespace AbletonManager
         /// it.</summary>
         public bool MouseDown(Point p)
         {
+            DateTime day = DayUnder(p);
+            if (day != default(DateTime) && Index.History.SavesOn(day) > 0)
+            {
+                if (DayClicked != null) DayClicked(day);
+                return true;
+            }
             if (!_toggle.Contains(p)) return false;
 
             Open = !Open;
@@ -547,7 +565,7 @@ namespace AbletonManager
 
         static string Bytes(long b)
         {
-            if (b >= 1L << 40) return (b / (double)(1L << 40)).ToString("0.0") + " TB";
+            if (b >= 1L << 40) return (b / (double)(1L << 40)).ToString("0.0", System.Globalization.CultureInfo.InvariantCulture) + " TB";
             if (b >= 1L << 30) return (b / (double)(1L << 30)).ToString("0") + " GB";
             if (b >= 1L << 20) return (b / (double)(1L << 20)).ToString("0") + " MB";
             return b / 1024 + " KB";

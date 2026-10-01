@@ -242,7 +242,6 @@ namespace AbletonManager
                     inv.Error = "Live has no plugin database yet - open Live, Preferences > Plug-Ins > Rescan";
                     Diag.Line("plugins: nothing found (" + string.Join(", ", tried.ToArray()) + ")");
                 }
-                else Diag.Line("plugins: " + inv.All.Count + " from " + string.Join(", ", inv.Sources.ToArray()));
             }
             catch (Exception ex)
             {
@@ -251,6 +250,10 @@ namespace AbletonManager
             }
 
             inv.Reindex();
+            // Counted after Reindex: the installs' snapshots overlap, and their plain sum went to
+            // the log — 6446 where the Plugins tab showed 736.
+            if (inv.Sources.Count > 0)
+                Diag.Line("plugins: " + inv.All.Count + " from " + string.Join(", ", inv.Sources.ToArray()));
             return inv;
         }
 
@@ -285,7 +288,7 @@ namespace AbletonManager
             if (s.Vst2CustomOn && s.Vst2CustomPath.Length > 0) ScanVst2(s.Vst2CustomPath);
 
             if (All.Count == 0)
-                Error = "Nothing found in the plug-in folders — check the paths in Settings";
+                Error = "Nothing found in the plugin folders — check the paths in Settings";
         }
 
         static List<string> SystemVst3Dirs()
@@ -585,13 +588,18 @@ namespace AbletonManager
         // the disk would have to be asked about the same file. The cache lives for exactly one
         // load of the database (see Load) — otherwise a plugin installed while the program was
         // running would not appear even after a "rescan".
-        static readonly HashSet<string> _validPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        static readonly HashSet<string> _invalidPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        //
+        // One per thread: loads do run at once — the settings window asks for two answers the
+        // moment it opens, and a scan may be loading besides. Shared, both cleared and filled
+        // the same sets, and a HashSet written from two threads can loop forever: measured, two
+        // threads spinning at full load, the settings window "Reading…" for good.
+        [ThreadStatic] static HashSet<string> _validPaths;
+        [ThreadStatic] static HashSet<string> _invalidPaths;
 
         static void ResetPathCache()
         {
-            _validPaths.Clear();
-            _invalidPaths.Clear();
+            _validPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            _invalidPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         }
 
         static bool FastPathExists(string path)
@@ -669,9 +677,11 @@ namespace AbletonManager
 
                     // For VST3 the "file" routinely turns out to be a bundle folder
                     // (C:\...\VST3\Serum2.vst3 is a directory), so File.Exists alone is not
-                    // enough: it honestly returns false for an installed plugin.
-                    p.FileMissing = p.Path.Length > 0
-                                 && !File.Exists(p.Path) && !Directory.Exists(p.Path);
+                    // enough: it honestly returns false for an installed plugin. Asked through
+                    // the load's path cache: ten installs list the same few hundred files, and
+                    // asking the disk for each of their 6446 records was nearly all of a 350 ms
+                    // load.
+                    p.FileMissing = p.Path.Length > 0 && !FastPathExists(p.Path);
                     All.Add(p);
                 }
             }

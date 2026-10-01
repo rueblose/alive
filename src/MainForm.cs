@@ -887,6 +887,9 @@ namespace AbletonManager
             _list.RowRightClicked += OnListRowRightClick;
             _list.RowCountClicked += OnRowCountClicked;
             _list.SelectedRowClicked += delegate (int idx) { if (SamplesDomain) OnSelectedRowClicked(idx); };
+            // A press on nothing stops the sample — under the rows here, on the panel and on
+            // the window below.
+            _list.EmptyClicked += delegate { StopSample(); };
             _list.RowTagsClicked += delegate (int idx)
             {
                 if (idx >= 0 && idx < _list.Rows.Count) EditNotes(_list.Rows[idx].Tag as SetEntry);
@@ -916,6 +919,10 @@ namespace AbletonManager
             _detail.LibraryFolderRequested += OnLibraryFolderRequested;
             _detail.WaveClicked += OnWaveClicked;
             _detail.NotesRequested += EditNotes;
+            _detail.PreviewVolume = _settings.PreviewVolume;
+            // Kept in the settings, written with them when the window closes.
+            _detail.PreviewVolumeChanged += delegate (float v) { _settings.PreviewVolume = v; _preview.Volume = v; };
+            _detail.EmptyClicked += delegate { StopSample(); };
             Controls.Add(_detail);
 
             _home.Overview.Open = _settings.OverviewOpen;
@@ -937,6 +944,8 @@ namespace AbletonManager
             _home.RevealRequested += RevealSet;
             _home.DetailsRequested += OnSetRequested;   // "Show details" — go to the set in Sets
             _home.RescueRequested += RescueSet;
+            _home.ExportRequested += CollectSet;
+            _home.SetPicked += NavigateToSet;          // a project from a day of the year of work
             _home.NotesRequested += EditNotes;
             _home.SelectionChanged += delegate { OnSelectionChanged(); };
             _home.NewProjectRequested += delegate { NewProject(); };
@@ -1313,7 +1322,7 @@ namespace AbletonManager
             StartScan(false);
             // No project folders means no scan of the sets to wait for — the library is walked
             // right away.
-            if (!_scanning && !_samplesWalked) { _samplesWalked = true; StartSampleScan(false); }
+            if (!_scanning) WalkSamplesOnce();
             Rewatch();
             // If there was nothing to scan, the paths we were started with are all we have to
             // go on — otherwise they wait for the scan to finish.
@@ -1329,44 +1338,6 @@ namespace AbletonManager
         {
             base.OnHandleCreated(e);
             Glass.Apply(this);
-            RegisterMinimizeHotkey();
-        }
-
-        // ------------------------------------------------- Win+M: minimize the window
-
-        const int WM_HOTKEY = 0x0312;
-        const int HotkeyMinimize = 0xA11E;
-        const uint MOD_WIN = 0x0008, MOD_NOREPEAT = 0x4000;
-
-        bool _minimizeHotkey;
-
-        [DllImport("user32.dll")]
-        [return: MarshalAs(UnmanagedType.Bool)]
-        static extern bool RegisterHotKey(IntPtr hWnd, int id, uint modifiers, uint vk);
-
-        [DllImport("user32.dll")]
-        [return: MarshalAs(UnmanagedType.Bool)]
-        static extern bool UnregisterHotKey(IntPtr hWnd, int id);
-
-        /// <summary>
-        /// Win+M is a system combination held by Explorer ("minimize all windows"), and
-        /// RegisterHotKey on a taken combination honestly returns false. What is left then is
-        /// the Windows behaviour: the window will minimize, but together with all the others.
-        /// We write the result to the log — otherwise there is nothing to work out "why it does
-        /// not minimize just mine" from.
-        /// </summary>
-        void RegisterMinimizeHotkey()
-        {
-            if (_minimizeHotkey) return;
-            try
-            {
-                _minimizeHotkey = RegisterHotKey(Handle, HotkeyMinimize,
-                                                 MOD_WIN | MOD_NOREPEAT, (uint)Keys.M);
-                Diag.Line("hotkey Win+M: " + (_minimizeHotkey
-                        ? "ours"
-                        : "taken by Windows, falling back to the system 'minimize all'"));
-            }
-            catch (Exception ex) { Diag.Fail("hotkey Win+M", ex); }
         }
 
         /// <summary>
@@ -1430,16 +1401,16 @@ namespace AbletonManager
         /// Windows loop is running between WM_ENTERSIZEMOVE and WM_EXITSIZEMOVE.</summary>
         bool _inSizeMove;
 
+        const int WM_NCLBUTTONDOWN = 0x00A1, HTCAPTION = 2;
+
         protected override void WndProc(ref Message m)
         {
             // A click outside an open modal window — this is where the system sound comes from.
             if (Chrome.SwallowBlockedClick(ref m)) return;
 
-            if (m.Msg == WM_HOTKEY && m.WParam.ToInt32() == HotkeyMinimize)
-            {
-                WindowState = FormWindowState.Minimized;
-                return;
-            }
+            // The empty toolbar strip is a caption to Windows (see WM_NCHITTEST below), so a
+            // press there never reaches OnMouseDown — it stops a sample all the same.
+            if (m.Msg == WM_NCLBUTTONDOWN && m.WParam.ToInt64() == HTCAPTION) StopSample();
 
             // A second copy was started: it handed us its command line and left. Even an empty
             // one is an instruction — "show me the window I already have".
@@ -1517,6 +1488,14 @@ namespace AbletonManager
             // little, is a caption as far as Windows is concerned. The buttons standing in that
             // strip are separate windows of their own and never see this message.
             if (p.Y < Sc(Theme.ContentY) - Sc(10)) m.Result = (IntPtr)2;
+        }
+
+        /// <summary>A press on the window's own empty space — between and around its controls —
+        /// stops a sample, as a press on nothing in the list or the panel does.</summary>
+        protected override void OnMouseDown(MouseEventArgs e)
+        {
+            if (e.Button == MouseButtons.Left) StopSample();
+            base.OnMouseDown(e);
         }
 
         protected override void OnMouseDoubleClick(MouseEventArgs e)
@@ -1600,9 +1579,11 @@ namespace AbletonManager
             {
                 Keys k = keyData & Keys.KeyCode;
                 if ((k == Keys.Up || k == Keys.Down || k == Keys.Left || k == Keys.Right
-                     || k == Keys.PageUp || k == Keys.PageDown) && MoveSelection(k))
+                     || k == Keys.PageUp || k == Keys.PageDown || k == Keys.Home || k == Keys.End)
+                    && MoveSelection(k))
                     return true;
             }
+            if (keyData == Keys.Down && _search.Box.Focused) { IntoResults(); return true; }
 
             if (keyData == (Keys.Control | Keys.D1) || keyData == (Keys.Control | Keys.NumPad1))
             {
@@ -1674,10 +1655,15 @@ namespace AbletonManager
                 RescueSet(SelectedSet());
                 e.Handled = e.SuppressKeyPress = true;
             }
+            else if (e.Control && e.KeyCode == Keys.E && !typing && SetsDomain)
+            {
+                CollectSet(SelectedSet());
+                e.Handled = e.SuppressKeyPress = true;
+            }
 
-            // Minimize the window. Win+M cannot be taken from Windows (see
-            // RegisterMinimizeHotkey), and minimizing from the keyboard needs something that
-            // always works.
+            // Minimize the window. Win+M cannot be taken from Windows: Explorer holds it for
+            // "minimize all" and refuses RegisterHotKey on it. Minimizing from the keyboard needs
+            // something that always works.
             else if (e.Control && e.KeyCode == Keys.M)
             {
                 WindowState = FormWindowState.Minimized;
@@ -2012,7 +1998,7 @@ namespace AbletonManager
             foreach (SetEntry s in _index.Sets)
             {
                 if (!_filter.Matches(s)) continue;
-                if (q.Length > 0 && !MatchesSet(s, q)) continue;
+                if (q.Length > 0 && !SetFilter.MatchesSearch(s, q)) continue;
                 matched.Add(s);
             }
             // We remember the hidden versions BEFORE collapsing: afterwards the list of heads
@@ -2600,30 +2586,6 @@ namespace AbletonManager
             _list.ScrollOffsetX = scrollX;
         }
 
-        static bool MatchesSet(SetEntry s, string q)
-        {
-            if (s.Name.IndexOf(q, StringComparison.CurrentCultureIgnoreCase) >= 0) return true;
-            if (s.ProjectName.IndexOf(q, StringComparison.CurrentCultureIgnoreCase) >= 0) return true;
-            if (s.Path.IndexOf(q, StringComparison.CurrentCultureIgnoreCase) >= 0) return true;
-            foreach (string p in s.Plugins)
-                if (p.IndexOf(q, StringComparison.CurrentCultureIgnoreCase) >= 0) return true;
-
-            // A render is the same "project name" for somebody searching by sound rather than
-            // by a set's name. The selection is the same as the preview uses (without Samples),
-            // see RenderNames.
-            foreach (string r in s.RenderNames)
-                if (r.IndexOf(q, StringComparison.CurrentCultureIgnoreCase) >= 0) return true;
-
-            // One's own tags and notes are search material too: otherwise a label put on by
-            // hand would be visible only to the eye in the panel on the right.
-            foreach (string tag in ProjectMeta.TagsOf(s.ProjectDir))
-                if (tag.IndexOf(q, StringComparison.CurrentCultureIgnoreCase) >= 0) return true;
-            if (ProjectMeta.NoteOf(s.ProjectDir).IndexOf(q, StringComparison.CurrentCultureIgnoreCase) >= 0)
-                return true;
-
-            return false;
-        }
-
         void OnSelectionChanged()
         {
             // The audition follows the person's selection only — not the refill that clears the
@@ -2745,9 +2707,11 @@ namespace AbletonManager
                     matched = s;
                     return true;
                 }
+                // Inside, not StartsWith: a path in "Song Project 2" begins with "Song Project"
+                // too, and landed on that other project.
                 if (!string.IsNullOrEmpty(s.ProjectDir) &&
                     (string.Equals(s.ProjectDir, path, StringComparison.OrdinalIgnoreCase) ||
-                     path.StartsWith(s.ProjectDir, StringComparison.OrdinalIgnoreCase)))
+                     SampleIndex.Inside(path, s.ProjectDir)))
                 {
                     matched = s;
                     return true;
@@ -2963,24 +2927,20 @@ namespace AbletonManager
                 if (d.Produced.Length > 0)
                 {
                     Notify(d.Failed > 0
-                        ? string.Format("Exported to {0} — {1} file(s) could not be copied, see the log",
-                                        Path.GetFileName(d.Produced), d.Failed)
+                        ? string.Format("Exported to {0} — {1} could not be copied, their names are in alive.log",
+                                        Path.GetFileName(d.Produced), Chrome.Plural(d.Failed, "file"))
                         : "Exported to " + Path.GetFileName(d.Produced));
 
-                    // Do not open Explorer on a half-collected folder: the toast about the
-                    // failures has already sent the person to the log rather than to look at
-                    // what is missing there.
-                    if (d.Failed == 0)
-                    {
-                        // We show the archive selected in its folder: opening a .zip as a
-                        // folder would mean hiding the very thing the person has just
-                        // collected.
-                        string arg = File.Exists(d.Produced)
-                            ? "/select,\"" + d.Produced + "\""
-                            : "\"" + d.Produced + "\"";
-                        try { Process.Start("explorer.exe", arg); }
-                        catch (Exception ex) { Diag.Line("collect: explorer: " + ex.Message); }
-                    }
+                    // Do not open Explorer on a half-collected folder: what is missing is named
+                    // in the log, so that is what gets shown — "see the log" alone left the
+                    // person to guess where it lives.
+                    // We show the archive selected in its folder: opening a .zip as a folder
+                    // would mean hiding the very thing the person has just collected.
+                    string arg = d.Failed > 0 ? "/select,\"" + Diag.LogPath + "\""
+                               : File.Exists(d.Produced) ? "/select,\"" + d.Produced + "\""
+                               : "\"" + d.Produced + "\"";
+                    try { Process.Start("explorer.exe", arg); }
+                    catch (Exception ex) { Diag.Line("collect: explorer: " + ex.Message); }
                 }
             }
         }
@@ -3007,7 +2967,8 @@ namespace AbletonManager
 
         void EditFilters()
         {
-            using (FiltersDialog d = new FiltersDialog(_filter, _index.Sets, _versions))
+            using (FiltersDialog d = new FiltersDialog(_filter, _index.Sets, _versions,
+                                                       _search.Box.Text.Trim(), _settings.GroupByFolder))
             {
                 // The filters apply live: while the window is open, the list and the "N shown"
                 // counter behind it change before one's eyes, and the button at the bottom
@@ -3059,10 +3020,13 @@ namespace AbletonManager
                     case Keys.Right: return _home.MoveSelection(+1, 0);
                     case Keys.Up: case Keys.PageUp: return _home.MoveSelection(0, -1);
                     case Keys.Down: case Keys.PageDown: return _home.MoveSelection(0, +1);
+                    case Keys.Home: return _home.MoveSelection(-int.MaxValue / 2, 0);
+                    case Keys.End: return _home.MoveSelection(int.MaxValue / 2, 0);
                 }
                 return false;
             }
 
+            if (SamplesDomain && k == Keys.Right && PlaySelectedSample()) return true;
             if (SamplesDomain && (k == Keys.Left || k == Keys.Right)) return SampleTreeKey(k == Keys.Right);
 
             switch (k)
@@ -3071,8 +3035,26 @@ namespace AbletonManager
                 case Keys.Down: return _list.MoveSelection(+1);
                 case Keys.PageUp: return _list.MoveSelection(-_list.PageStep);
                 case Keys.PageDown: return _list.MoveSelection(+_list.PageStep);
+                case Keys.Home: return _list.MoveSelection(-_list.Rows.Count);
+                case Keys.End: return _list.MoveSelection(+_list.Rows.Count);
             }
             return false;   // there is nowhere to go left and right in a list
+        }
+
+        /// <summary>Down from the search field: on into what it found, as from a browser's
+        /// address bar. The first result is picked if none was; a picked one stays.</summary>
+        void IntoResults()
+        {
+            if (Tiles)
+            {
+                _home.Focus();
+                if (_home.Selected == null) _home.MoveSelection(0, +1);
+            }
+            else
+            {
+                _list.Focus();
+                if (_list.Selected == null) _list.MoveSelection(+1);
+            }
         }
 
         /// <summary>The context menu key — the same menu as on the right mouse
@@ -3320,10 +3302,19 @@ namespace AbletonManager
             rescue.Click += delegate { RescueSet(s); };
             m.Items.Add(rescue);
 
+            ToolStripMenuItem export = new ToolStripMenuItem("Export…");
+            export.ShortcutKeyDisplayString = "Ctrl+E";
+            export.Click += delegate { CollectSet(s); };
+            m.Items.Add(export);
+
             ToolStripMenuItem reveal = new ToolStripMenuItem("Show in Explorer");
             reveal.ShortcutKeyDisplayString = "Shift+Enter";
             reveal.Click += delegate { RevealSet(s); };
             m.Items.Add(reveal);
+
+            ToolStripMenuItem copy = new ToolStripMenuItem("Copy path");
+            copy.Click += delegate { try { Clipboard.SetText(s.Path); } catch { } };
+            m.Items.Add(copy);
 
             m.Show(_list, at);
         }
@@ -3334,6 +3325,15 @@ namespace AbletonManager
         {
             if (s == null) return;
             HomeStore.TogglePin(s.Path);
+            // With the pinned first the row has to change places, not only light its star: it
+            // stayed put until the next rebuild. A selected row is followed to its new place.
+            if (_settings.PinnedFirst && TableView)
+            {
+                bool followed = SetEntry.SameSet(SelectedSet(), s);
+                RefillPreservingView();
+                if (followed) _list.SelectRow(delegate (RowData r) { return SetEntry.SameSet(r.Tag, s); });
+                return;
+            }
             foreach (RowData r in _list.Rows)
             {
                 SetEntry rs = r.Tag as SetEntry;
@@ -3511,9 +3511,9 @@ namespace AbletonManager
                         break;
                     }
                 }
-                if (!found && (_search.Text.Length > 0 || !_filter.IsEmpty))
+                if (!found && (_search.Box.Text.Length > 0 || !_filter.IsEmpty))
                 {
-                    _search.Text = "";
+                    _search.Box.Text = "";
                     _filter.Clear();
                     UpdateFiltersButton();
                     Refill();
@@ -3532,9 +3532,9 @@ namespace AbletonManager
                         break;
                     }
                 }
-                if (!found && (_search.Text.Length > 0 || !_filter.IsEmpty))
+                if (!found && (_search.Box.Text.Length > 0 || !_filter.IsEmpty))
                 {
-                    _search.Text = "";
+                    _search.Box.Text = "";
                     _filter.Clear();
                     UpdateFiltersButton();
                     Refill();
@@ -3774,6 +3774,16 @@ namespace AbletonManager
             Rewatch();
         }
 
+        /// <summary>The catalog itself — Stat shows this one rather than reading a copy of its
+        /// own (see Program.OpenStat).</summary>
+        public ProjectIndex Index { get { return _index; } }
+
+        /// <summary>A scan has published new sets. Raised on the UI thread.</summary>
+        public event Action CatalogRebuilt;
+
+        /// <summary>F5 in Stat: the catalog is scanned here, where its roots are watched.</summary>
+        public void Rescan() { StartScan(true); }
+
         // -------------------------------------------------------- auto-refresh
 
         /// <summary>
@@ -3796,10 +3806,6 @@ namespace AbletonManager
 
         void OnFoldersChanged()
         {
-            // While a scan is running we do not start a second one over it — but neither do we
-            // lose it: the changes may have arrived in exactly the folders already passed, and
-            // without the mark they would have waited for the next F5.
-            if (_scanning) { _rescanPending = true; return; }
             StartScan(false);
         }
 
@@ -3807,10 +3813,14 @@ namespace AbletonManager
 
         void StartScan(bool force)
         {
-            if (_scanning) return;
+            // While a scan is running we do not start a second one over it — but neither do we
+            // lose the request: changes may have arrived in exactly the folders already passed,
+            // and a folder dropped onto the window or picked in Folders is not among the roots
+            // the running scan walks. The running scan starts the next one when it ends.
+            if (_scanning) { _rescanPending = true; return; }
             if (_settings.Roots.Count == 0)
             {
-                Status("No folders selected yet — press “Folders…”.");
+                Status("No folders to scan yet — click the folder button at the top or press Shift+F.");
                 return;
             }
 
@@ -3850,6 +3860,7 @@ namespace AbletonManager
                         _scanning = false;
                         RefreshVersions();
                         if (wasManual) Refill(); else RefillPreservingView();
+                        if (CatalogRebuilt != null) CatalogRebuilt();
                         // We no longer write the final summary ("Indexed N sets · M with
                         // missing files"): how many sets are shown stands at the top as it is,
                         // and the losses are visible as coloured marks in the rows themselves.
@@ -3861,9 +3872,9 @@ namespace AbletonManager
                         FlushPending();
                         CheckUpdatesInBackground();
 
-                        // The library is walked once per session, after the sets: two walks on
-                        // one disk at once only slow each other down.
-                        if (!_samplesWalked) { _samplesWalked = true; StartSampleScan(false); }
+                        // The library is walked at most once per session, after the sets: two
+                        // walks on one disk at once only slow each other down.
+                        WalkSamplesOnce();
 
                         // Something else on disk changed while we were scanning — we go round
                         // once more, or those edits would wait for the next occasion.
@@ -4004,11 +4015,6 @@ namespace AbletonManager
         protected override void OnFormClosing(FormClosingEventArgs e)
         {
             SaveGeometry();
-            if (_minimizeHotkey)
-            {
-                try { UnregisterHotKey(Handle, HotkeyMinimize); } catch { }
-                _minimizeHotkey = false;
-            }
             Settings.RootsChanged -= OnGlobalRootsChanged;
             if (_cancel != null) { try { _cancel.Cancel(); } catch { } }
             if (_sampleCancel != null) { try { _sampleCancel.Cancel(); } catch { } }

@@ -124,7 +124,7 @@ namespace AbletonManager
             };
             Controls.Add(_reset);
 
-            _apply.Text = "Ok";
+            _apply.Text = "OK";
             _apply.Primary = true;
             _apply.Click += delegate
             {
@@ -366,7 +366,7 @@ namespace AbletonManager
             for (int i = 0; i < _labels.Count; i++)
                 Chrome.DrawText(g, _labelTexts[i], Theme.FBody, _labels[i], Theme.TextDim, Chrome.Left);
 
-            string count = _matches + " plugins match";
+            string count = _matches == 1 ? "1 plugin matches" : _matches + " plugins match";
             Chrome.DrawText(g, count, Theme.FBody,
                 new Rectangle(Sc(Theme.Pad), _apply.Top, Math.Max(0, _reset.Left - Sc(40)), _apply.Height),
                 _matches == 0 ? Theme.Red : Theme.TextDim, Chrome.Left);
