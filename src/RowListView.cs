@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.Drawing.Drawing2D;
@@ -456,11 +456,20 @@ namespace AbletonManager
             return new Rectangle(PadX + CheckW + (PinW - s) / 2, top + (rowH - s) / 2, s, s);
         }
 
+        public bool HasPinnedRows()
+        {
+            for (int i = 0; i < _rows.Count; i++)
+            {
+                if (_rows[i].Pinned) return true;
+            }
+            return false;
+        }
+
         /// <summary>Is the cursor on the header star? It occupies the same gutter as the row
         /// stars.</summary>
         bool OnHeaderPin(Point p)
         {
-            return ShowPinIndicator && ShowHeaderPin && p.Y < HeaderHeight && PinRect(0, HeaderHeight).Contains(p);
+            return ShowPinIndicator && ShowHeaderPin && HasPinnedRows() && p.Y < HeaderHeight && PinRect(0, HeaderHeight).Contains(p);
         }
 
         /// <summary>A row's play button — the gutter between the star and the first
@@ -2046,7 +2055,7 @@ namespace AbletonManager
                 int head0W = Math.Min(scrollLeft, Width - PadRight);
                 g.SetClip(new Rectangle(0, 0, head0W, HeaderHeight));
 
-                if (ShowPinIndicator && ShowHeaderPin)
+                if (ShowPinIndicator && ShowHeaderPin && HasPinnedRows())
                 {
                     RectangleF hp = PinRect(0, HeaderHeight);
                     Color ink = PinnedFirst ? Theme.Light

@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.Drawing.Drawing2D;
@@ -945,9 +945,17 @@ namespace AbletonManager
 
             // The star right after the name and the note after it: otherwise they run into each
             // other.
-            int star = Sc(26);
-            h.Star = new Rectangle(titleW, h.Bounds.Y + (h.Bounds.Height - star) / 2, star, star);
-            h.NoteShift = titleW + star + Sc(6);
+            if (Pinned().Count > 0)
+            {
+                int star = Sc(26);
+                h.Star = new Rectangle(titleW, h.Bounds.Y + (h.Bounds.Height - star) / 2, star, star);
+                h.NoteShift = titleW + star + Sc(6);
+            }
+            else
+            {
+                h.Star = Rectangle.Empty;
+                h.NoteShift = titleW;
+            }
 
             h.AnimY = h.TargetY = h.Bounds.Y;
             h.Alpha = h.TargetAlpha = 1f;

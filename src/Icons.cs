@@ -19,7 +19,7 @@ namespace AbletonManager
         NextSet, PrevSet, NextTrack, PrevTrack, OpenPlaylist, ViewList,
         Note, Tag, Nebula, Keyboard, Calendar, HiddenBtnsOpen, HiddenBtnsClose, Wave,
         // Die faces run consecutively: MainForm picks a random one as Dice1 + n.
-        Dice1, Dice2, Dice3, Dice4, Dice5, Dice6, Dice = Dice1
+        Dice1, Dice2, Dice3, Dice4, Dice5, Dice6, Dice = Dice3
     }
 
     public static class Icons

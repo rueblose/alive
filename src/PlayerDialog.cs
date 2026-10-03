@@ -552,6 +552,7 @@ namespace AbletonManager
             m.Items.Add(pin);
 
             ToolStripMenuItem show = new ToolStripMenuItem("Show in Explorer");
+            show.ShortcutKeyDisplayString = "Shift+Enter";
             show.Click += delegate { Reveal(f); };
             m.Items.Add(show);
 
@@ -782,9 +783,39 @@ namespace AbletonManager
             base.WndProc(ref m);
         }
 
+        protected override bool ProcessCmdKey(ref Message msg, Keys keyData)
+        {
+            if (keyData == (Keys.Shift | Keys.Enter) || keyData == (Keys.Shift | Keys.Return))
+            {
+                if (Visible && (Form.ActiveForm == this || ContainsFocus))
+                {
+                    RenderFile f = SelectedFile();
+                    if (f == null && _current >= 0 && _current < _files.Count)
+                        f = _files[_current];
+                    if (f != null)
+                        Reveal(f);
+                    return true;
+                }
+            }
+            return base.ProcessCmdKey(ref msg, keyData);
+        }
+
         protected override void OnKeyDown(KeyEventArgs e)
         {
             if (e.KeyCode == Keys.Space) { TogglePlay(); e.Handled = e.SuppressKeyPress = true; return; }
+            if ((e.KeyCode == Keys.Enter || e.KeyCode == Keys.Return) && e.Shift)
+            {
+                if (Visible && (Form.ActiveForm == this || ContainsFocus))
+                {
+                    RenderFile f = SelectedFile();
+                    if (f == null && _current >= 0 && _current < _files.Count)
+                        f = _files[_current];
+                    if (f != null)
+                        Reveal(f);
+                    e.Handled = e.SuppressKeyPress = true;
+                    return;
+                }
+            }
             if (e.KeyCode == Keys.Right && e.Control) { Step(+1); e.Handled = true; return; }
             if (e.KeyCode == Keys.Left && e.Control) { Step(-1); e.Handled = true; return; }
             if (e.KeyCode == Keys.Escape)

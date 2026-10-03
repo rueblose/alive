@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Drawing;
@@ -923,6 +923,7 @@ namespace AbletonManager
             // Kept in the settings, written with them when the window closes.
             _detail.PreviewVolumeChanged += delegate (float v) { _settings.PreviewVolume = v; _preview.Volume = v; };
             _detail.EmptyClicked += delegate { StopSample(); };
+            _detail.StatusToastRequested += Notify;
             Controls.Add(_detail);
 
             _home.Overview.Open = _settings.OverviewOpen;
@@ -1699,6 +1700,15 @@ namespace AbletonManager
                 // to search with.
                 TogglePlaySelected();
                 e.Handled = e.SuppressKeyPress = true;
+            }
+            else if (e.KeyCode == Keys.Space && !typing && PluginsDomain)
+            {
+                if (_player != null && !_player.IsDisposed && (_player.CurrentSet != null || _player.IsPlaying))
+                {
+                    _player.PlayPause();
+                    UpdatePlayerTransport();
+                    e.Handled = e.SuppressKeyPress = true;
+                }
             }
             else if (e.KeyCode == Keys.Q && !e.Control && !e.Alt && !e.Shift && !typing && SetsDomain)
             {
