@@ -868,24 +868,19 @@ namespace AbletonManager
                 if (_set.Plugins.Length > 0)
                 {
                     int titleW = TextRenderer.MeasureText(plugTitle, Theme.FLabel).Width;
-                    int btnH = Chrome.PillHeight(Theme.FBadge);
                     string btnText = "copy list";
-                    Size ts = TextRenderer.MeasureText(btnText, Theme.FBadge);
-                    int btnW = ts.Width + Sc(14);
-                    int btnX = Pad + titleW + Sc(10);
+                    int btnW = TextRenderer.MeasureText(g, btnText, Theme.FLabel, new Size(w, plugHead.Height), PanelLeft).Width;
+                    int btnX = Pad + titleW + Sc(12);
                     int maxRight = Pad + w - (_set.MissingPlugins > 0 ? missingW + Sc(12) : 0);
                     if (btnX + btnW > maxRight) btnX = Math.Max(Pad, maxRight - btnW);
-                    int btnY = plugHead.Y + (plugHead.Height - btnH) / 2;
-                    _copyPluginsRect = new Rectangle(btnX, btnY, btnW, btnH);
+                    _copyPluginsRect = new Rectangle(btnX, plugHead.Y, btnW, plugHead.Height);
 
                     if (_pluginsSectionHot)
                     {
-                        Color btnBg = _copyPluginsHot ? Color.FromArgb(0x40, 0xFF, 0xFF, 0xFF) : Color.FromArgb(0x22, 0xFF, 0xFF, 0xFF);
-                        Color btnInk = _copyPluginsHot ? Theme.Text : Theme.TextDim;
-                        Theme.FillRound(g, _copyPluginsRect, btnH / 2f, btnBg);
-                        Chrome.DrawText(g, btnText, Theme.FBadge,
-                            new Rectangle(_copyPluginsRect.X, _copyPluginsRect.Y + Chrome.PillTop(g, Theme.FBadge, btnH), _copyPluginsRect.Width, btnH),
-                            btnInk, Chrome.PillText);
+                        Color btnInk = _copyPluginsHot ? Color.White : Theme.TextDim;
+                        Chrome.DrawText(g, btnText, Theme.FLabel, _copyPluginsRect, btnInk, PanelLeft);
+                        if (_copyPluginsHot)
+                            Underline(g, btnText, Theme.FLabel, _copyPluginsRect, Color.White);
                     }
                 }
             }
