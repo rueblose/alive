@@ -187,7 +187,7 @@ namespace AbletonManager
             _pages = pages;
             _page = pages[0];
             Caption = pages.Length > 1 ? "Folders" : _page.Kind.Caption;
-            ClientSize = _lastSize.IsEmpty ? new Size(820, 470) : _lastSize;
+            ClientSize = _lastSize.IsEmpty ? new Size(Sc(820), Sc(470)) : _lastSize;
             Resizable = true;
             MinimumSize = new Size(Sc(640), Sc(380));
 

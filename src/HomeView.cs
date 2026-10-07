@@ -763,7 +763,7 @@ namespace AbletonManager
             int y = 0;
 
             Overview.Index = Index;
-            Overview.Dpi = DeviceDpi / 96f;
+            Overview.Dpi = Theme.Dpi;
             y = Overview.Layout(Width, y) + Sc(28);
 
             List<SetEntry> projects = Projects();

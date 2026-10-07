@@ -999,7 +999,7 @@ namespace AbletonManager
 
         void DoResize(int mouseX)
         {
-            float scale = DeviceDpi / 96f;
+            float scale = Theme.Dpi;
             int[] before = ComputeWidths();
             int rightBefore = ColX(before, _resizeCol) + before[_resizeCol];
 

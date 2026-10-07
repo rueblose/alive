@@ -128,9 +128,8 @@ namespace AbletonManager
         /// not enough — it ends exactly at the tail of a descender, and a "y" in a pill looks
         /// shaved off by its edge (measured: one pixel was left under the tail).
         ///
-        /// The height comes from the font rather than from Sc(): the type size is set in points
-        /// and does not depend on DeviceDpi, so a pill tied to Sc would drift apart from its
-        /// own text on another monitor.
+        /// The height comes from the font rather than from Sc(): the pill is sized by its own
+        /// text, whatever the font and the screen scale turn out to be.
         /// </summary>
         public static int PillHeight(Font f) { return PillHeight(f, 6); }
 
@@ -490,7 +489,7 @@ namespace AbletonManager
             ForeColor = Theme.Text;
         }
 
-        protected int Sc(int v) { return (int)Math.Round(v * (DeviceDpi / 96f)); }
+        protected int Sc(int v) { return Theme.Sc(v); }
 
         /// <summary>
         /// Whether the control needs the right (and middle) mouse button. Not by default: a
@@ -1789,12 +1788,12 @@ namespace AbletonManager
             readonly System.Globalization.CultureInfo _ci = System.Globalization.CultureInfo.GetCultureInfo("en-US");
             const DayOfWeek FirstDay = DayOfWeek.Monday;
 
-            int Cell { get { return (int)Math.Round(34 * (DeviceDpi / 96f)); } }
-            int Head { get { return (int)Math.Round(44 * (DeviceDpi / 96f)); } }
-            int Dow { get { return (int)Math.Round(26 * (DeviceDpi / 96f)); } }
-            int Foot { get { return (int)Math.Round(40 * (DeviceDpi / 96f)); } }
-            int Pad { get { return (int)Math.Round(10 * (DeviceDpi / 96f)); } }
-            int S(int v) { return (int)Math.Round(v * (DeviceDpi / 96f)); }
+            int Cell { get { return (int)Math.Round(34 * Theme.Dpi); } }
+            int Head { get { return (int)Math.Round(44 * Theme.Dpi); } }
+            int Dow { get { return (int)Math.Round(26 * Theme.Dpi); } }
+            int Foot { get { return (int)Math.Round(40 * Theme.Dpi); } }
+            int Pad { get { return (int)Math.Round(10 * Theme.Dpi); } }
+            int S(int v) { return Theme.Sc(v); }
 
             public MonthGrid(DateTime? current)
             {
@@ -2012,7 +2011,7 @@ namespace AbletonManager
         /// <summary>The menu's corner radius — shared by the region and the outline.</summary>
         internal static float Radius(ToolStrip t)
         {
-            return 10f * (t.DeviceDpi / 96f);
+            return 10f * Theme.Dpi;
         }
 
         static void RoundCorners(ContextMenuStrip m)

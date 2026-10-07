@@ -203,7 +203,7 @@ namespace AbletonManager
 
         void VolumeAt(int x)
         {
-            Rectangle t = VolumeSlider.TrackOf(_volRect, DeviceDpi / 96f);
+            Rectangle t = VolumeSlider.TrackOf(_volRect, Theme.Dpi);
             MoveVolume((x - t.X) / (float)Math.Max(1, t.Width));
         }
 
@@ -1284,7 +1284,7 @@ namespace AbletonManager
             string hint = !f.CanPreview ? "only Live plays this file"
                         : _wave == null ? "reading…"
                         : _wave.Ok ? "" : _wave.Note;
-            WaveView.PaintWave(g, _waveRect, _wave, _waveProgress, _wavePlaying, hint, DeviceDpi / 96f);
+            WaveView.PaintWave(g, _waveRect, _wave, _waveProgress, _wavePlaying, hint, Theme.Dpi);
             y = _waveRect.Bottom + Sc(16);
 
             // How loud it previews, right under what is heard — at the bottom of the panel it
@@ -1292,7 +1292,7 @@ namespace AbletonManager
             if (f.CanPreview)
             {
                 _volRect = new Rectangle(Pad, _waveRect.Bottom + Sc(4), w, Sc(30));
-                VolumeSlider.PaintSlider(g, _volRect, _volume, _volHot || _volDrag, Theme.SurfacePressed, DeviceDpi / 96f);
+                VolumeSlider.PaintSlider(g, _volRect, _volume, _volHot || _volDrag, Theme.SurfacePressed, Theme.Dpi);
                 y = _volRect.Bottom + Sc(10);
             }
 
@@ -1602,7 +1602,7 @@ namespace AbletonManager
                         _thumbRendering = true;
                         DropThumb();
                         Size sz = inner.Size;
-                        float dpi = DeviceDpi / 96f;
+                        float dpi = Theme.Dpi;
                         Arrangement arr = _arr;
                         System.Threading.ThreadPool.QueueUserWorkItem(_ =>
                         {

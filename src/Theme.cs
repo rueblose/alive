@@ -124,6 +124,38 @@ namespace AbletonManager
         public const int CardR      = 14;
         public const int ThumbR     = 6;
 
+        // ------------------------------------------------------------------ screen scale
+        static float _dpi;
+
+        /// <summary>
+        /// The screen scale, 1 at 100%, 2 at 200%: the one factor every pixel size in the
+        /// window is multiplied by. It is taken from the screen DC — the same LOGPIXELSY that
+        /// GDI turns the point sizes below into pixels with — so a pill and the text inside it
+        /// grow together.
+        ///
+        /// Not Control.DeviceDpi: on .NET Framework it stays 96 unless WinForms high-DPI is
+        /// switched on in app.config, which a single exe does not have. The text grew with the
+        /// screen while every inset, pill and icon stayed at 100%, and at 200% the letters ran
+        /// out of their boxes (issue #1).
+        /// </summary>
+        public static float Dpi
+        {
+            get
+            {
+                if (_dpi <= 0f)
+                {
+                    float k = 1f;
+                    try { using (Graphics g = Graphics.FromHwnd(IntPtr.Zero)) k = g.DpiY / 96f; }
+                    catch { }
+                    _dpi = k > 0f ? k : 1f;
+                }
+                return _dpi;
+            }
+        }
+
+        /// <summary>A mockup size (96 dpi) in screen pixels.</summary>
+        public static int Sc(int v) { return (int)Math.Round(v * Dpi); }
+
         // ------------------------------------------------------------------ fonts The type
         // sizes were picked by measurement: glyph heights and line widths match the mockup (a
         // table row is 13 pt, "F Phrygian" 93 px against 95 px in the mockup).

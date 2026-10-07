@@ -130,13 +130,12 @@ namespace AbletonManager
         }
 
         /// <summary>
-        /// The window width is not set by Sc() alone. Sc() counts from DeviceDpi while GDI
-        /// draws text at the font's DPI, and those are different numbers: on a system at 125%
-        /// the window came out 96-point while the letters in it were 120-point. The bottom
-        /// shelf is the one line where everything stands flush, and it stopped fitting into its
-        /// own window: the total on the left was cut off with an ellipsis. So we measure the
-        /// shelf with real text and, if it is tight, give the window exactly as much as it asks
-        /// for.
+        /// The window width is not set by Sc() alone. The bottom shelf is the one line where
+        /// everything stands flush, and the text in it is measured, not mocked up: a font that
+        /// runs wider than Segoe UI Variable (or a scale Sc() once got wrong — it used to count
+        /// from DeviceDpi, which stayed 96 on a 125% screen) cuts the total on the left off with
+        /// an ellipsis. So we measure the shelf with real text and, if it is tight, give the
+        /// window exactly as much as it asks for.
         /// </summary>
         protected override void OnHandleCreated(EventArgs e)
         {

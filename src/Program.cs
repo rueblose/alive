@@ -101,7 +101,7 @@ namespace Alive
 
             EventHandler place = delegate
             {
-                float k = main.DeviceDpi / 96f;
+                float k = Theme.Dpi;
                 int pad = (int)Math.Round(Theme.Pad * k);
                 int icon = (int)Math.Round(Theme.IconSize * k);
                 int panelW = (int)Math.Round(Theme.PanelW * k);

@@ -37,7 +37,7 @@ namespace AbletonManager
             BuildContent();
         }
 
-        int Sc(int v) { return (int)Math.Round(v * (DeviceDpi / 96f)); }
+        int Sc(int v) { return Theme.Sc(v); }
 
         // ------------------------------------------------------------------ showing
 

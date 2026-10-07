@@ -216,11 +216,9 @@ namespace AbletonManager
             // The window sizes come from the mockup too, and therefore also through the screen
             // scale. 1475 and 1320 used to stand here in physical pixels: on a screen at 125%
             // the window came out 1180 mockup points instead of 1475, and the toolbar no longer
-            // fitted into it — the counter ran into the buttons on the right. It is too early
-            // to ask DeviceDpi here (there is no window yet), so we take the scale from the
-            // screen DC.
-            float k;
-            using (Graphics g = Graphics.FromHwnd(IntPtr.Zero)) k = g.DpiX / 96f;
+            // fitted into it — the counter ran into the buttons on the right. Theme.Dpi is the
+            // same scale the whole layout uses (Sc below).
+            float k = Theme.Dpi;
             Rectangle work = Screen.PrimaryScreen.WorkingArea;
 
             ClientSize = new Size(Math.Min((int)(1475 * k), work.Width),
@@ -1045,7 +1043,7 @@ namespace AbletonManager
 
         // ------------------------------------------------------------------ layout
 
-        int Sc(int v) { return (int)Math.Round(v * (DeviceDpi / 96f)); }
+        int Sc(int v) { return Theme.Sc(v); }
 
         /// <summary>
         /// The layout is built entirely on quantities from the mockup: a window margin of 30, a

@@ -89,7 +89,7 @@ namespace AbletonManager
             int top = Sc(92);
             _view.SetBounds(pad, top, Math.Max(Sc(80), ClientSize.Width - pad * 2),
                             Math.Max(Sc(80), ClientSize.Height - top - pad));
-            _view.Options.Dpi = DeviceDpi / 96f;
+            _view.Options.Dpi = Theme.Dpi;
         }
 
         protected override void OnPaint(PaintEventArgs e)
@@ -150,7 +150,7 @@ namespace AbletonManager
         public ArrangementView()
         {
             Cursor = Cursors.Default;
-            Options.Dpi = DeviceDpi / 96f;
+            Options.Dpi = Theme.Dpi;
             _vBar = new ScrollFade(this, VBarRect);
             _hBar = new ScrollFade(this, HBarRect);
         }

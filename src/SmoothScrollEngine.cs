@@ -77,7 +77,7 @@ namespace AbletonManager
         }
 
         /// <summary>The overshoot limit — the rubber band stretches no further.</summary>
-        float MaxOver { get { return 54f * (_owner.DeviceDpi / 96f); } }
+        float MaxOver { get { return 54f * Theme.Dpi; } }
 
         public void OnMouseWheel(int delta, int stepPixels)
         {

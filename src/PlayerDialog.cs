@@ -885,12 +885,12 @@ namespace AbletonManager
             Graphics g = e.Graphics;
             Chrome.PaintBase(this, g, Surface);
             Theme.Smooth(g);
-            PaintWave(g, new Rectangle(0, 0, Width, Height), Wave, Progress, true, Hint, DeviceDpi / 96f);
+            PaintWave(g, new Rectangle(0, 0, Width, Height), Wave, Progress, true, Hint, Theme.Dpi);
         }
 
         /// <summary>
         /// The envelope in a recessed box — shared by the player window and the details panel of
-        /// a sample. k is the screen scale (DeviceDpi / 96). Without a playhead the whole wave is
+        /// a sample. k is the screen scale (Theme.Dpi). Without a playhead the whole wave is
         /// drawn light: nothing is playing, so nothing is "already played".
         /// </summary>
         public static void PaintWave(Graphics g, Rectangle box, Waveform wave, float progress, bool playhead,
@@ -995,7 +995,7 @@ namespace AbletonManager
 
         void Grab(int x)
         {
-            Rectangle t = TrackOf(ClientRectangle, DeviceDpi / 96f);
+            Rectangle t = TrackOf(ClientRectangle, Theme.Dpi);
             Value = (x - t.X) / (float)Math.Max(1, t.Width);
         }
 
@@ -1020,7 +1020,7 @@ namespace AbletonManager
             Graphics g = e.Graphics;
             Chrome.PaintBase(this, g, Surface);
             Theme.Smooth(g);
-            PaintSlider(g, ClientRectangle, _value, Hot || _drag, Theme.Surface, DeviceDpi / 96f);
+            PaintSlider(g, ClientRectangle, _value, Hot || _drag, Theme.Surface, Theme.Dpi);
         }
 
         /// <summary>

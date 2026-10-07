@@ -94,11 +94,9 @@ namespace AbletonManager.Nebula
             FormBorderStyle = FormBorderStyle.None;
             StartPosition = FormStartPosition.CenterScreen;
 
-            // Scaled by the screen DC, as MainForm sizes itself: the text is in points and grows
-            // with the screen's scale, and at 125% the unscaled 1360 × 860 cut the hint line
-            // under the cloud short. DeviceDpi is no help — it said 96 on that 125% screen.
-            float k;
-            using (Graphics g = Graphics.FromHwnd(IntPtr.Zero)) k = g.DpiX / 96f;
+            // Scaled as MainForm sizes itself: the text is in points and grows with the screen's
+            // scale, and at 125% the unscaled 1360 × 860 cut the hint line under the cloud short.
+            float k = Theme.Dpi;
             Rectangle work = Screen.PrimaryScreen.WorkingArea;
             ClientSize = new Size(Math.Min((int)(1360 * k), work.Width), Math.Min((int)(860 * k), work.Height));
             MinimumSize = new Size(Math.Min((int)(1120 * k), work.Width), Math.Min((int)(680 * k), work.Height));
@@ -115,7 +113,7 @@ namespace AbletonManager.Nebula
             LoadChannels();
         }
 
-        int Sc(int v) { return (int)Math.Round(v * (DeviceDpi / 96f)); }
+        int Sc(int v) { return Theme.Sc(v); }
 
         /// <summary>
         /// Show the main window's catalog instead of an index of its own. Stat used to read the

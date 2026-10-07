@@ -220,8 +220,8 @@ namespace AbletonManager.Nebula
             base.Dispose(disposing);
         }
 
-        int Sc(int v) { return (int)Math.Round(v * (DeviceDpi / 96f)); }
-        float ScF(float v) { return v * (DeviceDpi / 96f); }
+        int Sc(int v) { return Theme.Sc(v); }
+        float ScF(float v) { return v * Theme.Dpi; }
 
         // ------------------------------------------------------------------- data
 

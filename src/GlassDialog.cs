@@ -57,7 +57,7 @@ namespace AbletonManager
             Controls.Add(CloseBtn);
         }
 
-        protected int Sc(int v) { return (int)Math.Round(v * (DeviceDpi / 96f)); }
+        protected int Sc(int v) { return Theme.Sc(v); }
 
         const int CS_DROPSHADOW  = 0x00020000;   // class style
         const int WS_MINIMIZEBOX = 0x00020000;   // window style — the same number, a different field

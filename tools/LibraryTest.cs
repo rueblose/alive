@@ -917,7 +917,7 @@ namespace AliveTools
             Bitmap shown = (Bitmap)Field(p, "_thumb");
             Size size = (Size)Field(p, "_thumbSize");
             RenderOptions o = new RenderOptions();
-            o.Dpi = p.DeviceDpi / 96f;
+            o.Dpi = Theme.Dpi;
             o.MaxLane = 10;
             using (Bitmap want = ArrangementRender.ToBitmap(rb, size.Width, size.Height, o))
                 Check(shown != null && SamePixels(shown, want),
