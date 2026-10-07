@@ -54,7 +54,11 @@ namespace Alive
             CultureInfo.DefaultThreadCurrentUICulture = en;
             Thread.CurrentThread.CurrentUICulture = en;
 
-            if (Settings.Load().DisableGlass) Glass.Enabled = false;
+            Settings startup = Settings.Load();
+            if (startup.DisableGlass) Glass.Enabled = false;
+            // Before the first window and before Theme's fonts are made: both are computed
+            // once off this (see Theme.Zoom).
+            Theme.Zoom = startup.UiScale / 100f;
 
             // The rescue helper's probe copies live inside other people's project folders and
             // have to disappear the moment the probe is over. If the last run was killed

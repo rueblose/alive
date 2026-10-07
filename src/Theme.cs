@@ -128,8 +128,15 @@ namespace AbletonManager
         static float _dpi;
 
         /// <summary>
-        /// The screen scale, 1 at 100%, 2 at 200%: the one factor every pixel size in the
-        /// window is multiplied by. It is taken from the screen DC — the same LOGPIXELSY that
+        /// The program's own scale on top of the screen's — Settings.UiScale, 0.75 / 1 / 1.25.
+        /// Set once at startup, before the first window: Dpi and the fonts below are computed
+        /// on first use and kept, which is why changing it in Settings asks for a restart.
+        /// </summary>
+        public static float Zoom = 1f;
+
+        /// <summary>
+        /// The screen scale, 1 at 100%, 2 at 200% (times Zoom): the one factor every pixel size
+        /// in the window is multiplied by. It is taken from the screen DC — the same LOGPIXELSY that
         /// GDI turns the point sizes below into pixels with — so a pill and the text inside it
         /// grow together.
         ///
@@ -147,7 +154,7 @@ namespace AbletonManager
                     float k = 1f;
                     try { using (Graphics g = Graphics.FromHwnd(IntPtr.Zero)) k = g.DpiY / 96f; }
                     catch { }
-                    _dpi = k > 0f ? k : 1f;
+                    _dpi = (k > 0f ? k : 1f) * (Zoom > 0f ? Zoom : 1f);
                 }
                 return _dpi;
             }
@@ -178,7 +185,7 @@ namespace AbletonManager
 
         public static Font UI(float size, FontStyle style)
         {
-            return new Font(UiFamily, size, style, GraphicsUnit.Point);
+            return new Font(UiFamily, size * Zoom, style, GraphicsUnit.Point);
         }
 
         /// <summary>Semibold as a separate family: GDI+ has only two weights, and Bold is too
@@ -186,8 +193,8 @@ namespace AbletonManager
         public static Font UISemibold(float size)
         {
             foreach (string name in new string[] { "Segoe UI Variable Text Semibold", "Segoe UI Semibold" })
-                if (HasFamily(name)) return new Font(name, size, FontStyle.Regular, GraphicsUnit.Point);
-            return new Font(UiFamily, size, FontStyle.Bold, GraphicsUnit.Point);
+                if (HasFamily(name)) return new Font(name, size * Zoom, FontStyle.Regular, GraphicsUnit.Point);
+            return new Font(UiFamily, size * Zoom, FontStyle.Bold, GraphicsUnit.Point);
         }
 
         static bool HasFamily(string name)
@@ -198,15 +205,19 @@ namespace AbletonManager
             return false;
         }
 
-        public static readonly Font FTitle       = UISemibold(13f);    // a set name, a panel heading
-        public static readonly Font FBody        = UI(13f, FontStyle.Regular);
-        public static readonly Font FButton      = UI(13f, FontStyle.Regular);     // a button, not a caption
-        public static readonly Font FLabel       = UI(12f, FontStyle.Regular);     // the table header, captions
-        public static readonly Font FSmall       = UI(12f, FontStyle.Regular);
-        public static readonly Font FBadge       = UI(11f, FontStyle.Regular);
-        public static readonly Font FMini        = UI(9.5f, FontStyle.Regular);
-        public static readonly Font FHead        = UISemibold(17f);
-        public static readonly Font FDialogTitle = UISemibold(22f);
+        // Created on first use rather than with the class: Settings.Load already touches Theme
+        // (SmoothScroll), and that happens before Program has set Zoom from the same settings.
+        static Font _fTitle, _fBody, _fButton, _fLabel, _fSmall, _fBadge, _fMini, _fHead, _fDialogTitle;
+
+        public static Font FTitle       { get { return _fTitle ?? (_fTitle = UISemibold(13f)); } }    // a set name, a panel heading
+        public static Font FBody        { get { return _fBody ?? (_fBody = UI(13f, FontStyle.Regular)); } }
+        public static Font FButton      { get { return _fButton ?? (_fButton = UI(13f, FontStyle.Regular)); } }     // a button, not a caption
+        public static Font FLabel       { get { return _fLabel ?? (_fLabel = UI(12f, FontStyle.Regular)); } }     // the table header, captions
+        public static Font FSmall       { get { return _fSmall ?? (_fSmall = UI(12f, FontStyle.Regular)); } }
+        public static Font FBadge       { get { return _fBadge ?? (_fBadge = UI(11f, FontStyle.Regular)); } }
+        public static Font FMini        { get { return _fMini ?? (_fMini = UI(9.5f, FontStyle.Regular)); } }
+        public static Font FHead        { get { return _fHead ?? (_fHead = UISemibold(17f)); } }
+        public static Font FDialogTitle { get { return _fDialogTitle ?? (_fDialogTitle = UISemibold(22f)); } }
 
         /// <summary>
         /// The offset from the top of a line to its baseline, in pixels. TextRenderer seats a

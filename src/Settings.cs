@@ -74,6 +74,14 @@ namespace AbletonManager
         public bool SmoothScroll;
 
         /// <summary>
+        /// The program's own scale on top of the Windows one, in percent: 75, 100 or 125. Read
+        /// once at startup into Theme.Zoom, so a change applies after a restart.
+        /// </summary>
+        public int UiScale = 100;
+
+        public static readonly int[] UiScales = { 75, 100, 125 };
+
+        /// <summary>
         /// Whether to collapse the sets of one folder into a single row. On by default: a
         /// project usually holds a dozen .als files (v1, v2, final, final2), and without this
         /// the catalog is a list of versions rather than a list of projects.
@@ -229,6 +237,11 @@ namespace AbletonManager
                     else if (key == "noglass") s.DisableGlass = val == "1";
                     else if (key == "smoothscroll") s.SmoothScroll = val == "1";
                     else if (key == "nosmoothscroll") s.SmoothScroll = val == "0";
+                    else if (key == "uiscale")
+                    {
+                        int v;
+                        if (int.TryParse(val, out v) && Array.IndexOf(UiScales, v) >= 0) s.UiScale = v;
+                    }
                     else if (key == "groupbyfolder") s.GroupByFolder = val == "1";
                     else if (key == "previewvolume")
                     {
@@ -307,6 +320,7 @@ namespace AbletonManager
                 sb.Append("overviewopen=").AppendLine(OverviewOpen ? "1" : "0");
                 sb.Append("noglass=").AppendLine(DisableGlass ? "1" : "0");
                 sb.Append("smoothscroll=").AppendLine(SmoothScroll ? "1" : "0");
+                sb.Append("uiscale=").AppendLine(UiScale.ToString(System.Globalization.CultureInfo.InvariantCulture));
                 sb.Append("groupbyfolder=").AppendLine(GroupByFolder ? "1" : "0");
                 sb.Append("previewvolume=").AppendLine(PreviewVolume.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture));
                 sb.Append("pluginfolders=").AppendLine(PluginsFromFolders ? "1" : "0");

@@ -121,8 +121,9 @@ the colour show: tempo, number of tracks, year, and so on.
 
 <img src="docs/img/settings.png" alt="Settings" width="560">
 
-`Ctrl ,` or the gear: smooth scrolling, transparency and the update check (all three start off), and
-where the plugin list comes from.
+`Ctrl ,` or the gear: the interface scale (75, 100 or 125% on top of the Windows one), smooth
+scrolling, transparency and the update check (all three start off), and where the plugin list comes
+from.
 
 **Updates.** Alive goes online only when you ask: press **Check for updates**, or turn on the daily
 check and a dot on the gear will tell you about a new version. Nothing about you or your library is
